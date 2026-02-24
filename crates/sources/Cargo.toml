@@ -1,0 +1,8 @@
+[package]
+name = "rustplayer-sources"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rustplayer-core = { path = "../core" }
+async-trait = "0.1"

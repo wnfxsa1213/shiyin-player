@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#8B5CF6"/>
+      <stop offset="50%" stop-color="#D946EF"/>
+      <stop offset="100%" stop-color="#F97316"/>
+    </linearGradient>
+    <linearGradient id="note" x1="180" y1="100" x2="360" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#F0E6FF"/>
+    </linearGradient>
+    <linearGradient id="arc" x1="100" y1="300" x2="300" y2="450" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.4"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded square background -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- Subtle inner glow -->
+  <rect x="16" y="16" width="480" height="480" rx="96" fill="none" stroke="white" stroke-opacity="0.15" stroke-width="2"/>
+  <!-- Music note - stem -->
+  <path d="M280 140 L280 340" stroke="url(#note)" stroke-width="22" stroke-linecap="round"/>
+  <!-- Music note - flag -->
+  <path d="M280 140 C280 140, 340 130, 350 170 C360 210, 310 200, 280 210" fill="url(#note)" opacity="0.95"/>
+  <!-- Music note - head (oval) -->
+  <ellipse cx="248" cy="352" rx="48" ry="38" transform="rotate(-15, 248, 352)" fill="url(#note)"/>
+  <!-- Collecting arc - 拾取的弧线，像一只手轻轻托起 -->
+  <path d="M130 380 C130 320, 170 270, 220 260" stroke="url(#arc)" stroke-width="14" stroke-linecap="round" fill="none"/>
+  <path d="M130 380 C150 400, 200 420, 248 390" stroke="url(#arc)" stroke-width="14" stroke-linecap="round" fill="none"/>
+  <!-- Small sparkle dots - 拾取的星光 -->
+  <circle cx="160" cy="200" r="6" fill="white" opacity="0.7"/>
+  <circle cx="370" cy="280" r="5" fill="white" opacity="0.5"/>
+  <circle cx="340" cy="400" r="4" fill="white" opacity="0.4"/>
+  <circle cx="190" cy="160" r="3.5" fill="white" opacity="0.35"/>
+</svg>

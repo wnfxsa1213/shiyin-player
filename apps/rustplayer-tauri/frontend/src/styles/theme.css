@@ -1,0 +1,325 @@
+/* ===== Base defaults (fallback) ===== */
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", "Fira Code", monospace;
+
+  /* Glass morphism 参数 */
+  --glass-blur: 24px;
+  --glass-saturation: 180%;
+
+  /* 渐变系统 - 更丰富的渐变组合 */
+  --gradient-accent: linear-gradient(135deg, #8B5CF6 0%, #D946EF 50%, #F97316 100%);
+  --gradient-accent-soft: linear-gradient(135deg, #A78BFA 0%, #E879F9 100%);
+  --gradient-warm: linear-gradient(135deg, #F59E0B 0%, #EF4444 50%, #EC4899 100%);
+  --gradient-cool: linear-gradient(135deg, #06B6D4 0%, #3B82F6 50%, #8B5CF6 100%);
+  --gradient-green: linear-gradient(135deg, #10B981 0%, #06B6D4 100%);
+  --gradient-purple: linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #D946EF 100%);
+  --gradient-sunset: linear-gradient(135deg, #F97316 0%, #FB923C 50%, #FBBF24 100%);
+  --gradient-ocean: linear-gradient(135deg, #0EA5E9 0%, #06B6D4 50%, #14B8A6 100%);
+
+  /* 文字渐变 - 用于标题等 */
+  --gradient-text-primary: linear-gradient(135deg, #A78BFA 0%, #E879F9 50%, #FB923C 100%);
+  --gradient-text-cool: linear-gradient(135deg, #38BDF8 0%, #818CF8 100%);
+}
+
+/* ===== Dark Theme - 深邃蓝紫夜空 ===== */
+.dark {
+  /* 背景层次系统 - 带微妙蓝紫色调 */
+  --bg-base: #0A0B0F;
+  --bg-primary: #13141B;
+  --bg-secondary: #1A1C26;
+  --bg-elevated: #22242F;
+  --bg-hover: #2A2D3A;
+  --bg-active: #32354A;
+
+  /* 毛玻璃效果 - 更精致的参数 */
+  --glass-bg: rgba(26, 28, 38, 0.75);
+  --glass-bg-strong: rgba(34, 36, 47, 0.85);
+  --glass-border: rgba(139, 92, 246, 0.12);
+  --glass-border-subtle: rgba(255, 255, 255, 0.05);
+
+  /* 文字层次 - 温暖的灰度 */
+  --text-primary: #F1F3F9;
+  --text-secondary: #A1A8C1;
+  --text-tertiary: #6B7280;
+  --text-quaternary: #4B5563;
+
+  /* 强调色系统 - Violet to Fuchsia 渐变 */
+  --accent: #A78BFA;
+  --accent-hover: #C4B5FD;
+  --accent-active: #8B5CF6;
+  --accent-subtle: rgba(167, 139, 250, 0.15);
+  --accent-glow: rgba(167, 139, 250, 0.25);
+
+  /* 次级强调色 - 用于不同场景 */
+  --accent-secondary: #E879F9;
+  --accent-tertiary: #FB923C;
+
+  /* 状态色 - 更柔和的饱和度 */
+  --color-success: #34D399;
+  --color-success-bg: rgba(52, 211, 153, 0.12);
+  --color-warning: #FBBF24;
+  --color-warning-bg: rgba(251, 191, 36, 0.12);
+  --color-error: #F87171;
+  --color-error-bg: rgba(248, 113, 113, 0.12);
+  --color-info: #60A5FA;
+  --color-info-bg: rgba(96, 165, 250, 0.12);
+
+  /* 边框系统 - 多层次边框 */
+  --border-primary: rgba(167, 139, 250, 0.15);
+  --border-secondary: rgba(255, 255, 255, 0.06);
+  --border-tertiary: rgba(255, 255, 255, 0.03);
+  --border-focus: rgba(167, 139, 250, 0.5);
+
+  /* 阴影系统 - 深色模式下的多层次阴影 */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(139, 92, 246, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(139, 92, 246, 0.08);
+  --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.65), 0 4px 12px rgba(139, 92, 246, 0.1);
+  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.7), 0 8px 24px rgba(139, 92, 246, 0.12);
+  --shadow-2xl: 0 24px 64px rgba(0, 0, 0, 0.75), 0 12px 32px rgba(139, 92, 246, 0.15);
+
+  /* 特殊阴影 - 发光效果 */
+  --shadow-glow: 0 0 20px rgba(167, 139, 250, 0.3), 0 0 40px rgba(167, 139, 250, 0.15);
+  --shadow-glow-strong: 0 0 30px rgba(167, 139, 250, 0.4), 0 0 60px rgba(167, 139, 250, 0.2);
+
+  /* 叠加层 - 用于遮罩、模态框 */
+  --overlay-light: rgba(10, 11, 15, 0.5);
+  --overlay-medium: rgba(10, 11, 15, 0.7);
+  --overlay-heavy: rgba(10, 11, 15, 0.85);
+}
+
+/* ===== Light Theme - 温暖米白纸张 ===== */
+.light {
+  /* 背景层次系统 - 温暖的浅色调 */
+  --bg-base: #F8F9FC;
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F1F3F9;
+  --bg-elevated: #FFFFFF;
+  --bg-hover: #E8EBF4;
+  --bg-active: #DFE3EE;
+
+  /* 毛玻璃效果 */
+  --glass-bg: rgba(255, 255, 255, 0.8);
+  --glass-bg-strong: rgba(255, 255, 255, 0.92);
+  --glass-border: rgba(139, 92, 246, 0.15);
+  --glass-border-subtle: rgba(0, 0, 0, 0.06);
+
+  /* 文字层次 - 温暖的深色（WCAG 4.5:1 对比度） */
+  --text-primary: #0F172A;
+  --text-secondary: #334155;
+  --text-tertiary: #64748B;
+  --text-quaternary: #94A3B8;
+
+  /* 强调色系统 - 与深色主题保持一致 */
+  --accent: #8B5CF6;
+  --accent-hover: #7C3AED;
+  --accent-active: #6D28D9;
+  --accent-subtle: rgba(139, 92, 246, 0.1);
+  --accent-glow: rgba(139, 92, 246, 0.2);
+
+  /* 次级强调色 */
+  --accent-secondary: #D946EF;
+  --accent-tertiary: #F97316;
+
+  /* 状态色 */
+  --color-success: #10B981;
+  --color-success-bg: rgba(16, 185, 129, 0.1);
+  --color-warning: #F59E0B;
+  --color-warning-bg: rgba(245, 158, 11, 0.1);
+  --color-error: #EF4444;
+  --color-error-bg: rgba(239, 68, 68, 0.1);
+  --color-info: #3B82F6;
+  --color-info-bg: rgba(59, 130, 246, 0.1);
+
+  /* 边框系统 */
+  --border-primary: rgba(139, 92, 246, 0.2);
+  --border-secondary: rgba(0, 0, 0, 0.08);
+  --border-tertiary: rgba(0, 0, 0, 0.04);
+  --border-focus: rgba(139, 92, 246, 0.6);
+
+  /* 阴影系统 - 柔和的自然阴影 */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(139, 92, 246, 0.03);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(139, 92, 246, 0.04);
+  --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(139, 92, 246, 0.05);
+  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.1), 0 8px 24px rgba(139, 92, 246, 0.06);
+  --shadow-2xl: 0 24px 64px rgba(0, 0, 0, 0.12), 0 12px 32px rgba(139, 92, 246, 0.08);
+
+  /* 特殊阴影 - 发光效果 */
+  --shadow-glow: 0 0 20px rgba(139, 92, 246, 0.2), 0 0 40px rgba(139, 92, 246, 0.1);
+  --shadow-glow-strong: 0 0 30px rgba(139, 92, 246, 0.3), 0 0 60px rgba(139, 92, 246, 0.15);
+
+  /* 叠加层 */
+  --overlay-light: rgba(0, 0, 0, 0.3);
+  --overlay-medium: rgba(0, 0, 0, 0.5);
+  --overlay-heavy: rgba(0, 0, 0, 0.7);
+}
+
+/* ===== Shared Utilities ===== */
+
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  border: 1px solid var(--glass-border);
+}
+
+.glass-strong {
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.5)) saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.5)) saturate(var(--glass-saturation));
+  border: 1px solid var(--glass-border);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--accent-subtle);
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--text-tertiary);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  height: 20px;
+}
+input[type="range"]::-webkit-slider-track {
+  height: 4px;
+  background: var(--bg-hover);
+  border-radius: 2px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-top: -6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+  /* 24px 触控热区（透明边框扩展） */
+  border: 4px solid transparent;
+  background-clip: content-box;
+  box-sizing: content-box;
+}
+input[type="range"]:hover::-webkit-slider-track {
+  height: 6px;
+  background: var(--bg-active, var(--bg-hover));
+}
+input[type="range"]:hover::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  box-shadow: var(--shadow-glow);
+}
+input[type="range"]:active::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  box-shadow: var(--shadow-glow-strong);
+}
+
+/* ===== Animations ===== */
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; box-shadow: var(--shadow-glow); }
+  50% { opacity: 0.8; box-shadow: var(--shadow-glow-strong); }
+}
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out both;
+}
+.animate-slide-in-right {
+  animation: slide-in-right 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+.animate-spin-slow {
+  animation: spin-slow 8s linear infinite;
+}
+.animate-scale-in {
+  animation: scale-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Gradient text utilities */
+.text-gradient {
+  background: var(--gradient-text-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.text-gradient-cool {
+  background: var(--gradient-text-cool);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Stagger animation delays */
+.stagger-item:nth-child(1) { animation-delay: 0.06s; }
+.stagger-item:nth-child(2) { animation-delay: 0.12s; }
+.stagger-item:nth-child(3) { animation-delay: 0.18s; }
+.stagger-item:nth-child(4) { animation-delay: 0.24s; }
+
+/* Glow utilities */
+.glow { box-shadow: var(--shadow-glow); }
+.glow-strong { box-shadow: var(--shadow-glow-strong); }

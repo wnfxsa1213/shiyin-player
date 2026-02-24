@@ -1,0 +1,66 @@
+import { create } from 'zustand';
+import { saveSetting } from '@/lib/settings';
+
+export type VisualizerMode = 'bars' | 'wave' | 'circle';
+
+export interface ColorPreset {
+  name: string;
+  primary: string;
+  secondary: string;
+  particle: string;
+}
+
+export const COLOR_PRESETS: ColorPreset[] = [
+  { name: 'ocean', primary: '#A78BFA', secondary: '#38BDF8', particle: '#34D399' },
+  { name: 'sunset', primary: '#F97316', secondary: '#FBBF24', particle: '#F87171' },
+  { name: 'aurora', primary: '#34D399', secondary: '#06B6D4', particle: '#A78BFA' },
+  { name: 'neon', primary: '#D946EF', secondary: '#EC4899', particle: '#FBBF24' },
+  { name: 'mono', primary: '#F1F3F9', secondary: '#A1A8C1', particle: '#6B7280' },
+];
+
+interface VisualizerStore {
+  enabled: boolean;
+  mode: VisualizerMode;
+  showParticles: boolean;
+  colors: { primary: string; secondary: string; particle: string };
+  magnitudes: number[];
+  setEnabled: (v: boolean) => void;
+  setMode: (m: VisualizerMode) => void;
+  setShowParticles: (v: boolean) => void;
+  setColors: (c: { primary: string; secondary: string; particle: string }) => void;
+  applyPreset: (name: string) => void;
+  updateMagnitudes: (m: number[]) => void;
+}
+
+export const useVisualizerStore = create<VisualizerStore>((set) => ({
+  enabled: true,
+  mode: 'bars',
+  showParticles: true,
+  colors: COLOR_PRESETS[0],
+  magnitudes: new Array(64).fill(0),
+  setEnabled: (enabled) => {
+    set({ enabled });
+    saveSetting('visualizer.enabled', enabled).catch(console.error);
+  },
+  setMode: (mode) => {
+    set({ mode });
+    saveSetting('visualizer.mode', mode).catch(console.error);
+  },
+  setShowParticles: (showParticles) => {
+    set({ showParticles });
+    saveSetting('visualizer.showParticles', showParticles).catch(console.error);
+  },
+  setColors: (colors) => {
+    set({ colors });
+    saveSetting('visualizer.colors', colors).catch(console.error);
+  },
+  applyPreset: (name) => {
+    const preset = COLOR_PRESETS.find((p) => p.name === name);
+    if (preset) {
+      const colors = { primary: preset.primary, secondary: preset.secondary, particle: preset.particle };
+      set({ colors });
+      saveSetting('visualizer.colors', colors).catch(console.error);
+    }
+  },
+  updateMagnitudes: (magnitudes) => set({ magnitudes }),
+}));

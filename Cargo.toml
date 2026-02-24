@@ -1,0 +1,11 @@
+[workspace]
+members = [
+    "apps/rustplayer-tauri/src-tauri",
+    "crates/core",
+    "crates/player",
+    "crates/sources",
+    "crates/netease",
+    "crates/qqmusic",
+    "crates/cache",
+]
+resolver = "2"

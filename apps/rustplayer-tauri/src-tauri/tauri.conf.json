@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "拾音",
+  "version": "0.1.0",
+  "identifier": "com.shiyin.music",
+  "build": {
+    "beforeDevCommand": "npm run dev --prefix /home/zty/rust-music/apps/rustplayer-tauri/frontend",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build --prefix /home/zty/rust-music/apps/rustplayer-tauri/frontend",
+    "frontendDist": "../frontend/dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "拾音",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "decorations": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "plugins": {}
+}

@@ -1,0 +1,9 @@
+[package]
+name = "rustplayer-player"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rustplayer-core = { path = "../core" }
+gstreamer = "0.23"
+tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
