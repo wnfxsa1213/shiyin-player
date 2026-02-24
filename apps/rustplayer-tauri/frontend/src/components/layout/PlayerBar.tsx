@@ -6,7 +6,7 @@ import PlaybackProgress from '@/components/player/PlaybackProgress';
 import { Music, SkipBack, Play, Pause, SkipForward, Music2, Volume2, ListMusic } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-export default function PlayerBar({ onToggleLyrics, onToggleQueue }: { onToggleLyrics: () => void, onToggleQueue: () => void }) {
+export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }: { lyricsOpen: boolean, onToggleLyrics: () => void, onToggleQueue: () => void }) {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const state = usePlayerStore((s) => s.state);
   const volume = usePlayerStore((s) => s.volume);
@@ -37,7 +37,7 @@ export default function PlayerBar({ onToggleLyrics, onToggleQueue }: { onToggleL
       aria-label="播放控制"
     >
       {/* Spectrum background layer */}
-      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 pointer-events-none opacity-20 transition-all duration-700" aria-hidden="true">
+      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 pointer-events-none opacity-50 transition-all duration-700" aria-hidden="true">
         <SpectrumVisualizer width={centerWidth} height={60} />
       </div>
 
@@ -52,9 +52,10 @@ export default function PlayerBar({ onToggleLyrics, onToggleQueue }: { onToggleL
                   src={currentTrack.coverUrl}
                   alt=""
                   className={`w-full h-full shadow-sm object-cover transition-[border-radius] duration-500 ${isPlaying ? 'rounded-full' : 'rounded-lg'}`}
+                  style={{ opacity: lyricsOpen ? 0 : 1 }}
                 />
               ) : (
-                <motion.div layoutId={`cover-shared`} className={`w-full h-full bg-bg-secondary flex items-center justify-center transition-[border-radius] duration-500 ${isPlaying ? 'rounded-full' : 'rounded-lg'}`}>
+                <motion.div layoutId={`cover-shared`} className={`w-full h-full bg-bg-secondary flex items-center justify-center transition-[border-radius] duration-500 ${isPlaying ? 'rounded-full' : 'rounded-lg'}`} style={{ opacity: lyricsOpen ? 0 : 1 }}>
                   <Music size={20} strokeWidth={1.5} className="text-text-tertiary" />
                 </motion.div>
               )}

@@ -61,14 +61,14 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
   }, [isOpen]);
 
   return (
-    <AnimatePresence>
+    <AnimatePresence mode="wait">
       {isOpen && (
         <motion.div
-          initial={{ opacity: 0, y: '50px' }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: '50px' }}
-          transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-          className="fixed inset-0 bg-bg-base/90 backdrop-blur-3xl z-40 flex overflow-hidden border-l border-border-primary"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.3 }}
+          className="fixed inset-0 bg-bg-base/90 backdrop-blur-3xl z-[60] flex overflow-hidden border-l border-border-primary"
         >
           {/* Left Side: Shared Layout Album Cover */}
           <div className="w-1/2 flex items-center justify-center p-12">

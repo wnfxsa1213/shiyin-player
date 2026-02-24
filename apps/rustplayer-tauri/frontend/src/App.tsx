@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { LayoutGroup } from 'framer-motion';
 import { useUiStore } from '@/store/uiStore';
 import { usePlayerStore } from '@/store/playerStore';
 import { useVisualizerStore } from '@/store/visualizerStore';
@@ -131,22 +132,24 @@ export default function App() {
 
   return (
     <MemoryRouter>
-      <div className="flex h-screen bg-bg-base text-text-primary overflow-hidden pb-20">
-        <Sidebar />
-        <main className="relative flex-1 overflow-y-auto bg-bg-base" tabIndex={-1}>
-          <ErrorBoundary>
-            <Routes>
-              <Route path="/" element={<HomeView />} />
-              <Route path="/search" element={<SearchView />} />
-              <Route path="/settings" element={<SettingsView />} />
-              <Route path="/playlist/:source/:id" element={<PlaylistDetailView />} />
-            </Routes>
-          </ErrorBoundary>
-          <LyricsPanel isOpen={lyricsOpen} onClose={() => setLyricsOpen(false)} />
-          <QueuePanel isOpen={queueOpen} onClose={() => setQueueOpen(false)} />
-        </main>
-        <PlayerBar onToggleLyrics={() => setLyricsOpen(!lyricsOpen)} onToggleQueue={() => setQueueOpen(!queueOpen)} />
-      </div>
+      <LayoutGroup>
+        <div className="flex h-screen bg-bg-base text-text-primary overflow-hidden pb-20">
+          <Sidebar />
+          <main className="relative flex-1 overflow-y-auto bg-bg-base" tabIndex={-1}>
+            <ErrorBoundary>
+              <Routes>
+                <Route path="/" element={<HomeView />} />
+                <Route path="/search" element={<SearchView />} />
+                <Route path="/settings" element={<SettingsView />} />
+                <Route path="/playlist/:source/:id" element={<PlaylistDetailView />} />
+              </Routes>
+            </ErrorBoundary>
+            <LyricsPanel isOpen={lyricsOpen} onClose={() => setLyricsOpen(false)} />
+            <QueuePanel isOpen={queueOpen} onClose={() => setQueueOpen(false)} />
+          </main>
+          <PlayerBar lyricsOpen={lyricsOpen} onToggleLyrics={() => setLyricsOpen(!lyricsOpen)} onToggleQueue={() => setQueueOpen(!queueOpen)} />
+        </div>
+      </LayoutGroup>
       <ToastContainer />
     </MemoryRouter>
   );

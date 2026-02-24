@@ -1,7 +1,15 @@
+@property --accent {
+  syntax: '<color>';
+  initial-value: #8B5CF6;
+  inherits: true;
+}
+
 /* ===== Base defaults (fallback) ===== */
 :root {
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
   --font-mono: "SF Mono", "JetBrains Mono", "Fira Code", monospace;
+
+  transition: --accent 0.8s ease-in-out;
 
   /* Glass morphism 参数 */
   --glass-blur: 24px;
@@ -209,7 +217,13 @@ input[type="range"] {
 }
 input[type="range"]::-webkit-slider-track {
   height: 4px;
-  background: var(--bg-hover);
+  background: linear-gradient(
+    to right,
+    var(--accent) 0%,
+    var(--accent) var(--progress, 0%),
+    var(--bg-hover) var(--progress, 0%),
+    var(--bg-hover) 100%
+  );
   border-radius: 2px;
 }
 input[type="range"]::-webkit-slider-thumb {
@@ -228,7 +242,13 @@ input[type="range"]::-webkit-slider-thumb {
 }
 input[type="range"]:hover::-webkit-slider-track {
   height: 6px;
-  background: var(--bg-active, var(--bg-hover));
+  background: linear-gradient(
+    to right,
+    var(--accent) 0%,
+    var(--accent) var(--progress, 0%),
+    var(--bg-active, var(--bg-hover)) var(--progress, 0%),
+    var(--bg-active, var(--bg-hover)) 100%
+  );
 }
 input[type="range"]:hover::-webkit-slider-thumb {
   width: 16px;

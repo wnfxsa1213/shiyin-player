@@ -11,12 +11,25 @@ export default function SpectrumVisualizer({ width, height }: { width: number; h
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // DPR 适配，提升高分屏清晰度
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.scale(dpr, dpr);
+
     // 缓存主题色，避免在 60FPS 循环中引发 DOM 样式重排 (Layout Thrashing)
     let cachedAccent = '#8B5CF6';
     let frameCount = 0;
 
     const renderLoop = () => {
-      const magnitudes = useVisualizerStore.getState().magnitudes;
+      const { magnitudes, enabled } = useVisualizerStore.getState();
+
+      // enabled 门控：disabled 时清空 canvas 并停止 rAF
+      if (!enabled) {
+        ctx.clearRect(0, 0, width, height);
+        return;
+      }
+
       ctx.clearRect(0, 0, width, height);
 
       // 每 30 帧（约 0.5 秒）更新一次颜色，大幅降低 DOM API 调用开销
@@ -24,12 +37,11 @@ export default function SpectrumVisualizer({ width, height }: { width: number; h
         cachedAccent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#8B5CF6';
       }
 
-      if (magnitudes && magnitudes.length > 0) {
+      // 空数据门控：全为 0 时跳过绘制，降低 GPU 开销
+      if (magnitudes && magnitudes.length > 0 && magnitudes.some(v => v > 0)) {
         const barWidth = width / magnitudes.length;
-        
+
         ctx.fillStyle = cachedAccent;
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = cachedAccent;
 
         magnitudes.forEach((val, i) => {
           // 频域数据通常是 0~255
@@ -55,5 +67,13 @@ export default function SpectrumVisualizer({ width, height }: { width: number; h
     };
   }, [width, height]);
 
-  return <canvas ref={canvasRef} width={width} height={height} className="w-full h-full" />;
+  return (
+    <canvas
+      ref={canvasRef}
+      width={width}
+      height={height}
+      className="w-full h-full"
+      style={{ filter: 'drop-shadow(0 0 8px var(--accent))' }}
+    />
+  );
 }
