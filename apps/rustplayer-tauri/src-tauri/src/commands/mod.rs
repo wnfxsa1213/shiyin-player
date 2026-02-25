@@ -394,7 +394,33 @@ pub async fn open_login_window(
             let mut rx = rx;
             let mut login_detected = false;
 
+            // Essential cookie keys per source (only persist what's needed)
+            let essential_keys: &[&str] = match source {
+                MusicSourceId::Netease => &["MUSIC_U", "NMTID", "__csrf"],
+                MusicSourceId::Qqmusic => &["qqmusic_key", "Q_H_L", "qm_keyst"],
+            };
+
+            // Strong auth key: only this cookie proves login succeeded.
+            // Used by cookie probe to avoid false positives from tracking/csrf cookies.
+            let auth_probe_key: &str = match source {
+                MusicSourceId::Netease => "MUSIC_U",
+                MusicSourceId::Qqmusic => "qqmusic_key",
+            };
+
+            // Pre-allocate for probe closure (avoid per-tick allocation)
+            #[cfg(target_os = "linux")]
+            let probe_key_owned = auth_probe_key.to_string();
+
             loop {
+                // Strategy 2 (Linux): fire-and-forget cookie probe as a separate select branch.
+                // Avoids blocking the tick handler while waiting for webkit response.
+                #[cfg(target_os = "linux")]
+                let probe_fut = probe_cookies_webkit(
+                    &window_handle, &cookie_domain, &probe_key_owned,
+                );
+                #[cfg(not(target_os = "linux"))]
+                let probe_fut = std::future::pending::<bool>();
+
                 tokio::select! {
                     _ = interval.tick() => {
                         if closed.load(Ordering::SeqCst) {
@@ -409,16 +435,13 @@ pub async fn open_login_window(
                             break;
                         }
 
-                        // Inject JS: detect login via URL change OR DOM user-profile elements.
-                        // Covers both "just logged in" (URL redirect) and "already logged in" (page stays at /login but shows user info).
+                        // Strategy 1: Inject JS to detect login via URL/DOM heuristics.
                         let js = match source {
                             MusicSourceId::Netease => {
                                 concat!(
                                     "(function(){try{",
                                     "var h=window.location.href;",
-                                    // URL check: redirected away from login/passport pages
                                     "var urlOk=h.indexOf('music.163.com')!==-1&&h.indexOf('/login')===-1&&h.indexOf('passport')===-1;",
-                                    // DOM check: user avatar/profile visible (already logged in on login page)
                                     "var domOk=!!(document.querySelector('.head_pic,.m-user-avatar,.j-avatar')||document.querySelector('a[href*=\"/user/home\"]'));",
                                     "if(urlOk||domOk){window.location.href='http://__shiyin_cookie_cb__/?confirmed=1';}",
                                     "}catch(e){}})();"
@@ -427,15 +450,21 @@ pub async fn open_login_window(
                             MusicSourceId::Qqmusic => {
                                 concat!(
                                     "(function(){try{",
-                                    // DOM check: login elements gone AND user profile visible
-                                    "var noLogin=!document.querySelector('.js_login,.mod_login_tip,.login_btn');",
-                                    "var hasUser=!!document.querySelector('.js_user,.mod_profile,.top_login__link--user,.mod_header_login_info');",
-                                    "if(noLogin&&hasUser){window.location.href='http://__shiyin_cookie_cb__/?confirmed=1';}",
+                                    "var u=document.querySelector('.mod_header_login_info .js_user,.top_login__link--user,.mod_profile');",
+                                    "if(u){window.location.href='http://__shiyin_cookie_cb__/?confirmed=1';}",
                                     "}catch(e){}})();"
                                 )
                             }
                         };
                         let _ = window_handle.eval(js);
+                    }
+                    probed = probe_fut => {
+                        if probed {
+                            tracing::info!("cookie probe detected login for {source:?}");
+                            login_detected = true;
+                            break;
+                        }
+                        // probe returned false — will retry next iteration
                     }
                     result = &mut rx => {
                         if result.is_ok() {
@@ -454,12 +483,6 @@ pub async fn open_login_window(
             tokio::time::sleep(Duration::from_millis(500)).await;
 
             tracing::info!("login detected for {source:?}, extracting cookies");
-
-            // Essential cookie keys per source (only persist what's needed)
-            let essential_keys: &[&str] = match source {
-                MusicSourceId::Netease => &["MUSIC_U", "NMTID", "__csrf"],
-                MusicSourceId::Qqmusic => &["qqmusic_key", "Q_H_L", "qm_keyst"],
-            };
 
             let cookie_str = extract_cookies_platform(
                 &window_handle, &cookie_domain, essential_keys, source,
@@ -704,9 +727,8 @@ async fn extract_cookies_webkit(
                         let cookie_str = match result {
                             Ok(mut cookies) => {
                                 cookies.iter_mut()
-                                    .filter_map(|c: &mut soup::Cookie| {
+                                    .filter_map(|c| {
                                         let name = c.name()?;
-                                        // Only keep essential auth cookies
                                         if !keys.iter().any(|k| k == &name) {
                                             return None;
                                         }
@@ -747,6 +769,71 @@ async fn extract_cookies_webkit(
             String::new()
         }
     }
+}
+
+/// Linux-only: lightweight probe — checks if the strong auth cookie exists yet.
+/// Used in the polling loop to detect login without relying on page DOM.
+/// Only checks for a single definitive auth key to avoid false positives
+/// from tracking/csrf cookies that may exist before login.
+#[cfg(target_os = "linux")]
+async fn probe_cookies_webkit(
+    window: &tauri::WebviewWindow,
+    cookie_domain: &str,
+    auth_key: &str,
+) -> bool {
+    let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
+    let domain = cookie_domain.to_string();
+    let key = auth_key.to_string();
+    let tx = std::sync::Mutex::new(Some(tx));
+
+    let ok = window.with_webview(move |platform_wv| {
+        use webkit2gtk::*;
+
+        let webview: webkit2gtk::WebView = platform_wv.inner();
+        let dm = webview.website_data_manager();
+        let cm = dm.as_ref().and_then(|d| d.cookie_manager());
+        if let Some(cm) = cm {
+            let sender = tx.lock().ok().and_then(|mut g| g.take());
+            if let Some(sender) = sender {
+                cm.cookies(
+                    &domain,
+                    gio::Cancellable::NONE,
+                    move |result: Result<Vec<soup::Cookie>, glib::Error>| {
+                        let has_key = match result {
+                            Ok(mut cookies) => {
+                                cookies.iter_mut().any(|c| {
+                                    c.name()
+                                        .map(|n| n == key)
+                                        .unwrap_or(false)
+                                })
+                            }
+                            Err(e) => {
+                                tracing::debug!("cookie probe query error: {e}");
+                                false
+                            }
+                        };
+                        let _ = sender.send(has_key);
+                    },
+                );
+            }
+        } else {
+            tracing::debug!("cookie probe: no cookie manager available");
+            if let Some(sender) = tx.lock().ok().and_then(|mut g| g.take()) {
+                let _ = sender.send(false);
+            }
+        }
+    });
+
+    if let Err(e) = ok {
+        tracing::debug!("cookie probe with_webview failed: {e}");
+        return false;
+    }
+
+    tokio::time::timeout(Duration::from_millis(500), rx)
+        .await
+        .ok()
+        .and_then(|r| r.ok())
+        .unwrap_or(false)
 }
 
 // --- Cover color extraction (bypasses CORS) ---
