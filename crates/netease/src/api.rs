@@ -19,11 +19,39 @@ pub async fn search(
         "limit": query.limit.unwrap_or(30),
         "offset": query.offset.unwrap_or(0),
     });
-    let value = weapi_post(http, base_url, "/weapi/search/get", payload, cookie).await?;
+    // Try /weapi/cloudsearch/get/web first (richer metadata), fall back to /weapi/search/get
+    let (value, need_covers) = match weapi_post(http, base_url, "/weapi/cloudsearch/get/web", payload.clone(), cookie).await {
+        Ok(v) => (v, false),
+        Err(SourceError::Unauthorized) => {
+            log::info!("cloudsearch requires login, falling back to /weapi/search/get");
+            let v = weapi_post(http, base_url, "/weapi/search/get", payload, cookie).await?;
+            (v, true) // old endpoint lacks cover URLs
+        }
+        Err(e) => return Err(e),
+    };
     let Some(list) = value.pointer("/result/songs").and_then(|v| v.as_array()) else {
         return Ok(Vec::new());
     };
-    Ok(list.iter().filter_map(parse_song).collect())
+    let mut tracks: Vec<Track> = list.iter().filter_map(parse_song).collect();
+    // Old search endpoint doesn't return cover URLs; batch-fetch via song detail API
+    if need_covers && !tracks.is_empty() {
+        match song_detail_covers(http, base_url, &tracks, cookie).await {
+            Ok(covers) => {
+                log::info!("fetched {} cover URLs via song detail API", covers.len());
+                for track in &mut tracks {
+                    if track.cover_url.is_none() {
+                        if let Some(url) = covers.get(&track.id) {
+                            track.cover_url = Some(url.clone());
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!("failed to fetch cover URLs via song detail: {e}");
+            }
+        }
+    }
+    Ok(tracks)
 }
 
 pub async fn song_url(
@@ -81,6 +109,55 @@ pub async fn lyrics(
 
 // --- Internal helpers ---
 
+/// Batch-fetch cover URLs via /weapi/v3/song/detail (works without login)
+async fn song_detail_covers(
+    http: &reqwest::Client,
+    base_url: &str,
+    tracks: &[Track],
+    cookie: Option<&str>,
+) -> Result<HashMap<String, String>, SourceError> {
+    let c_arr: Vec<Value> = tracks.iter()
+        .map(|t| json!({"id": t.id.parse::<i64>().unwrap_or(0)}))
+        .collect();
+    let ids: Vec<i64> = tracks.iter()
+        .filter_map(|t| t.id.parse::<i64>().ok())
+        .collect();
+    let payload = json!({
+        "c": serde_json::to_string(&c_arr).unwrap_or_default(),
+        "ids": serde_json::to_string(&ids).unwrap_or_default(),
+    });
+    let value = weapi_post(http, base_url, "/weapi/v3/song/detail", payload, cookie).await?;
+    let mut map = HashMap::new();
+    if let Some(songs) = value.get("songs").and_then(|v| v.as_array()) {
+        for song in songs {
+            if let (Some(id), Some(pic)) = (
+                song.get("id").and_then(|v| v.as_i64()),
+                song.pointer("/al/picUrl").and_then(|v| v.as_str()),
+            ) {
+                map.insert(id.to_string(), pic.to_string());
+            }
+        }
+    }
+    Ok(map)
+}
+
+/// Get cover URL for a single track via song detail API
+pub async fn album_art(
+    http: &reqwest::Client,
+    base_url: &str,
+    track_id: &str,
+    cookie: Option<&str>,
+) -> Result<Option<String>, SourceError> {
+    let id: i64 = track_id.parse()
+        .map_err(|_| SourceError::InvalidResponse("invalid track id".into()))?;
+    let payload = json!({
+        "c": format!("[{{\"id\":{id}}}]"),
+        "ids": format!("[{id}]"),
+    });
+    let value = weapi_post(http, base_url, "/weapi/v3/song/detail", payload, cookie).await?;
+    Ok(value.pointer("/songs/0/al/picUrl").and_then(|v| v.as_str()).map(|s| s.to_string()))
+}
+
 async fn weapi_post(
     http: &reqwest::Client,
     base_url: &str,
@@ -96,11 +173,16 @@ async fn weapi_post(
     }
     let res = req.send().await.map_err(|e| SourceError::Network(e.to_string()))?;
     let status = res.status();
-    let value: Value = res.json().await.map_err(|e| SourceError::InvalidResponse(e.to_string()))?;
     if !status.is_success() {
-        return Err(SourceError::Network(format!("http {status}")));
+        let mut body = res.text().await.unwrap_or_default();
+        body.truncate(1024);
+        return Err(SourceError::Network(format!("http {status}: {body}")));
     }
+    let value: Value = res.json().await.map_err(|e| SourceError::InvalidResponse(e.to_string()))?;
     if let Some(code) = value.get("code").and_then(|v| v.as_i64()) {
+        if code == 50000005 || code == -462 {
+            return Err(SourceError::Unauthorized);
+        }
         if code != 200 {
             return Err(SourceError::InvalidResponse(format!("code {code}")));
         }
@@ -118,6 +200,10 @@ fn parse_song(song: &Value) -> Option<Track> {
     let album_node = song.get("al").or_else(|| song.get("album"));
     let album = album_node.and_then(|v| v.get("name")).and_then(|v| v.as_str()).unwrap_or("").to_string();
     let cover_url = album_node.and_then(|v| v.get("picUrl")).and_then(|v| v.as_str()).map(|s| s.to_string());
+    if cover_url.is_none() {
+        log::debug!("netease: song id={id} has no cover_url, album keys: {:?}",
+            album_node.and_then(|v| v.as_object()).map(|m| m.keys().cloned().collect::<Vec<_>>()));
+    }
     let duration_ms = song.get("dt").or_else(|| song.get("duration")).and_then(|v| v.as_u64()).unwrap_or(0);
 
     Some(Track {
@@ -170,7 +256,7 @@ pub async fn playlist_detail(
 ) -> Result<Playlist, SourceError> {
     let payload = json!({
         "id": playlist_id,
-        "n": 100000,
+        "n": 1000,
     });
     let value = weapi_post(http, base_url, "/weapi/v6/playlist/detail", payload, cookie).await?;
     let pl = value.get("playlist").ok_or_else(|| SourceError::NotFound)?;

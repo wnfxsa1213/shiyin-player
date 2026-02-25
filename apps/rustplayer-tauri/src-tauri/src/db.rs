@@ -1,57 +1,71 @@
 use std::path::PathBuf;
-use std::sync::Mutex;
-use rusqlite::Connection;
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
 use rustplayer_core::{LyricsLine, MusicSourceId, Track};
 
-const CACHE_TTL_SECS: i64 = 7 * 24 * 3600; // 7 days
+const CACHE_TTL_SECS: i64 = 24 * 3600; // 1 day
 
 pub struct Db {
-    conn: Mutex<Connection>,
+    pool: Pool<SqliteConnectionManager>,
 }
 
 impl Db {
     pub fn open(app_data_dir: PathBuf) -> Result<Self, String> {
         std::fs::create_dir_all(&app_data_dir).map_err(|e| e.to_string())?;
         let db_path = app_data_dir.join("rustplayer.db");
-        let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
-        let db = Self { conn: Mutex::new(conn) };
-        db.init_tables()?;
-        Ok(db)
+        let manager = SqliteConnectionManager::file(db_path)
+            .with_init(|c| c.execute_batch("PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL;"));
+        let pool = Pool::builder()
+            .max_size(8)
+            .build(manager)
+            .map_err(|e| e.to_string())?;
+
+        // Enable WAL mode and initialize tables
+        {
+            let conn = pool.get().map_err(|e| e.to_string())?;
+            conn.execute_batch("PRAGMA journal_mode=WAL;").map_err(|e| e.to_string())?;
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS tracks (
+                    id TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    artist TEXT NOT NULL,
+                    album TEXT NOT NULL,
+                    duration_ms INTEGER NOT NULL,
+                    cover_url TEXT,
+                    search_keyword TEXT NOT NULL,
+                    cached_at INTEGER NOT NULL,
+                    PRIMARY KEY (id, source, search_keyword)
+                );
+                CREATE INDEX IF NOT EXISTS idx_tracks_cached_at ON tracks(cached_at);
+                CREATE TABLE IF NOT EXISTS lyrics (
+                    track_id TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    lines_json TEXT NOT NULL,
+                    cached_at INTEGER NOT NULL,
+                    PRIMARY KEY (track_id, source)
+                );
+                CREATE INDEX IF NOT EXISTS idx_lyrics_cached_at ON lyrics(cached_at);",
+            ).map_err(|e| e.to_string())?;
+        }
+
+        Ok(Self { pool })
     }
 
-    fn init_tables(&self) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS tracks (
-                id TEXT NOT NULL,
-                source TEXT NOT NULL,
-                name TEXT NOT NULL,
-                artist TEXT NOT NULL,
-                album TEXT NOT NULL,
-                duration_ms INTEGER NOT NULL,
-                cover_url TEXT,
-                search_keyword TEXT NOT NULL,
-                cached_at INTEGER NOT NULL,
-                PRIMARY KEY (id, source, search_keyword)
-            );
-            CREATE INDEX IF NOT EXISTS idx_tracks_cached_at ON tracks(cached_at);
-            CREATE TABLE IF NOT EXISTS lyrics (
-                track_id TEXT NOT NULL,
-                source TEXT NOT NULL,
-                lines_json TEXT NOT NULL,
-                cached_at INTEGER NOT NULL,
-                PRIMARY KEY (track_id, source)
-            );
-            CREATE INDEX IF NOT EXISTS idx_lyrics_cached_at ON lyrics(cached_at);",
-        ).map_err(|e| e.to_string())?;
+    pub fn purge_expired(&self) -> Result<(), String> {
+        let conn = self.pool.get().map_err(|e| e.to_string())?;
+        let cutoff = now_epoch() - CACHE_TTL_SECS;
+        conn.execute("DELETE FROM tracks WHERE cached_at <= ?1", rusqlite::params![cutoff])
+            .map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM lyrics WHERE cached_at <= ?1", rusqlite::params![cutoff])
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
+
     pub fn cache_tracks(&self, source: MusicSourceId, keyword: &str, tracks: &[Track]) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.pool.get().map_err(|e| e.to_string())?;
         let now = now_epoch();
         let src = source_str(source);
-
-        // Use transaction for batch inserts
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         for t in tracks {
             tx.execute(
@@ -65,19 +79,13 @@ impl Db {
     }
 
     pub fn get_cached_tracks(&self, source: MusicSourceId, keyword: &str) -> Result<Option<Vec<Track>>, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.pool.get().map_err(|e| e.to_string())?;
         let cutoff = now_epoch() - CACHE_TTL_SECS;
         let src = source_str(source);
-
-        // Cleanup expired entries (limited to avoid long mutex hold)
-        let _ = conn.execute(
-            "DELETE FROM tracks WHERE rowid IN (SELECT rowid FROM tracks WHERE cached_at <= ?1 LIMIT 500)",
-            rusqlite::params![cutoff],
-        );
-
         let mut stmt = conn.prepare(
             "SELECT id, name, artist, album, duration_ms, cover_url FROM tracks
-             WHERE source = ?1 AND search_keyword = ?2 AND cached_at > ?3"
+             WHERE source = ?1 AND search_keyword = ?2 AND cached_at > ?3
+             ORDER BY rowid"
         ).map_err(|e| e.to_string())?;
         let rows = stmt.query_map(rusqlite::params![src, keyword, cutoff], |row| {
             Ok(Track {
@@ -98,7 +106,7 @@ impl Db {
     }
 
     pub fn cache_lyrics(&self, track_id: &str, source: MusicSourceId, lines: &[LyricsLine]) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.pool.get().map_err(|e| e.to_string())?;
         let json = serde_json::to_string(lines).map_err(|e| e.to_string())?;
         conn.execute(
             "INSERT OR REPLACE INTO lyrics (track_id, source, lines_json, cached_at) VALUES (?1, ?2, ?3, ?4)",
@@ -108,15 +116,8 @@ impl Db {
     }
 
     pub fn get_cached_lyrics(&self, track_id: &str, source: MusicSourceId) -> Result<Option<Vec<LyricsLine>>, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.pool.get().map_err(|e| e.to_string())?;
         let cutoff = now_epoch() - CACHE_TTL_SECS;
-
-        // Cleanup expired entries (limited to avoid long mutex hold)
-        let _ = conn.execute(
-            "DELETE FROM lyrics WHERE rowid IN (SELECT rowid FROM lyrics WHERE cached_at <= ?1 LIMIT 100)",
-            rusqlite::params![cutoff],
-        );
-
         let mut stmt = conn.prepare(
             "SELECT lines_json FROM lyrics WHERE track_id = ?1 AND source = ?2 AND cached_at > ?3"
         ).map_err(|e| e.to_string())?;

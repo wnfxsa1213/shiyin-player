@@ -84,6 +84,18 @@ cargo tauri build
 ./target/release/rustplayer-tauri
 ```
 
+## 日志与调试
+
+- 后端日志：使用 `tracing` 落盘到“应用数据目录”的 `logs/` 下，按天滚动，文件名形如 `rustplayer-backend.jsonl.YYYY-MM-DD`
+- 前端错误：`window.error` / `unhandledrejection` / React ErrorBoundary 会 best-effort 转存到后端日志（便于 release 环境排查）
+- 详细度控制：通过 `RUST_LOG` 调整，例如：
+
+```bash
+RUST_LOG=debug cargo tauri dev
+```
+
+- 端到端排查：每次 IPC 调用会生成并传递 `traceId`（开发模式下 toast 会附带 traceId），在日志里直接按 traceId 搜索即可定位整条链路
+
 ## 快捷键
 
 | 按键 | 功能 |

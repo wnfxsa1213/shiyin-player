@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 use rustplayer_core::{PlayerEvent, PlayerState};
 use rustplayer_player::Player;
 use tauri::{AppHandle, Emitter};
@@ -7,6 +8,7 @@ pub fn spawn_event_forwarder(app: AppHandle, player: &Arc<Player>) {
     let mut rx = player.subscribe();
 
     tauri::async_runtime::spawn(async move {
+        let mut last_spectrum_emit: Option<Instant> = None;
         loop {
             match rx.recv().await {
                 Ok(event) => {
@@ -21,6 +23,13 @@ pub fn spawn_event_forwarder(app: AppHandle, player: &Arc<Player>) {
                             }))
                         }
                         PlayerEvent::Spectrum { magnitudes } => {
+                            let now = Instant::now();
+                            if let Some(last) = last_spectrum_emit {
+                                if now.duration_since(last) < std::time::Duration::from_millis(66) {
+                                    continue; // throttle to ~15fps
+                                }
+                            }
+                            last_spectrum_emit = Some(now);
                             ("player://spectrum", serde_json::json!({
                                 "magnitudes": magnitudes,
                             }))

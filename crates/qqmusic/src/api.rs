@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use crate::sign::sign_request;
 use reqwest::header::COOKIE;
 use rustplayer_core::{LyricsLine, MusicSourceId, SearchQuery, SourceError, StreamInfo, Track};
 use serde_json::{json, Value};
@@ -17,7 +16,7 @@ pub async fn search(
     let page_num = if limit == 0 { 1 } else { (offset / limit) + 1 };
 
     let data = json!({
-        "comm": { "ct": 24, "cv": 0 },
+        "comm": { "ct": "19", "cv": "1859", "uin": "0" },
         "req": {
             "module": "music.search.SearchCgiService",
             "method": "DoSearchForQQMusicDesktop",
@@ -25,7 +24,8 @@ pub async fn search(
                 "query": query.keyword,
                 "num_per_page": limit,
                 "page_num": page_num,
-                "search_type": 0
+                "search_type": 0,
+                "grp": 1
             }
         }
     });
@@ -47,7 +47,7 @@ pub async fn song_url(
     cookie: Option<&str>,
 ) -> Result<StreamInfo, SourceError> {
     let data = json!({
-        "comm": { "ct": 24, "cv": 0 },
+        "comm": { "ct": "19", "cv": "1859", "uin": "0" },
         "req": {
             "module": "vkey.GetVkeyServer",
             "method": "CgiGetVkey",
@@ -110,9 +110,11 @@ async fn musicu_post(
     data: &Value,
     cookie: Option<&str>,
 ) -> Result<Value, SourceError> {
-    let sign = sign_request(data);
     let url = format!("{base_url}/cgi-bin/musicu.fcg");
-    let mut req = http.post(url).query(&[("format", "json"), ("sign", sign.as_str())]).json(data);
+    let mut req = http.post(url)
+        .query(&[("format", "json")])
+        .header("Referer", "https://y.qq.com/")
+        .json(data);
     if let Some(c) = cookie {
         req = req.header(COOKIE, c);
     }
@@ -124,16 +126,27 @@ async fn musicu_post(
 }
 
 fn parse_song(song: &Value) -> Option<Track> {
-    let mid = song.get("songmid").and_then(|v| v.as_str()).unwrap_or("");
+    // Handle both old format (songmid/songname) and new format (mid/name with nested objects)
+    let mid = song.get("songmid").and_then(|v| v.as_str())
+        .or_else(|| song.get("mid").and_then(|v| v.as_str()))
+        .unwrap_or("");
     if mid.is_empty() { return None; }
-    let name = song.get("songname").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let name = song.get("songname").and_then(|v| v.as_str())
+        .or_else(|| song.get("name").and_then(|v| v.as_str()))
+        .unwrap_or("").to_string();
     let artists = song.get("singer")
         .and_then(|v| v.as_array())
         .map(|arr| arr.iter().filter_map(|a| a.get("name").and_then(|v| v.as_str())).collect::<Vec<_>>().join(" / "))
         .unwrap_or_else(|| "Unknown".into());
-    let album = song.get("albumname").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    // Old format: albumname (string), New format: album.name (nested)
+    let album = song.get("albumname").and_then(|v| v.as_str())
+        .or_else(|| song.get("album").and_then(|v| v.get("name")).and_then(|v| v.as_str()))
+        .unwrap_or("").to_string();
     let duration_ms = song.get("interval").and_then(|v| v.as_u64()).unwrap_or(0) * 1000;
-    let cover_url = song.get("albummid").and_then(|v| v.as_str())
+    // Old format: albummid (string), New format: album.mid (nested)
+    let album_mid = song.get("albummid").and_then(|v| v.as_str())
+        .or_else(|| song.get("album").and_then(|v| v.get("mid")).and_then(|v| v.as_str()));
+    let cover_url = album_mid
         .map(|mid| format!("https://y.qq.com/music/photo_new/T002R300x300M000{mid}.jpg"));
 
     Some(Track {

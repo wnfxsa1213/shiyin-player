@@ -3,7 +3,9 @@
 mod commands;
 mod db;
 mod events;
+mod logging;
 mod store;
+mod trace_ctx;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,56 +18,11 @@ use rustplayer_cache::SearchCache;
 use tauri::Manager;
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .format_timestamp_millis()
-        .init();
-
-    let player = Player::new().unwrap_or_else(|e| {
-        log::error!("failed to initialize audio player: {e}");
-        std::process::exit(1);
-    });
-    let player = Arc::new(player);
-    let mut registry = SourceRegistry::new();
-    registry.register(Arc::new(NeteaseClient::new()));
-    registry.register(Arc::new(QqMusicClient::new()));
-    let registry = Arc::new(registry);
-    let cache = Arc::new(SearchCache::new());
-
-    // Shared reqwest client for cover image fetching (connection pool reuse)
-    let cover_http = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(3))
-        .timeout(Duration::from_secs(8))
-        .redirect(reqwest::redirect::Policy::custom(|attempt| {
-            // Allow up to 3 redirects, but only to whitelisted cover CDN domains
-            if attempt.previous().len() >= 3 {
-                return attempt.stop();
-            }
-            let url = attempt.url();
-            let host = match url.host_str() {
-                Some(h) => h,
-                None => return attempt.stop(),
-            };
-            const ALLOWED: &[&str] = &[
-                "music.126.net", "p1.music.126.net", "p2.music.126.net",
-                "p3.music.126.net", "p4.music.126.net",
-                "y.gtimg.cn", "imgcache.qq.com", "y.qq.com", "qqmusic.qq.com",
-            ];
-            let ok = ALLOWED.iter().any(|a| host == *a || host.ends_with(&format!(".{a}")));
-            if ok { attempt.follow() } else { attempt.stop() }
-        }))
-        .build()
-        .expect("failed to build cover http client");
-
-    let player_for_events = player.clone();
-    let registry_for_setup = registry.clone();
+    let ctx = tauri::generate_context!();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
-        .manage(player)
-        .manage(registry)
-        .manage(cache)
-        .manage(cover_http)
         .invoke_handler(tauri::generate_handler![
             commands::search_music,
             commands::play_track,
@@ -75,40 +32,121 @@ fn main() {
             commands::get_lyrics,
             commands::login,
             commands::logout,
+            commands::open_login_window,
+            commands::check_login_status,
             commands::get_user_playlists,
             commands::get_playlist_detail,
             commands::extract_cover_color,
+            commands::client_log,
         ])
-        .setup(move |app| {
-            events::spawn_event_forwarder(app.handle().clone(), &player_for_events);
-
-            // Initialize SQLite cache
+        .setup(|app| {
+            // Resolve app data dir first; logging needs it for file output.
             let app_data_dir = app.path().app_data_dir().unwrap_or_else(|e| {
-                log::error!("failed to resolve app data directory: {e}");
+                eprintln!("failed to resolve app data directory: {e}");
                 std::process::exit(1);
             });
+
+            logging::init(&app_data_dir).unwrap_or_else(|e| {
+                eprintln!("failed to initialize logging: {e}");
+                std::process::exit(1);
+            });
+
+            let player = Arc::new(Player::new().unwrap_or_else(|e| {
+                tracing::error!("failed to initialize audio player: {e}");
+                std::process::exit(1);
+            }));
+
+            let mut registry = SourceRegistry::new();
+            registry.register(Arc::new(NeteaseClient::new().unwrap_or_else(|e| {
+                tracing::error!("failed to create netease client: {e}");
+                std::process::exit(1);
+            })));
+            registry.register(Arc::new(QqMusicClient::new().unwrap_or_else(|e| {
+                tracing::error!("failed to create qqmusic client: {e}");
+                std::process::exit(1);
+            })));
+            let registry = Arc::new(registry);
+
+            let cache = Arc::new(SearchCache::new());
+
+            // Shared reqwest client for cover image fetching (connection pool reuse)
+            let cover_http = reqwest::Client::builder()
+                .connect_timeout(Duration::from_secs(3))
+                .timeout(Duration::from_secs(8))
+                .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                    // Allow up to 3 redirects, but only to whitelisted cover CDN domains
+                    if attempt.previous().len() >= 3 {
+                        return attempt.stop();
+                    }
+                    let url = attempt.url();
+                    let host = match url.host_str() {
+                        Some(h) => h,
+                        None => return attempt.stop(),
+                    };
+                    const ALLOWED: &[&str] = &[
+                        "music.126.net", "p1.music.126.net", "p2.music.126.net",
+                        "p3.music.126.net", "p4.music.126.net",
+                        "y.gtimg.cn", "imgcache.qq.com", "y.qq.com", "qqmusic.qq.com",
+                    ];
+                    let ok = ALLOWED.iter().any(|a| host == *a || host.ends_with(&format!(".{a}")));
+                    if ok { attempt.follow() } else { attempt.stop() }
+                }))
+                .build()
+                .unwrap_or_else(|e| {
+                    tracing::error!("failed to build cover http client: {e}");
+                    std::process::exit(1);
+                });
+
+            app.manage(player.clone());
+            app.manage(registry.clone());
+            app.manage(cache);
+            app.manage(cover_http);
+
+            events::spawn_event_forwarder(app.handle().clone(), &player);
             let database = db::Db::open(app_data_dir).unwrap_or_else(|e| {
-                log::error!("failed to open SQLite database: {e}");
+                tracing::error!("failed to open SQLite database: {e}");
                 std::process::exit(1);
             });
-            app.manage(Arc::new(database));
+            let database = Arc::new(database);
+            app.manage(database.clone());
+
+            // Periodic cache cleanup (hourly, with immediate first run)
+            let db_for_cleanup = database.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut ticker = tokio::time::interval(Duration::from_secs(3600));
+                loop {
+                    ticker.tick().await;
+                    let db = db_for_cleanup.clone();
+                    match tokio::task::spawn_blocking(move || db.purge_expired()).await {
+                        Ok(Ok(())) => tracing::info!("periodic cache cleanup completed"),
+                        Ok(Err(e)) => tracing::warn!("periodic cache cleanup failed: {e}"),
+                        Err(e) => tracing::warn!("periodic cache cleanup task panicked: {e}"),
+                    }
+                }
+            });
 
             // Restore cookies on startup
-            let registry_clone = registry_for_setup.clone();
+            let registry_clone = registry.clone();
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 for source_id in [MusicSourceId::Netease, MusicSourceId::Qqmusic] {
-                    if let Ok(Some(cookie)) = store::load_cookie(&app_handle, source_id) {
-                        if let Some(src) = registry_clone.get(source_id) {
-                            let creds = Credentials::Cookie { cookie };
-                            let _ = src.login(creds).await;
+                    match store::load_cookie(&app_handle, source_id) {
+                        Ok(Some(cookie)) => {
+                            if let Some(src) = registry_clone.get(source_id) {
+                                let creds = Credentials::Cookie { cookie };
+                                if let Err(e) = src.login(creds).await {
+                                    tracing::warn!("restore cookie login failed for {source_id:?}: {e}");
+                                }
+                            }
                         }
+                        Ok(None) => {}
+                        Err(e) => tracing::warn!("load_cookie failed for {source_id:?}: {e}"),
                     }
                 }
             });
 
             Ok(())
         })
-        .run(tauri::generate_context!())
+        .run(ctx)
         .expect("error running tauri application");
 }

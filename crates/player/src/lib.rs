@@ -6,9 +6,9 @@ use rustplayer_core::{PlayerCommand, PlayerError, PlayerEvent, PlayerState, Stre
 use tokio::sync::{broadcast, mpsc};
 
 pub struct Player {
-    cmd_tx: mpsc::Sender<PlayerCommand>,
+    cmd_tx: Option<mpsc::Sender<PlayerCommand>>,
     event_tx: broadcast::Sender<PlayerEvent>,
-    _thread: std::thread::JoinHandle<()>,
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Player {
@@ -27,9 +27,9 @@ impl Player {
             .map_err(|e| PlayerError::Internal(e.to_string()))?;
 
         Ok(Self {
-            cmd_tx,
+            cmd_tx: Some(cmd_tx),
             event_tx,
-            _thread: handle,
+            thread: Some(handle),
         })
     }
 
@@ -38,14 +38,27 @@ impl Player {
     }
 
     pub async fn send(&self, cmd: PlayerCommand) -> Result<(), PlayerError> {
-        self.cmd_tx.send(cmd).await.map_err(|_| PlayerError::ChannelClosed)
+        self.cmd_tx.as_ref().ok_or(PlayerError::ChannelClosed)?
+            .send(cmd).await.map_err(|_| PlayerError::ChannelClosed)
     }
 }
 
 impl Drop for Player {
     fn drop(&mut self) {
-        // Close the command channel to signal the engine thread to exit
-        // The thread will exit when cmd_rx.recv() returns None
+        // Drop cmd_tx to close the channel, signaling the engine thread to exit
+        self.cmd_tx.take();
+        if let Some(handle) = self.thread.take() {
+            // Use a helper thread + channel to implement a timeout join,
+            // avoiding indefinite blocking if GStreamer hangs.
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = handle.join();
+                let _ = tx.send(());
+            });
+            if rx.recv_timeout(Duration::from_secs(3)).is_err() {
+                log::warn!("player engine thread did not exit within 3s, abandoning join");
+            }
+        }
     }
 }
 
@@ -181,6 +194,15 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
             match msg.view() {
                 gst::MessageView::Error(e) => {
                     let detail = format!("{}{}", e.error(), e.debug().map(|d| format!(" ({d})")).unwrap_or_default());
+                    if let Some(track) = &eng.current_track {
+                        log::error!(
+                            "gstreamer pipeline error (track id={}, source={:?}): {detail}",
+                            track.id,
+                            track.source
+                        );
+                    } else {
+                        log::error!("gstreamer pipeline error: {detail}");
+                    }
                     emit(tx, PlayerEvent::Error { error: PlayerError::Pipeline(detail) });
                     teardown(eng);
                     set_state(eng, PlayerState::Stopped, tx);
