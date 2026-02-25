@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { usePlayerStore } from '@/store/playerStore';
+import { useToastStore } from '@/store/toastStore';
 import { ipc } from '@/lib/ipc';
 import ParticleSystem from '@/components/player/ParticleSystem';
 import { X, Music } from 'lucide-react';
@@ -30,7 +31,12 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
     let active = true;
     ipc.getLyrics(currentTrack.id, currentTrack.source)
       .then((data) => { if (active) setLyrics(data); })
-      .catch(() => { if (active) setLyrics([]); });
+      .catch((err) => {
+        if (active) {
+          setLyrics([]);
+          useToastStore.getState().addToast('error', `歌词加载失败: ${err}`);
+        }
+      });
     return () => { active = false; };
   }, [isOpen, currentTrack?.id, currentTrack?.source]);
 

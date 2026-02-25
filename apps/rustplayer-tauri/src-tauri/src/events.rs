@@ -30,11 +30,11 @@ pub fn spawn_event_forwarder(app: AppHandle, player: &Arc<Player>) {
                         }
                     };
                     if let Err(e) = app.emit(channel, payload) {
-                        eprintln!("failed to emit {channel}: {e}");
+                        log::warn!("failed to emit {channel}: {e}");
                     }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    eprintln!("event forwarder lagged, skipped {n} events");
+                    log::warn!("event forwarder lagged, skipped {n} events");
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     break;

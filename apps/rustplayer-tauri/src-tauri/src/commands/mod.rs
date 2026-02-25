@@ -46,8 +46,8 @@ pub async fn search_music(
                 results.extend(cached);
                 continue;
             }
-            Ok(Err(e)) => eprintln!("db cache read error for {sid:?}: {e}"),
-            Err(e) => eprintln!("spawn_blocking join error: {e}"),
+            Ok(Err(e)) => log::warn!("db cache read error for {sid:?}: {e}"),
+            Err(e) => log::warn!("spawn_blocking join error: {e}"),
             _ => {}
         }
         // L3: API
@@ -64,7 +64,7 @@ pub async fn search_music(
             }
             Err(e) => {
                 let msg = format!("{}: {e}", src.name());
-                eprintln!("search error from {msg}");
+                log::warn!("search error: {msg}");
                 errors.push(msg);
             }
         }
@@ -123,8 +123,8 @@ pub async fn get_lyrics(
         db_ref.get_cached_lyrics(&tid, source)
     }).await {
         Ok(Ok(Some(cached))) => return Ok(cached),
-        Ok(Err(e)) => eprintln!("db lyrics cache read error: {e}"),
-        Err(e) => eprintln!("spawn_blocking join error: {e}"),
+        Ok(Err(e)) => log::warn!("db lyrics cache read error: {e}"),
+        Err(e) => log::warn!("spawn_blocking join error: {e}"),
         _ => {}
     }
     let src = registry.get(source).ok_or("source not found")?;
@@ -151,7 +151,7 @@ pub async fn login(
     // Persist cookie if login succeeded (only for Cookie credentials)
     if let Credentials::Cookie { cookie } = &credentials {
         if let Err(e) = store::save_cookie(&app, source, cookie) {
-            eprintln!("failed to persist cookie for {source:?}: {e}");
+            log::error!("failed to persist cookie for {source:?}: {e}");
         }
     }
 
@@ -182,7 +182,7 @@ pub async fn get_user_playlists(
             Ok(playlists) => results.extend(playlists),
             Err(e) => {
                 let msg = format!("{}: {e}", src.name());
-                eprintln!("playlist error from {msg}");
+                log::warn!("playlist error: {msg}");
                 errors.push(msg);
             }
         }
@@ -224,7 +224,8 @@ const COVER_DOMAIN_ALLOWLIST: &[&str] = &[
 const MAX_COVER_BYTES: usize = 2 * 1024 * 1024; // 2MB
 
 fn is_allowed_cover_url(url: &reqwest::Url) -> bool {
-    if url.scheme() != "https" {
+    // Allow both http and https for whitelisted CDN domains (Netease CDN uses http)
+    if url.scheme() != "https" && url.scheme() != "http" {
         return false;
     }
     let host = match url.host_str() {
@@ -238,6 +239,15 @@ fn is_allowed_cover_url(url: &reqwest::Url) -> bool {
     COVER_DOMAIN_ALLOWLIST.iter().any(|allowed| {
         host == *allowed || host.ends_with(&format!(".{allowed}"))
     })
+}
+
+/// Upgrade http cover URLs to https (Netease CDN supports both)
+fn upgrade_cover_url(url: &str) -> String {
+    if url.starts_with("http://") {
+        format!("https://{}", &url[7..])
+    } else {
+        url.to_string()
+    }
 }
 
 fn is_image_magic(bytes: &[u8]) -> bool {
@@ -279,6 +289,15 @@ fn rgb_to_hsl(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
 }
 
 fn extract_dominant_hsl(img_bytes: &[u8]) -> Option<[f64; 3]> {
+    // Validate image dimensions before full decode (prevent decompression bombs)
+    let reader = image::ImageReader::new(std::io::Cursor::new(img_bytes))
+        .with_guessed_format().ok()?;
+    let (w, h) = reader.into_dimensions().ok()?;
+    if w > 8192 || h > 8192 {
+        log::warn!("cover image too large: {w}x{h}");
+        return None;
+    }
+
     let img = image::load_from_memory(img_bytes).ok()?;
     let thumb = img.resize_exact(20, 20, image::imageops::FilterType::Triangle);
     let rgb = thumb.to_rgb8();
@@ -317,7 +336,8 @@ pub async fn extract_cover_color(
     url: String,
     http: State<'_, reqwest::Client>,
 ) -> Result<[f64; 3], String> {
-    let parsed = reqwest::Url::parse(&url).map_err(|e| format!("invalid url: {e}"))?;
+    let upgraded = upgrade_cover_url(&url);
+    let parsed = reqwest::Url::parse(&upgraded).map_err(|e| format!("invalid url: {e}"))?;
     if !is_allowed_cover_url(&parsed) {
         return Err("url not in cover domain allowlist".into());
     }
@@ -338,10 +358,17 @@ pub async fn extract_cover_color(
     }
 
     // Stream body with size limit
-    let bytes = resp.bytes().await.map_err(|e| format!("read body: {e}"))?;
-    if bytes.len() > MAX_COVER_BYTES {
-        return Err("cover image too large".into());
+    use futures_util::StreamExt;
+    let mut stream = resp.bytes_stream();
+    let mut buf = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("read body: {e}"))?;
+        buf.extend_from_slice(&chunk);
+        if buf.len() > MAX_COVER_BYTES {
+            return Err("cover image too large".into());
+        }
     }
+    let bytes = bytes::Bytes::from(buf);
 
     // Magic bytes sniff
     if !is_image_magic(&bytes) {

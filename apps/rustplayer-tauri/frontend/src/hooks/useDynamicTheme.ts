@@ -79,7 +79,8 @@ export function useDynamicTheme() {
       }
       colorCache.set(url, [h, s, l]);
       applyTheme(h, s, l);
-    }).catch(() => {
+    }).catch((err) => {
+      console.warn('[useDynamicTheme] color extraction failed:', err);
       applyTheme(DEFAULT_H, DEFAULT_S, DEFAULT_L);
     });
   }, [currentTrack?.coverUrl]);

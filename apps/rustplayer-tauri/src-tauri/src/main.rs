@@ -16,8 +16,12 @@ use rustplayer_cache::SearchCache;
 use tauri::Manager;
 
 fn main() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .format_timestamp_millis()
+        .init();
+
     let player = Player::new().unwrap_or_else(|e| {
-        eprintln!("fatal: failed to initialize audio player: {e}");
+        log::error!("failed to initialize audio player: {e}");
         std::process::exit(1);
     });
     let player = Arc::new(player);
@@ -31,7 +35,24 @@ fn main() {
     let cover_http = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(3))
         .timeout(Duration::from_secs(8))
-        .redirect(reqwest::redirect::Policy::limited(3))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            // Allow up to 3 redirects, but only to whitelisted cover CDN domains
+            if attempt.previous().len() >= 3 {
+                return attempt.stop();
+            }
+            let url = attempt.url();
+            let host = match url.host_str() {
+                Some(h) => h,
+                None => return attempt.stop(),
+            };
+            const ALLOWED: &[&str] = &[
+                "music.126.net", "p1.music.126.net", "p2.music.126.net",
+                "p3.music.126.net", "p4.music.126.net",
+                "y.gtimg.cn", "imgcache.qq.com", "y.qq.com", "qqmusic.qq.com",
+            ];
+            let ok = ALLOWED.iter().any(|a| host == *a || host.ends_with(&format!(".{a}")));
+            if ok { attempt.follow() } else { attempt.stop() }
+        }))
         .build()
         .expect("failed to build cover http client");
 
@@ -63,11 +84,11 @@ fn main() {
 
             // Initialize SQLite cache
             let app_data_dir = app.path().app_data_dir().unwrap_or_else(|e| {
-                eprintln!("fatal: failed to resolve app data directory: {e}");
+                log::error!("failed to resolve app data directory: {e}");
                 std::process::exit(1);
             });
             let database = db::Db::open(app_data_dir).unwrap_or_else(|e| {
-                eprintln!("fatal: failed to open SQLite database: {e}");
+                log::error!("failed to open SQLite database: {e}");
                 std::process::exit(1);
             });
             app.manage(Arc::new(database));

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { ipc } from '@/lib/ipc';
 import { saveSetting } from '@/lib/settings';
+import { useToastStore } from '@/store/toastStore';
 
 export interface Track {
   id: string;
@@ -121,7 +122,10 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     const { queue } = get();
     if (index >= 0 && index < queue.length) {
       const track = queue[index];
-      ipc.playTrack(track).catch(console.error);
+      ipc.playTrack(track).catch((err) => {
+        useToastStore.getState().addToast('error', `播放失败: ${err}`);
+        set({ state: 'idle' });
+      });
       set((s) => ({
         queueIndex: index,
         currentTrack: track,

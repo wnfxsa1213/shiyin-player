@@ -21,7 +21,7 @@ impl Player {
             .name("gstreamer-engine".into())
             .spawn(move || {
                 if let Err(e) = engine_loop(cmd_rx, tx) {
-                    eprintln!("player engine error: {e}");
+                    log::error!("player engine error: {e}");
                 }
             })
             .map_err(|e| PlayerError::Internal(e.to_string()))?;

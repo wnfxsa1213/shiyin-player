@@ -24,9 +24,10 @@ export default function SpectrumVisualizer({ width, height }: { width: number; h
     const renderLoop = () => {
       const { magnitudes, enabled } = useVisualizerStore.getState();
 
-      // enabled 门控：disabled 时清空 canvas 并停止 rAF
+      // Keep rAF alive but skip drawing when disabled (matches ParticleSystem pattern)
       if (!enabled) {
         ctx.clearRect(0, 0, width, height);
+        animationRef.current = requestAnimationFrame(renderLoop);
         return;
       }
 

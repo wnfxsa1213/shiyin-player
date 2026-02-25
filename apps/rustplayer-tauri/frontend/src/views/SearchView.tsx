@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ipc } from '@/lib/ipc';
 import { Track } from '@/store/playerStore';
+import { useToastStore } from '@/store/toastStore';
 import VirtualTrackList from '@/components/common/VirtualTrackList';
 import { Search, SearchX, Music } from 'lucide-react';
 
@@ -22,7 +23,9 @@ export default function SearchView() {
     setLoading(true);
     ipc.searchMusic(debounced, source === 'all' ? undefined : source)
       .then((r) => { if (active) setResults(r); })
-      .catch(console.error)
+      .catch((err) => {
+        if (active) useToastStore.getState().addToast('error', `搜索失败: ${err}`);
+      })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [debounced, source]);

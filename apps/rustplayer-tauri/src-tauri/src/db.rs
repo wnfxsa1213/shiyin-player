@@ -92,7 +92,7 @@ impl Db {
         }).map_err(|e| e.to_string())?;
         let tracks: Vec<Track> = rows.filter_map(|r| match r {
             Ok(t) => Some(t),
-            Err(e) => { eprintln!("db: corrupt track row: {e}"); None }
+            Err(e) => { log::warn!("db: corrupt track row: {e}"); None }
         }).collect();
         if tracks.is_empty() { Ok(None) } else { Ok(Some(tracks)) }
     }
@@ -126,7 +126,7 @@ impl Db {
         ) {
             Ok(v) => Some(v),
             Err(rusqlite::Error::QueryReturnedNoRows) => None,
-            Err(e) => { eprintln!("db: lyrics query error: {e}"); None }
+            Err(e) => { log::warn!("db: lyrics query error: {e}"); None }
         };
         match result {
             Some(json) => {
