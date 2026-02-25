@@ -279,8 +279,7 @@ export default function SettingsView() {
             <div
               id="advanced-cookie-section"
               role="region"
-              // @ts-expect-error inert is valid HTML but not yet in React types
-              inert={!showAdvanced ? '' : undefined}
+              inert={!showAdvanced || undefined}
               className={`grid transition-all duration-300 ${showAdvanced ? 'grid-rows-[1fr] mt-3' : 'grid-rows-[0fr]'}`}
             >
               <div className="overflow-hidden">
