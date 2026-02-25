@@ -1,5 +1,6 @@
 import { Component, type ReactNode, type ErrorInfo } from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { ipc } from '@/lib/ipc';
 
 interface Props {
   children: ReactNode;
@@ -19,6 +20,11 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('ErrorBoundary caught:', error, info);
+    const detail = [
+      error?.stack ? `stack:\n${error.stack}` : '',
+      info?.componentStack ? `componentStack:\n${info.componentStack}` : '',
+    ].filter(Boolean).join('\n\n');
+    ipc.clientLog('error', `ErrorBoundary caught: ${error?.message ?? String(error)}\n\n${detail}`);
   }
 
   render() {
@@ -28,7 +34,7 @@ export default class ErrorBoundary extends Component<Props, State> {
           <AlertTriangle size={48} strokeWidth={1} className="text-warning opacity-60" />
           <p className="text-text-secondary text-sm">页面出现了问题</p>
           <p className="text-text-tertiary text-xs max-w-md text-center">
-            {this.state.error?.message}
+            发生了意外错误，请尝试重试
           </p>
           <button
             onClick={() => this.setState({ hasError: false, error: null })}

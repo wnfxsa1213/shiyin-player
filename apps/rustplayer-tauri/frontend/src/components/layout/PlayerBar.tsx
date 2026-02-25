@@ -12,9 +12,15 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
   const volume = usePlayerStore((s) => s.volume);
   const setVolume = usePlayerStore((s) => s.setVolume);
   const queue = usePlayerStore((s) => s.queue);
-  
+  const [coverFailed, setCoverFailed] = useState(false);
+
   const centerRef = useRef<HTMLDivElement>(null);
   const [centerWidth, setCenterWidth] = useState(600);
+
+  // Reset cover error state when track changes
+  useEffect(() => {
+    setCoverFailed(false);
+  }, [currentTrack?.id, currentTrack?.source]);
 
   useEffect(() => {
     if (!centerRef.current) return;
@@ -49,7 +55,7 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
           <>
             <button className="relative z-50 group w-12 h-12 flex-shrink-0 bg-transparent border-0 p-0 cursor-pointer" onClick={onToggleLyrics} aria-label="展开歌词">
               {!lyricsOpen && (
-                currentTrack.coverUrl ? (
+                currentTrack.coverUrl && !coverFailed ? (
                   <motion.img
                     layout
                     layoutId="cover-shared"
@@ -57,6 +63,7 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
                     alt=""
                     className={`w-full h-full shadow-sm object-cover transition-[border-radius] duration-500 ${isPlaying ? 'rounded-full' : 'rounded-lg'}`}
                     transition={{ layout: { type: 'spring', stiffness: 200, damping: 28 } }}
+                    onError={() => setCoverFailed(true)}
                   />
                 ) : (
                   <motion.div

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { ipc } from '@/lib/ipc';
 import { saveSetting } from '@/lib/settings';
 import { useToastStore } from '@/store/toastStore';
+import { sanitizeError } from '@/lib/errorMessages';
 
 export interface Track {
   id: string;
@@ -51,6 +52,8 @@ function generateShuffleOrder(length: number): number[] {
   }
   return order;
 }
+
+let playSeq = 0;
 
 export const usePlayerStore = create<PlayerStore>((set, get) => ({
   currentTrack: null,
@@ -111,7 +114,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     }
     set({ queue: newQueue, queueIndex: newIndex });
   },
-  clearQueue: () => set({ queue: [], queueIndex: -1, shuffleOrder: [] }),
+  clearQueue: () => { ++playSeq; set({ queue: [], queueIndex: -1, shuffleOrder: [], currentTrack: null, state: 'idle' }); },
   setPlayMode: (mode) => set((state) => ({
     playMode: mode,
     shuffleOrder: mode === 'shuffle' && state.queue.length > 0
@@ -122,8 +125,10 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     const { queue } = get();
     if (index >= 0 && index < queue.length) {
       const track = queue[index];
+      const seq = ++playSeq;
       ipc.playTrack(track).catch((err) => {
-        useToastStore.getState().addToast('error', `播放失败: ${err}`);
+        if (seq !== playSeq) return; // stale request, ignore
+        useToastStore.getState().addToast('error', `播放失败: ${sanitizeError(err)}`);
         set({ state: 'idle' });
       });
       set((s) => ({

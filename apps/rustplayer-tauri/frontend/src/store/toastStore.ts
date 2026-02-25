@@ -8,6 +8,8 @@ export interface Toast {
   message: string;
 }
 
+const timerMap = new Map<string, ReturnType<typeof setTimeout>>();
+
 interface ToastStore {
   toasts: Toast[];
   addToast: (type: ToastType, message: string) => void;
@@ -21,9 +23,18 @@ export const useToastStore = create<ToastStore>((set) => ({
     set((state) => ({
       toasts: [...state.toasts, { id, type, message }].slice(-3),
     }));
-    setTimeout(() => {
+    const timer = setTimeout(() => {
+      timerMap.delete(id);
       set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) }));
     }, 3000);
+    timerMap.set(id, timer);
   },
-  removeToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
+  removeToast: (id) => {
+    const timer = timerMap.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      timerMap.delete(id);
+    }
+    set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) }));
+  },
 }));

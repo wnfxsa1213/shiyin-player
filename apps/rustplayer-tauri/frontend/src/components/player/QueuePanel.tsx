@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { usePlayerStore, type PlayMode } from '@/store/playerStore';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { Repeat, Repeat1, Shuffle, X, Trash2 } from 'lucide-react';
 
 interface Props {
@@ -14,6 +15,7 @@ const modeIcons: { mode: PlayMode; icon: typeof Repeat; label: string }[] = [
 ];
 
 export default function QueuePanel({ isOpen, onClose }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const queue = usePlayerStore((s) => s.queue);
   const queueIndex = usePlayerStore((s) => s.queueIndex);
   const playMode = usePlayerStore((s) => s.playMode);
@@ -23,11 +25,19 @@ export default function QueuePanel({ isOpen, onClose }: Props) {
   const setPlayMode = usePlayerStore((s) => s.setPlayMode);
   const [confirmClear, setConfirmClear] = useState(false);
 
+  useFocusTrap(containerRef, isOpen, onClose);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed right-0 top-0 bottom-20 w-80 z-40 bg-bg-primary/95 glass border-l border-border-primary flex flex-col animate-slide-in-right">
-      {/* Header */}
+    <div
+      ref={containerRef}
+      role="dialog"
+      aria-label="播放队列"
+      aria-modal="true"
+      tabIndex={-1}
+      className="fixed right-0 top-0 bottom-20 w-80 z-40 bg-bg-primary/95 glass border-l border-border-primary flex flex-col animate-slide-in-right"
+    >      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border-secondary">
         <h2 className="text-sm font-semibold">播放队列 ({queue.length})</h2>
         <div className="flex items-center gap-1">
@@ -38,13 +48,13 @@ export default function QueuePanel({ isOpen, onClose }: Props) {
                   clearQueue();
                   setConfirmClear(false);
                 }}
-                className="px-2 py-1 rounded text-xs bg-error/20 text-error hover:bg-error/30 transition-colors cursor-pointer"
+                className="px-2 py-1 rounded text-xs bg-error/20 text-error hover:bg-error/30 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
               >
                 确认
               </button>
               <button
                 onClick={() => setConfirmClear(false)}
-                className="px-2 py-1 rounded text-xs text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
+                className="px-2 py-1 rounded text-xs text-text-tertiary hover:text-text-primary transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
               >
                 取消
               </button>
@@ -52,13 +62,13 @@ export default function QueuePanel({ isOpen, onClose }: Props) {
           ) : (
             <button
               onClick={() => queue.length > 0 && setConfirmClear(true)}
-              className="p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
               aria-label="清空队列"
             >
               <Trash2 size={16} strokeWidth={1.5} />
             </button>
           )}
-          <button onClick={onClose} className="p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer" aria-label="关闭">
+          <button onClick={onClose} className="p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none" aria-label="关闭">
             <X size={16} strokeWidth={1.5} />
           </button>
         </div>

@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { usePlayerStore } from '@/store/playerStore';
 import { usePlaylistStore } from '@/store/playlistStore';
 import { useToastStore } from '@/store/toastStore';
-import { Clock, Heart, Compass, Radio, Music, Play } from 'lucide-react';
+import CoverImage from '@/components/common/CoverImage';
+import { Clock, Heart, Compass, Radio, Play } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 const cards: { label: string; icon: LucideIcon; gradient: string }[] = [
@@ -64,7 +65,7 @@ export default function HomeView() {
           <button
             key={card.label}
             onClick={() => handleCardClick(card.label)}
-            className="stagger-item aspect-square rounded-xl bg-bg-secondary flex flex-col items-center justify-center gap-3 text-text-secondary transition-colors duration-200 group animate-fade-in-up cursor-pointer hover:bg-bg-hover"
+            className="stagger-item aspect-square rounded-xl bg-bg-secondary flex flex-col items-center justify-center gap-3 text-text-secondary transition-colors duration-200 group animate-fade-in-up cursor-pointer hover:bg-bg-hover focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             <div className={`w-12 h-12 rounded-xl ${card.gradient} flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform duration-300`}>
               <card.icon size={24} strokeWidth={1.5} className="text-white" />
@@ -87,13 +88,13 @@ export default function HomeView() {
                 onClick={() => handlePlayRecent(track)}
                 className="flex-shrink-0 w-48 bg-bg-secondary rounded-xl p-3 flex items-center gap-3 group cursor-pointer hover:bg-bg-hover transition-colors text-left"
               >
-                {track.coverUrl ? (
-                  <img src={track.coverUrl} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
-                ) : (
-                  <div className="w-10 h-10 rounded-lg bg-bg-elevated flex items-center justify-center flex-shrink-0">
-                    <Music size={16} strokeWidth={1.5} className="text-text-tertiary group-hover:text-accent transition-colors" />
-                  </div>
-                )}
+                <CoverImage
+                  src={track.coverUrl}
+                  className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
+                  fallbackClassName="w-10 h-10 rounded-lg bg-bg-elevated flex items-center justify-center flex-shrink-0"
+                  iconSize={16}
+                  resetKey={track.id}
+                />
                 <div className="min-w-0">
                   <div className="text-sm truncate" title={track.name}>{track.name}</div>
                   <div className="text-xs text-text-secondary truncate" title={track.artist}>{track.artist}</div>
@@ -117,11 +118,13 @@ export default function HomeView() {
                 className="group text-left cursor-pointer"
               >
                 <div className="aspect-square rounded-xl bg-bg-secondary mb-2 flex items-center justify-center relative overflow-hidden hover:shadow-md transition-all duration-300">
-                  {pl.coverUrl ? (
-                    <img src={pl.coverUrl} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <Music size={32} strokeWidth={1.5} className="text-text-tertiary" />
-                  )}
+                  <CoverImage
+                    src={pl.coverUrl}
+                    className="w-full h-full object-cover"
+                    fallbackClassName="w-full h-full flex items-center justify-center"
+                    iconSize={32}
+                    resetKey={pl.id}
+                  />
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
                     <div className="w-10 h-10 rounded-full bg-accent flex items-center justify-center shadow-lg">
                       <Play size={16} fill="currentColor" className="text-white ml-0.5" />
@@ -137,4 +140,3 @@ export default function HomeView() {
     </div>
   );
 }
-

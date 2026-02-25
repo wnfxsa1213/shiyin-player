@@ -1,7 +1,8 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useUiStore } from '@/store/uiStore';
 import { usePlaylistStore } from '@/store/playlistStore';
-import { Home, Search, Settings, Music, PanelLeftClose, PanelLeftOpen, type LucideIcon } from 'lucide-react';
+import CoverImage from '@/components/common/CoverImage';
+import { Home, Search, Settings, PanelLeftClose, PanelLeftOpen, type LucideIcon } from 'lucide-react';
 
 const navItems: { path: string; label: string; icon: LucideIcon }[] = [
   { path: '/', label: '首页', icon: Home },
@@ -74,13 +75,13 @@ export default function Sidebar() {
                   onClick={() => navigate(`/playlist/${pl.source}/${pl.id}`)}
                   className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors duration-200 cursor-pointer"
                 >
-                  {pl.coverUrl ? (
-                    <img src={pl.coverUrl} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" />
-                  ) : (
-                    <div className="w-6 h-6 rounded bg-bg-secondary flex items-center justify-center flex-shrink-0">
-                      <Music size={12} strokeWidth={1.5} />
-                    </div>
-                  )}
+                  <CoverImage
+                    src={pl.coverUrl}
+                    className="w-6 h-6 rounded object-cover flex-shrink-0"
+                    fallbackClassName="w-6 h-6 rounded bg-bg-secondary flex items-center justify-center flex-shrink-0"
+                    iconSize={12}
+                    resetKey={pl.id}
+                  />
                   {!collapsed && <span className="text-sm truncate" title={pl.name}>{pl.name}</span>}
                 </button>
               </li>

@@ -1,6 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
 import { usePlayerStore } from '@/store/playerStore';
 import { useToastStore } from '@/store/toastStore';
+import { sanitizeError } from '@/lib/errorMessages';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { ipc } from '@/lib/ipc';
 import ParticleSystem from '@/components/player/ParticleSystem';
 import { X, Music } from 'lucide-react';
@@ -23,7 +25,16 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const [lyrics, setLyrics] = useState<LyricsLine[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
+  const [coverFailed, setCoverFailed] = useState(false);
+
+  useFocusTrap(panelRef, isOpen, onClose);
+
+  // Reset cover error state when track changes
+  useEffect(() => {
+    setCoverFailed(false);
+  }, [currentTrack?.id, currentTrack?.source]);
 
   // Fetch lyrics with race condition protection
   useEffect(() => {
@@ -34,7 +45,7 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
       .catch((err) => {
         if (active) {
           setLyrics([]);
-          useToastStore.getState().addToast('error', `歌词加载失败: ${err}`);
+          useToastStore.getState().addToast('error', `歌词加载失败: ${sanitizeError(err)}`);
         }
       });
     return () => { active = false; };
@@ -70,6 +81,11 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
     <AnimatePresence>
       {isOpen && (
         <motion.div
+          ref={panelRef}
+          role="dialog"
+          aria-label="歌词面板"
+          aria-modal="true"
+          tabIndex={-1}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -78,7 +94,7 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
         >
           {/* Left Side: Shared Layout Album Cover */}
           <div className="w-1/2 flex items-center justify-center p-12">
-            {currentTrack?.coverUrl ? (
+            {currentTrack?.coverUrl && !coverFailed ? (
               <motion.img
                 layout
                 layoutId="cover-shared"
@@ -86,6 +102,7 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
                 alt=""
                 className="w-96 h-96 rounded-2xl object-cover shadow-[var(--shadow-glow-strong)] transition-shadow duration-700"
                 transition={springTransition}
+                onError={() => setCoverFailed(true)}
               />
             ) : (
               <motion.div

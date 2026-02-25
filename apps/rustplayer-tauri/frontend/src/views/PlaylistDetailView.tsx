@@ -4,6 +4,7 @@ import { ipc, type Playlist } from '@/lib/ipc';
 import { usePlayerStore } from '@/store/playerStore';
 import BackButton from '@/components/common/BackButton';
 import VirtualTrackList from '@/components/common/VirtualTrackList';
+import CoverImage from '@/components/common/CoverImage';
 import { Play, Shuffle } from 'lucide-react';
 
 export default function PlaylistDetailView() {
@@ -14,6 +15,11 @@ export default function PlaylistDetailView() {
 
   useEffect(() => {
     if (!source || !id) return;
+    if (source !== 'netease' && source !== 'qqmusic') {
+      setPlaylist(null);
+      setLoading(false);
+      return;
+    }
     let active = true;
     setLoading(true);
     setPlaylist(null);
@@ -45,7 +51,7 @@ export default function PlaylistDetailView() {
     <div className="flex flex-col h-full pb-28">
       <BackButton />
       {loading && (
-        <div className="p-8 space-y-4 animate-pulse">
+        <div className="p-8 space-y-4 animate-pulse" role="status" aria-busy="true" aria-label="加载中">
           <div className="flex gap-6">
             <div className="w-40 h-40 bg-bg-secondary rounded-xl" />
             <div className="flex-1 space-y-3 py-2">
@@ -60,13 +66,15 @@ export default function PlaylistDetailView() {
         <>
           <div className="p-8 pb-0">
             <div className="flex gap-6 mb-8">
-              {playlist.coverUrl ? (
-                <img src={playlist.coverUrl} alt="" className="w-40 h-40 rounded-xl object-cover shadow-md" />
-              ) : (
-                <div className="w-40 h-40 rounded-xl bg-bg-secondary flex items-center justify-center">
-                  <Play size={40} strokeWidth={1} className="text-text-tertiary" />
-                </div>
-              )}
+              <CoverImage
+                    src={playlist.coverUrl}
+                    alt={`${playlist.name} 封面`}
+                    className="w-40 h-40 rounded-xl object-cover shadow-md"
+                    fallbackClassName="w-40 h-40 rounded-xl bg-bg-secondary flex items-center justify-center"
+                    iconSize={40}
+                    fallbackIcon={<Play size={40} strokeWidth={1} className="text-text-tertiary" />}
+                    resetKey={playlist.id}
+                  />
               <div className="flex flex-col justify-center gap-2">
                 <h1 className="text-2xl font-bold">{playlist.name}</h1>
                 {playlist.description && (

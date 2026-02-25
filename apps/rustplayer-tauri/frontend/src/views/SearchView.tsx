@@ -2,8 +2,11 @@ import { useState, useEffect } from 'react';
 import { ipc } from '@/lib/ipc';
 import { Track } from '@/store/playerStore';
 import { useToastStore } from '@/store/toastStore';
+import { sanitizeError } from '@/lib/errorMessages';
 import VirtualTrackList from '@/components/common/VirtualTrackList';
 import { Search, SearchX, Music } from 'lucide-react';
+
+let searchSeq = 0;
 
 export default function SearchView() {
   const [query, setQuery] = useState('');
@@ -18,16 +21,15 @@ export default function SearchView() {
   }, [query]);
 
   useEffect(() => {
-    if (!debounced.trim()) { setResults([]); return; }
-    let active = true;
+    const seq = ++searchSeq;
+    if (!debounced.trim()) { setResults([]); setLoading(false); return; }
     setLoading(true);
     ipc.searchMusic(debounced, source === 'all' ? undefined : source)
-      .then((r) => { if (active) setResults(r); })
+      .then((r) => { if (seq === searchSeq) setResults(r); })
       .catch((err) => {
-        if (active) useToastStore.getState().addToast('error', `搜索失败: ${err}`);
+        if (seq === searchSeq) useToastStore.getState().addToast('error', `搜索失败: ${sanitizeError(err)}`);
       })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
+      .finally(() => { if (seq === searchSeq) setLoading(false); });
   }, [debounced, source]);
 
   const tabs = ['all', 'netease', 'qqmusic'] as const;
@@ -39,8 +41,9 @@ export default function SearchView() {
       <div className="relative w-full max-w-xl mb-6 animate-fade-in-up [animation-delay:50ms]">
         <Search size={20} strokeWidth={1.5} className="absolute left-4 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none" />
         <input
-          type="text"
+          type="search"
           placeholder="输入关键词..."
+          aria-label="搜索音乐"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           className="w-full bg-bg-secondary border border-border-primary pl-12 pr-5 py-3 rounded-xl text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent-subtle focus:shadow-[0_0_12px_var(--accent-subtle)] transition-all duration-200"
@@ -65,9 +68,9 @@ export default function SearchView() {
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0" role="tabpanel">
+      <div className="flex-1 overflow-y-auto min-h-0" role="tabpanel" aria-live="polite">
         {loading && (
-          <div className="space-y-3 py-4">
+          <div className="space-y-3 py-4" role="status" aria-busy="true" aria-label="搜索中">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="flex items-center px-4 py-2.5 gap-3 animate-pulse">
                 <div className="w-10 h-4 bg-bg-secondary rounded" />

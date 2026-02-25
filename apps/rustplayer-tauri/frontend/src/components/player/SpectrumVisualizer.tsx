@@ -75,6 +75,7 @@ export default function SpectrumVisualizer({ width, height }: { width: number; h
       height={height}
       className="w-full h-full"
       style={{ filter: 'drop-shadow(0 0 8px var(--accent))' }}
+      aria-hidden="true"
     />
   );
 }
