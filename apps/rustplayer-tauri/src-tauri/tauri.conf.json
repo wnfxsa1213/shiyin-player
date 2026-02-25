@@ -10,7 +10,7 @@
     "frontendDist": "../frontend/dist"
   },
   "app": {
-    "withGlobalTauri": true,
+    "withGlobalTauri": false,
     "windows": [
       {
         "title": "拾音",
@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://*.music.126.net https://*.gtimg.cn https://*.qq.com http://*.music.126.net data:; connect-src ipc: http://localhost:* ws://localhost:*"
     }
   },
   "plugins": {}
