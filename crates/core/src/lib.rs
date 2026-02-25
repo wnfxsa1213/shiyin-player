@@ -172,4 +172,6 @@ pub trait MusicSource: Send + Sync {
     async fn get_playlist_detail(&self, _id: &str) -> Result<Playlist, SourceError> {
         Err(SourceError::Unimplemented)
     }
+    fn logout(&self) {}
+    fn is_logged_in(&self) -> bool { false }
 }

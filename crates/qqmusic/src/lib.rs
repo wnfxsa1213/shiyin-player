@@ -18,17 +18,18 @@ pub struct QqMusicClient {
 }
 
 impl QqMusicClient {
-    pub fn new() -> Self {
-        Self {
-            http: reqwest::Client::builder()
-                .cookie_store(true)
-                .timeout(Duration::from_secs(5))
-                .build()
-                .expect("failed to build http client"),
+    pub fn new() -> Result<Self, SourceError> {
+        let http = reqwest::Client::builder()
+            .cookie_store(true)
+            .timeout(Duration::from_secs(5))
+            .build()
+            .map_err(|e| SourceError::Internal(format!("failed to build http client: {e}")))?;
+        Ok(Self {
+            http,
             base_url: "https://u.y.qq.com".into(),
             guid: sign::generate_guid(),
             cookie: RwLock::new(None),
-        }
+        })
     }
 
     fn cookie(&self) -> Option<String> {
@@ -68,5 +69,13 @@ impl MusicSource for QqMusicClient {
             }
             Credentials::Password { .. } => Err(SourceError::Unimplemented),
         }
+    }
+    fn logout(&self) {
+        if let Ok(mut guard) = self.cookie.write() {
+            *guard = None;
+        }
+    }
+    fn is_logged_in(&self) -> bool {
+        self.cookie.read().ok().map_or(false, |g| g.is_some())
     }
 }

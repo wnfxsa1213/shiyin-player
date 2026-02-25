@@ -7,7 +7,8 @@ import { useVisualizerStore } from '@/store/visualizerStore';
 import { useToastStore } from '@/store/toastStore';
 import { usePlaylistStore } from '@/store/playlistStore';
 import { loadSetting } from '@/lib/settings';
-import { ipc, onPlayerState, onPlayerProgress, onPlayerError, onPlayerSpectrum } from '@/lib/ipc';
+import { ipc, onPlayerState, onPlayerProgress, onPlayerError, onPlayerSpectrum, onLoginSuccess, onLoginTimeout } from '@/lib/ipc';
+import { sanitizeError } from '@/lib/errorMessages';
 import { useDynamicTheme } from '@/hooks/useDynamicTheme';
 import Sidebar from '@/components/layout/Sidebar';
 import PlayerBar from '@/components/layout/PlayerBar';
@@ -28,6 +29,33 @@ export default function App() {
 
   // 挂载全局动态主题萃取钩子
   useDynamicTheme();
+
+  // 将前端运行时错误落盘到后端日志（release 下也能排查）
+  useEffect(() => {
+    const onError = (e: ErrorEvent) => {
+      const stack = e.error instanceof Error ? e.error.stack ?? '' : '';
+      ipc.clientLog(
+        'error',
+        `window.error: ${e.message}\n${e.filename}:${e.lineno}:${e.colno}\n${stack}`,
+      );
+    };
+    const onUnhandledRejection = (e: PromiseRejectionEvent) => {
+      const reason = (() => {
+        try {
+          return typeof e.reason === 'string' ? e.reason : JSON.stringify(e.reason);
+        } catch {
+          return String(e.reason);
+        }
+      })();
+      ipc.clientLog('error', `unhandledrejection: ${reason}`);
+    };
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onUnhandledRejection);
+    return () => {
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onUnhandledRejection);
+    };
+  }, []);
 
   // Load persisted settings on startup
   useEffect(() => {
@@ -77,10 +105,19 @@ export default function App() {
         updateProgress(positionMs, durationMs);
       }),
       onPlayerError((err) => {
-        addToast('error', String(err));
+        addToast('error', sanitizeError(err));
       }),
       onPlayerSpectrum(({ magnitudes }) => {
         useVisualizerStore.getState().updateMagnitudes(magnitudes);
+      }),
+      onLoginSuccess((source) => {
+        const name = source === 'netease' ? '网易云' : 'QQ音乐';
+        addToast('success', `${name}登录成功`);
+        usePlaylistStore.getState().fetchPlaylists();
+      }),
+      onLoginTimeout((source) => {
+        const name = source === 'netease' ? '网易云' : 'QQ音乐';
+        addToast('error', `${name}登录超时，请重试`);
       }),
     ];
     return () => { unsubs.forEach((p) => p.then((fn) => fn())); };
@@ -89,6 +126,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.target instanceof HTMLElement && e.target.isContentEditable) return;
       const st = usePlayerStore.getState();
       switch (e.code) {
         case 'Space':
