@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::net::IpAddr;
 use tauri::{AppHandle, State};
 use rustplayer_core::{AuthToken, Credentials, LyricsLine, MusicSourceId, Playlist, PlaylistBrief, PlayerCommand, SearchQuery, Track};
 use rustplayer_player::Player;
@@ -204,4 +205,155 @@ pub async fn get_playlist_detail(
     }
     let src = registry.get(source).ok_or("source not found")?;
     src.get_playlist_detail(&id).await.map_err(|e| e.to_string())
+}
+
+// --- Cover color extraction (bypasses CORS) ---
+
+const COVER_DOMAIN_ALLOWLIST: &[&str] = &[
+    "music.126.net",
+    "p1.music.126.net",
+    "p2.music.126.net",
+    "p3.music.126.net",
+    "p4.music.126.net",
+    "y.gtimg.cn",
+    "imgcache.qq.com",
+    "y.qq.com",
+    "qqmusic.qq.com",
+];
+
+const MAX_COVER_BYTES: usize = 2 * 1024 * 1024; // 2MB
+
+fn is_allowed_cover_url(url: &reqwest::Url) -> bool {
+    if url.scheme() != "https" {
+        return false;
+    }
+    let host = match url.host_str() {
+        Some(h) => h,
+        None => return false,
+    };
+    // Reject IP addresses (prevents SSRF to private networks)
+    if host.parse::<IpAddr>().is_ok() {
+        return false;
+    }
+    COVER_DOMAIN_ALLOWLIST.iter().any(|allowed| {
+        host == *allowed || host.ends_with(&format!(".{allowed}"))
+    })
+}
+
+fn is_image_magic(bytes: &[u8]) -> bool {
+    // JPEG: FF D8 FF
+    if bytes.len() >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF {
+        return true;
+    }
+    // PNG: 89 50 4E 47
+    if bytes.len() >= 4 && bytes[..4] == [0x89, 0x50, 0x4E, 0x47] {
+        return true;
+    }
+    // WebP: RIFF....WEBP
+    if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        return true;
+    }
+    false
+}
+
+fn rgb_to_hsl(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
+    let rn = r as f64 / 255.0;
+    let gn = g as f64 / 255.0;
+    let bn = b as f64 / 255.0;
+    let max = rn.max(gn).max(bn);
+    let min = rn.min(gn).min(bn);
+    let l = (max + min) / 2.0;
+    if (max - min).abs() < f64::EPSILON {
+        return (0.0, 0.0, l * 100.0);
+    }
+    let d = max - min;
+    let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
+    let h = if (max - rn).abs() < f64::EPSILON {
+        ((gn - bn) / d + if gn < bn { 6.0 } else { 0.0 }) / 6.0
+    } else if (max - gn).abs() < f64::EPSILON {
+        ((bn - rn) / d + 2.0) / 6.0
+    } else {
+        ((rn - gn) / d + 4.0) / 6.0
+    };
+    (h * 360.0, s * 100.0, l * 100.0)
+}
+
+fn extract_dominant_hsl(img_bytes: &[u8]) -> Option<[f64; 3]> {
+    let img = image::load_from_memory(img_bytes).ok()?;
+    let thumb = img.resize_exact(20, 20, image::imageops::FilterType::Triangle);
+    let rgb = thumb.to_rgb8();
+
+    // 12 hue buckets of 30° each: (sum_h, sum_s, sum_l, count)
+    let mut buckets = [(0.0f64, 0.0f64, 0.0f64, 0u32); 12];
+
+    for pixel in rgb.pixels() {
+        let (h, s, l) = rgb_to_hsl(pixel[0], pixel[1], pixel[2]);
+        if s < 20.0 || l < 15.0 || l > 90.0 {
+            continue;
+        }
+        let idx = ((h / 30.0) as usize) % 12;
+        buckets[idx].0 += h;
+        buckets[idx].1 += s;
+        buckets[idx].2 += l;
+        buckets[idx].3 += 1;
+    }
+
+    let best = buckets.iter().enumerate()
+        .max_by_key(|(_, b)| b.3)?;
+    if best.1 .3 == 0 {
+        return None;
+    }
+
+    let count = best.1 .3 as f64;
+    let h = best.1 .0 / count;
+    let s = (best.1 .1 / count).max(50.0);
+    let l = (best.1 .2 / count).clamp(45.0, 65.0);
+
+    Some([h, s, l])
+}
+
+#[tauri::command]
+pub async fn extract_cover_color(
+    url: String,
+    http: State<'_, reqwest::Client>,
+) -> Result<[f64; 3], String> {
+    let parsed = reqwest::Url::parse(&url).map_err(|e| format!("invalid url: {e}"))?;
+    if !is_allowed_cover_url(&parsed) {
+        return Err("url not in cover domain allowlist".into());
+    }
+
+    let resp = http.get(parsed)
+        .send().await
+        .map_err(|e| format!("fetch failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("http {}", resp.status()));
+    }
+
+    // Pre-check Content-Length if available
+    if let Some(cl) = resp.content_length() {
+        if cl as usize > MAX_COVER_BYTES {
+            return Err("cover image too large".into());
+        }
+    }
+
+    // Stream body with size limit
+    let bytes = resp.bytes().await.map_err(|e| format!("read body: {e}"))?;
+    if bytes.len() > MAX_COVER_BYTES {
+        return Err("cover image too large".into());
+    }
+
+    // Magic bytes sniff
+    if !is_image_magic(&bytes) {
+        return Err("response is not a valid image".into());
+    }
+
+    // Extract dominant color in blocking task (image decoding is CPU-bound)
+    let hsl = tauri::async_runtime::spawn_blocking(move || {
+        extract_dominant_hsl(&bytes)
+    }).await
+        .map_err(|e| format!("task join: {e}"))?
+        .ok_or_else(|| "could not extract color".to_string())?;
+
+    Ok(hsl)
 }

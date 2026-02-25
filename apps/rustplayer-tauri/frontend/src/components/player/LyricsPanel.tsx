@@ -16,6 +16,8 @@ interface LyricsPanelProps {
   onClose: () => void;
 }
 
+const springTransition = { layout: { type: 'spring' as const, stiffness: 200, damping: 28 } };
+
 export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const [lyrics, setLyrics] = useState<LyricsLine[]>([]);
@@ -32,9 +34,7 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
     return () => { active = false; };
   }, [isOpen, currentTrack?.id, currentTrack?.source]);
 
-  // 极客级优化：只有当计算出的 activeIndex 发生改变时，LyricsPanel 才会重新渲染。
-  // 彻底阻断了 positionMs 高频更新导致的 60FPS 无效渲染泥潭！
-  // Binary search for active lyric — O(log N) instead of O(N)
+  // Binary search for active lyric — O(log N)
   const activeIndex = usePlayerStore((s) => {
     if (!isOpen || lyrics.length === 0) return 0;
     let lo = 0, hi = lyrics.length - 1, result = 0;
@@ -61,7 +61,7 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
   }, [isOpen]);
 
   return (
-    <AnimatePresence mode="wait">
+    <AnimatePresence>
       {isOpen && (
         <motion.div
           initial={{ opacity: 0 }}
@@ -74,14 +74,21 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
           <div className="w-1/2 flex items-center justify-center p-12">
             {currentTrack?.coverUrl ? (
               <motion.img
-                layoutId={`cover-shared`}
+                layout
+                layoutId="cover-shared"
                 src={currentTrack.coverUrl}
                 alt=""
                 className="w-96 h-96 rounded-2xl object-cover shadow-[var(--shadow-glow-strong)] transition-shadow duration-700"
+                transition={springTransition}
               />
             ) : (
-              <motion.div layoutId={`cover-shared`} className="w-96 h-96 rounded-2xl bg-bg-secondary flex items-center justify-center shadow-xl">
-                 <Music size={64} className="text-text-tertiary" />
+              <motion.div
+                layout
+                layoutId="cover-shared"
+                className="w-96 h-96 rounded-2xl bg-bg-secondary flex items-center justify-center shadow-xl"
+                transition={springTransition}
+              >
+                <Music size={64} className="text-text-tertiary" />
               </motion.div>
             )}
           </div>
@@ -126,10 +133,7 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
                             ? 'text-3xl lg:text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-[var(--accent)]'
                             : 'text-2xl lg:text-3xl text-text-secondary'
                         }`}
-                        style={{
-                           // 当激活时，歌词的颜色也融入当前主题色
-                           transition: 'background-image 0.8s ease'
-                        }}
+                        style={{ transition: 'background-image 0.8s ease' }}
                       >
                         {line.text || '···'}
                       </p>

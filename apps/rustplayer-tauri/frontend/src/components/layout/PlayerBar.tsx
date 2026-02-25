@@ -33,12 +33,14 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
 
   return (
     <footer
-      className="h-20 bg-bg-primary/80 glass flex-shrink-0 fixed bottom-0 w-full z-50 border-t border-border-primary flex items-center justify-between px-6 overflow-hidden transition-all duration-700"
+      className="h-20 bg-bg-primary/80 glass flex-shrink-0 fixed bottom-0 w-full z-50 border-t border-border-primary flex items-center justify-between px-6 transition-all duration-700"
       aria-label="播放控制"
     >
-      {/* Spectrum background layer */}
-      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 pointer-events-none opacity-50 transition-all duration-700" aria-hidden="true">
-        <SpectrumVisualizer width={centerWidth} height={60} />
+      {/* Spectrum background layer — isolated overflow-hidden wrapper */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 opacity-50 transition-all duration-700">
+          <SpectrumVisualizer width={centerWidth} height={60} />
+        </div>
       </div>
 
       {/* Left: Track Info & Layout Animation Cover */}
@@ -46,22 +48,37 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
         {currentTrack ? (
           <>
             <button className="relative z-50 group w-12 h-12 flex-shrink-0 bg-transparent border-0 p-0 cursor-pointer" onClick={onToggleLyrics} aria-label="展开歌词">
-              {currentTrack.coverUrl ? (
-                <motion.img
-                  layoutId={`cover-shared`}
-                  src={currentTrack.coverUrl}
-                  alt=""
-                  className={`w-full h-full shadow-sm object-cover transition-[border-radius] duration-500 ${isPlaying ? 'rounded-full' : 'rounded-lg'}`}
-                  style={{ opacity: lyricsOpen ? 0 : 1 }}
-                />
-              ) : (
-                <motion.div layoutId={`cover-shared`} className={`w-full h-full bg-bg-secondary flex items-center justify-center transition-[border-radius] duration-500 ${isPlaying ? 'rounded-full' : 'rounded-lg'}`} style={{ opacity: lyricsOpen ? 0 : 1 }}>
-                  <Music size={20} strokeWidth={1.5} className="text-text-tertiary" />
-                </motion.div>
+              {!lyricsOpen && (
+                currentTrack.coverUrl ? (
+                  <motion.img
+                    layout
+                    layoutId="cover-shared"
+                    src={currentTrack.coverUrl}
+                    alt=""
+                    className={`w-full h-full shadow-sm object-cover transition-[border-radius] duration-500 ${isPlaying ? 'rounded-full' : 'rounded-lg'}`}
+                    transition={{ layout: { type: 'spring', stiffness: 200, damping: 28 } }}
+                  />
+                ) : (
+                  <motion.div
+                    layout
+                    layoutId="cover-shared"
+                    className={`w-full h-full bg-bg-secondary flex items-center justify-center transition-[border-radius] duration-500 ${isPlaying ? 'rounded-full' : 'rounded-lg'}`}
+                    transition={{ layout: { type: 'spring', stiffness: 200, damping: 28 } }}
+                  >
+                    <Music size={20} strokeWidth={1.5} className="text-text-tertiary" />
+                  </motion.div>
+                )
               )}
-              <div className="absolute inset-0 bg-black/40 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                 <Music2 size={16} className="text-white" />
-              </div>
+              {lyricsOpen && (
+                <div className={`w-full h-full bg-bg-secondary/50 flex items-center justify-center ${isPlaying ? 'rounded-full' : 'rounded-lg'}`}>
+                  <Music2 size={16} className="text-text-tertiary" />
+                </div>
+              )}
+              {!lyricsOpen && (
+                <div className="absolute inset-0 bg-black/40 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  <Music2 size={16} className="text-white" />
+                </div>
+              )}
             </button>
             
             <div className="ml-3 truncate">

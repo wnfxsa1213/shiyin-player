@@ -49,6 +49,9 @@ export const ipc = {
 
   getPlaylistDetail: (id: string, source: string) =>
     invoke<Playlist>('get_playlist_detail', { id, source }),
+
+  extractCoverColor: (url: string) =>
+    invoke<[number, number, number]>('extract_cover_color', { url }),
 };
 
 export function onPlayerState(cb: (state: string) => void): Promise<UnlistenFn> {

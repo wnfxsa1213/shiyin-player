@@ -1,19 +1,12 @@
 import { useEffect } from 'react';
 import { usePlayerStore } from '@/store/playerStore';
+import { ipc } from '@/lib/ipc';
 
-function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
-  const rn = r / 255, gn = g / 255, bn = b / 255;
-  const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn);
-  const l = (max + min) / 2;
-  if (max === min) return [0, 0, l];
-  const d = max - min;
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-  let h = 0;
-  if (max === rn) h = ((gn - bn) / d + (gn < bn ? 6 : 0)) / 6;
-  else if (max === gn) h = ((bn - rn) / d + 2) / 6;
-  else h = ((rn - gn) / d + 4) / 6;
-  return [h * 360, s * 100, l * 100];
-}
+const DEFAULT_H = 262, DEFAULT_S = 83, DEFAULT_L = 76; // #A78BFA
+
+// LRU color cache (max 100 entries)
+const colorCache = new Map<string, [number, number, number]>();
+const CACHE_MAX = 100;
 
 function hslToString(h: number, s: number, l: number): string {
   return `hsl(${Math.round(h)}, ${Math.round(s)}%, ${Math.round(l)}%)`;
@@ -42,70 +35,6 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   ];
 }
 
-async function extractDominantColor(imgUrl: string): Promise<[number, number, number] | null> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = 'Anonymous';
-    img.src = imgUrl;
-
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return resolve(null);
-
-      canvas.width = 20;
-      canvas.height = 20;
-      ctx.drawImage(img, 0, 0, 20, 20);
-
-      try {
-        const data = ctx.getImageData(0, 0, 20, 20).data;
-
-        // 12 hue buckets of 30° each: [sumH, sumS, sumL, count]
-        const buckets: [number, number, number, number][] = Array.from({ length: 12 }, () => [0, 0, 0, 0]);
-
-        for (let i = 0; i < data.length; i += 4) {
-          const [h, s, l] = rgbToHsl(data[i], data[i + 1], data[i + 2]);
-          // Filter low-saturation and extreme-lightness pixels
-          if (s < 20 || l < 15 || l > 90) continue;
-          const bucket = Math.floor(h / 30) % 12;
-          buckets[bucket][0] += h;
-          buckets[bucket][1] += s;
-          buckets[bucket][2] += l;
-          buckets[bucket][3]++;
-        }
-
-        // Find the most populated bucket
-        let best = -1, bestCount = 0;
-        for (let i = 0; i < 12; i++) {
-          if (buckets[i][3] > bestCount) {
-            bestCount = buckets[i][3];
-            best = i;
-          }
-        }
-
-        if (best === -1 || bestCount === 0) return resolve(null);
-
-        const [sumH, sumS, sumL, count] = buckets[best];
-        let h = sumH / count;
-        let s = sumS / count;
-        let l = sumL / count;
-
-        // Enforce vivid output: saturation >= 50%, lightness 45%–65%
-        s = Math.max(s, 50);
-        l = Math.min(Math.max(l, 45), 65);
-
-        resolve([h, s, l]);
-      } catch {
-        resolve(null);
-      }
-    };
-
-    img.onerror = () => resolve(null);
-  });
-}
-
-const DEFAULT_H = 262, DEFAULT_S = 83, DEFAULT_L = 76; // #A78BFA
-
 function applyTheme(h: number, s: number, l: number) {
   const root = document.documentElement;
   const [r, g, b] = hslToRgb(h, s, l);
@@ -130,18 +59,28 @@ export function useDynamicTheme() {
       return;
     }
 
-    const capturedUrl = currentTrack.coverUrl;
+    const url = currentTrack.coverUrl;
 
-    extractDominantColor(capturedUrl).then((hsl) => {
-      // Race condition guard: ignore if track changed while extracting
-      const latestUrl = usePlayerStore.getState().currentTrack?.coverUrl;
-      if (latestUrl !== capturedUrl) return;
+    // Cache hit
+    const cached = colorCache.get(url);
+    if (cached) {
+      applyTheme(cached[0], cached[1], cached[2]);
+      return;
+    }
 
-      if (hsl) {
-        applyTheme(hsl[0], hsl[1], hsl[2]);
-      } else {
-        applyTheme(DEFAULT_H, DEFAULT_S, DEFAULT_L);
+    // Backend extraction (no CORS issues)
+    ipc.extractCoverColor(url).then(([h, s, l]) => {
+      // Race condition guard
+      if (usePlayerStore.getState().currentTrack?.coverUrl !== url) return;
+
+      // LRU eviction
+      if (colorCache.size >= CACHE_MAX) {
+        colorCache.delete(colorCache.keys().next().value!);
       }
+      colorCache.set(url, [h, s, l]);
+      applyTheme(h, s, l);
+    }).catch(() => {
+      applyTheme(DEFAULT_H, DEFAULT_S, DEFAULT_L);
     });
   }, [currentTrack?.coverUrl]);
 }

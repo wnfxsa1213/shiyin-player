@@ -6,6 +6,7 @@ mod events;
 mod store;
 
 use std::sync::Arc;
+use std::time::Duration;
 use rustplayer_core::{Credentials, MusicSourceId};
 use rustplayer_player::Player;
 use rustplayer_sources::SourceRegistry;
@@ -26,6 +27,14 @@ fn main() {
     let registry = Arc::new(registry);
     let cache = Arc::new(SearchCache::new());
 
+    // Shared reqwest client for cover image fetching (connection pool reuse)
+    let cover_http = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(8))
+        .redirect(reqwest::redirect::Policy::limited(3))
+        .build()
+        .expect("failed to build cover http client");
+
     let player_for_events = player.clone();
     let registry_for_setup = registry.clone();
 
@@ -35,6 +44,7 @@ fn main() {
         .manage(player)
         .manage(registry)
         .manage(cache)
+        .manage(cover_http)
         .invoke_handler(tauri::generate_handler![
             commands::search_music,
             commands::play_track,
@@ -46,6 +56,7 @@ fn main() {
             commands::logout,
             commands::get_user_playlists,
             commands::get_playlist_detail,
+            commands::extract_cover_color,
         ])
         .setup(move |app| {
             events::spawn_event_forwarder(app.handle().clone(), &player_for_events);
