@@ -88,7 +88,7 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
               )}
             </button>
             
-            <div className="ml-3 truncate">
+            <div className="ml-3 min-w-0 overflow-hidden">
               <div className="text-sm font-medium truncate" title={currentTrack.name}>{currentTrack.name}</div>
               <div className="text-xs text-text-secondary truncate" title={currentTrack.artist}>{currentTrack.artist}</div>
             </div>
