@@ -72,16 +72,30 @@ export default function ContextMenu({ x, y, track, onClose }: Props) {
     onClose();
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(ref.current?.querySelectorAll('[role="menuitem"]') || []) as HTMLButtonElement[];
+    if (items.length === 0) return;
+    const index = items.indexOf(document.activeElement as HTMLButtonElement);
+    const current = index === -1 ? 0 : index;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      items[(current + 1) % items.length]?.focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      items[(current - 1 + items.length) % items.length]?.focus();
+    }
+  };
+
   return createPortal(
-    <div ref={ref} role="menu" style={style}
-      className="w-48 bg-bg-elevated rounded-xl shadow-xl border border-border-primary py-1 animate-scale-in origin-top-left"
+    <div ref={ref} role="menu" style={style} tabIndex={-1} onKeyDown={handleKeyDown}
+      className="w-48 bg-bg-elevated rounded-xl shadow-xl border border-border-primary py-1 animate-scale-in origin-top-left outline-none"
     >
       {menuItems.map((item) => (
         <button
           key={item.action}
           role="menuitem"
           onClick={() => handleAction(item.action)}
-          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors duration-150 cursor-pointer"
+          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors duration-150 cursor-pointer focus-visible:bg-bg-hover focus-visible:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
         >
           <item.icon size={16} strokeWidth={1.5} />
           {item.label}

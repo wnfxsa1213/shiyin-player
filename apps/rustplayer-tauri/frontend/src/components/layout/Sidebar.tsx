@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import { useUiStore } from '@/store/uiStore';
 import { usePlaylistStore } from '@/store/playlistStore';
 import CoverImage from '@/components/common/CoverImage';
@@ -13,7 +13,6 @@ const navItems: { path: string; label: string; icon: LucideIcon }[] = [
 export default function Sidebar() {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const playlists = usePlaylistStore((s) => s.playlists);
-  const navigate = useNavigate();
 
   return (
     <nav
@@ -22,7 +21,7 @@ export default function Sidebar() {
     >
       <div className="flex items-center gap-3 px-4 py-5">
         <div className="w-9 h-9 rounded-lg bg-gradient-accent flex items-center justify-center flex-shrink-0 shadow-glow">
-          <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+          <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55C7.79 13 6 14.79 6 17s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
           </svg>
         </div>
@@ -31,7 +30,7 @@ export default function Sidebar() {
         )}
         <button
           onClick={() => useUiStore.getState().toggleSidebar()}
-          className="ml-auto p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer"
+          className="ml-auto p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           aria-label={collapsed ? '展开侧边栏' : '收起侧边栏'}
         >
           {collapsed ? <PanelLeftOpen size={16} strokeWidth={1.5} /> : <PanelLeftClose size={16} strokeWidth={1.5} />}
@@ -43,8 +42,9 @@ export default function Sidebar() {
           <li key={item.path}>
             <NavLink
               to={item.path}
+              aria-label={collapsed ? item.label : undefined}
               className={({ isActive }) =>
-                `relative flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors duration-200 cursor-pointer ${
+                `relative flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
                   isActive
                     ? 'bg-accent-subtle text-accent font-medium'
                     : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover'
@@ -54,7 +54,7 @@ export default function Sidebar() {
               {({ isActive }) => (
                 <>
                   {isActive && (
-                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-accent" />
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-accent" aria-hidden="true" />
                   )}
                   <item.icon size={20} strokeWidth={1.5} className="flex-shrink-0" />
                   {!collapsed && <span className="text-sm">{item.label}</span>}
@@ -71,9 +71,10 @@ export default function Sidebar() {
           <ul className="space-y-0.5">
             {playlists.map((pl) => (
               <li key={`${pl.source}-${pl.id}`}>
-                <button
-                  onClick={() => navigate(`/playlist/${pl.source}/${pl.id}`)}
-                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors duration-200 cursor-pointer"
+                <NavLink
+                  to={`/playlist/${pl.source}/${pl.id}`}
+                  aria-label={collapsed ? pl.name : undefined}
+                  className={({ isActive }) => `w-full flex items-center gap-3 px-3 py-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${isActive ? 'bg-accent-subtle text-accent font-medium' : ''}`}
                 >
                   <CoverImage
                     src={pl.coverUrl}
@@ -83,7 +84,7 @@ export default function Sidebar() {
                     resetKey={pl.id}
                   />
                   {!collapsed && <span className="text-sm truncate" title={pl.name}>{pl.name}</span>}
-                </button>
+                </NavLink>
               </li>
             ))}
           </ul>
@@ -93,11 +94,11 @@ export default function Sidebar() {
       <div className="px-4 py-3 border-t border-border-secondary text-xs text-text-tertiary">
         {!collapsed ? (
           <div className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse-soft" />
+            <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse-soft" aria-hidden="true" />
             <span>网易云 · QQ音乐</span>
           </div>
         ) : (
-          <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse-soft block mx-auto" />
+          <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse-soft block mx-auto" aria-hidden="true" />
         )}
       </div>
     </nav>

@@ -31,14 +31,14 @@ export default class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
-          <AlertTriangle size={48} strokeWidth={1} className="text-warning opacity-60" />
+          <AlertTriangle size={48} strokeWidth={1} className="text-warning opacity-60" aria-hidden="true" />
           <p className="text-text-secondary text-sm">页面出现了问题</p>
           <p className="text-text-tertiary text-xs max-w-md text-center">
             发生了意外错误，请尝试重试
           </p>
           <button
             onClick={() => this.setState({ hasError: false, error: null })}
-            className="px-4 py-2 bg-bg-secondary text-text-primary rounded-lg text-sm hover:bg-bg-hover transition-colors cursor-pointer"
+            className="px-4 py-2 bg-bg-secondary text-text-primary rounded-lg text-sm hover:bg-bg-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
             重试
           </button>

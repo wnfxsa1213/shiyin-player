@@ -18,7 +18,7 @@ export default function VirtualTrackList({ tracks }: Props) {
   });
 
   return (
-    <div ref={parentRef} className="flex-1 overflow-y-auto min-h-0">
+    <div ref={parentRef} className="flex-1 overflow-y-auto min-h-0" role="list" aria-label="歌曲列表">
       <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
         {virtualizer.getVirtualItems().map((vItem) => (
           <div

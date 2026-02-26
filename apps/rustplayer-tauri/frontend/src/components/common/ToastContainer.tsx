@@ -28,8 +28,8 @@ export default function ToastContainer() {
           <div className={`absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full ${colorMap[toast.type]}`} />
           {iconMap[toast.type]}
           <span className="text-text-primary break-words flex-1">{toast.message}</span>
-          <button onClick={() => removeToast(toast.id)} className="p-0.5 rounded text-text-tertiary hover:text-text-primary transition-colors cursor-pointer flex-shrink-0" aria-label="关闭通知">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <button onClick={() => removeToast(toast.id)} className="p-0.5 rounded text-text-tertiary hover:text-text-primary transition-colors cursor-pointer flex-shrink-0 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none" aria-label="关闭通知">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
       ))}

@@ -29,7 +29,15 @@ function TrackRow({ track, index }: Props) {
   return (
     <>
       <div
-        className={`group relative flex items-center px-4 py-2.5 rounded-lg transition-colors duration-200 cursor-pointer ${
+        role="listitem"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            handlePlay();
+          }
+        }}
+        className={`group relative flex items-center px-4 py-2.5 rounded-lg transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
           isCurrent
             ? 'bg-accent-subtle'
             : 'hover:bg-bg-hover'
@@ -41,10 +49,10 @@ function TrackRow({ track, index }: Props) {
           <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 rounded-r-full bg-gradient-accent" />
         )}
         <div className="w-10 text-center text-text-tertiary text-sm">
-          <span className="group-hover:hidden">
+          <span className="group-hover:hidden group-focus-within:hidden">
             {isCurrent ? <span className="text-accent">&#9835;</span> : index}
           </span>
-          <button onClick={handlePlay} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); handlePlay(); } }} className="hidden group-hover:inline text-accent hover:text-accent-hover cursor-pointer" aria-label="播放">
+          <button onClick={handlePlay} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); handlePlay(); } }} className="hidden group-hover:inline group-focus-within:inline text-accent hover:text-accent-hover cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none" aria-label="播放">
             &#9654;
           </button>
         </div>

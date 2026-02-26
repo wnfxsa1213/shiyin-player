@@ -39,11 +39,12 @@ export default function SearchView() {
       <h1 className="text-3xl font-bold mb-6 animate-fade-in-up">搜索</h1>
 
       <div className="relative w-full max-w-xl mb-6 animate-fade-in-up [animation-delay:50ms]">
-        <Search size={20} strokeWidth={1.5} className="absolute left-4 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none" />
+        <Search size={20} strokeWidth={1.5} className="absolute left-4 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none" aria-hidden="true" />
         <input
           type="search"
-          placeholder="输入关键词..."
+          placeholder="输入关键词…"
           aria-label="搜索音乐"
+          autoComplete="off"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           className="w-full bg-bg-secondary border border-border-primary pl-12 pr-5 py-3 rounded-xl text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent-subtle focus:shadow-[0_0_12px_var(--accent-subtle)] transition-all duration-200"
@@ -57,7 +58,7 @@ export default function SearchView() {
             role="tab"
             aria-selected={source === t}
             onClick={() => setSource(t)}
-            className={`px-4 py-1.5 rounded-full text-sm transition-all duration-200 cursor-pointer ${
+            className={`px-4 py-1.5 rounded-full text-sm transition-all duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
               source === t
                 ? 'bg-gradient-accent text-white font-medium shadow-sm'
                 : 'bg-bg-secondary text-text-secondary hover:bg-bg-hover hover:text-text-primary'
@@ -85,14 +86,14 @@ export default function SearchView() {
         )}
         {!loading && debounced && results.length === 0 && (
           <div className="text-center py-16">
-            <SearchX size={64} strokeWidth={1} className="text-text-tertiary mx-auto mb-4 opacity-50" />
+            <SearchX size={64} strokeWidth={1} className="text-text-tertiary mx-auto mb-4 opacity-50" aria-hidden="true" />
             <p className="text-text-tertiary">没有找到相关结果</p>
             <p className="text-text-tertiary text-sm mt-1">试试其他关键词或切换音乐源</p>
           </div>
         )}
         {!loading && !debounced && results.length === 0 && (
           <div className="text-center py-16">
-            <Music size={64} strokeWidth={1} className="text-text-tertiary mx-auto mb-4 opacity-50" />
+            <Music size={64} strokeWidth={1} className="text-text-tertiary mx-auto mb-4 opacity-50" aria-hidden="true" />
             <p className="text-text-tertiary">搜索你喜欢的音乐</p>
           </div>
         )}

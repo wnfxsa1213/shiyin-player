@@ -110,14 +110,14 @@ export default function QueuePanel({ isOpen, onClose }: Props) {
               </span>
               <button
                 onClick={() => playFromQueue(i)}
-                className="flex-1 min-w-0 text-left cursor-pointer bg-transparent border-0 p-0"
+                className="flex-1 min-w-0 text-left cursor-pointer bg-transparent border-0 p-0 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none rounded"
               >
                 <div className={`text-sm truncate ${i === queueIndex ? 'text-accent font-medium' : ''}`}>{track.name}</div>
                 <div className="text-xs text-text-tertiary truncate">{track.artist}</div>
               </button>
               <button
                 onClick={() => removeFromQueue(i)}
-                className="opacity-0 group-hover:opacity-100 p-1 rounded text-text-tertiary hover:text-error transition-all cursor-pointer"
+                className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none p-1 rounded text-text-tertiary hover:text-error transition-all cursor-pointer"
                 aria-label="移除"
               >
                 <X size={14} strokeWidth={1.5} />

@@ -61,6 +61,8 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
                     layoutId="cover-shared"
                     src={currentTrack.coverUrl}
                     alt=""
+                    width={48}
+                    height={48}
                     className={`w-full h-full shadow-sm object-cover transition-[border-radius] duration-500 ${isPlaying ? 'rounded-full' : 'rounded-lg'}`}
                     transition={{ layout: { type: 'spring', stiffness: 200, damping: 28 } }}
                     onError={() => setCoverFailed(true)}
@@ -82,7 +84,7 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
                 </div>
               )}
               {!lyricsOpen && (
-                <div className="absolute inset-0 bg-black/40 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <div className={`absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center ${isPlaying ? 'rounded-full' : 'rounded-lg'}`}>
                   <Music2 size={16} className="text-white" />
                 </div>
               )}
@@ -117,10 +119,10 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
           <button
             onClick={() => currentTrack && ipc.togglePlayback()}
             disabled={!currentTrack}
-            className={`w-10 h-10 rounded-full bg-accent text-white flex items-center justify-center transition-all duration-500 shadow-glow ${
+            className={`w-10 h-10 rounded-full bg-accent text-white flex items-center justify-center transition-[transform,box-shadow,opacity] duration-500 shadow-glow ${
               !currentTrack
                 ? 'opacity-40 cursor-not-allowed'
-                : 'hover:shadow-glow-strong active:scale-95 cursor-pointer'
+                : 'hover:shadow-glow-strong active:scale-95 cursor-pointer focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent focus-visible:outline-none'
             }`}
             style={{ backgroundColor: 'var(--accent)' }}
             aria-label={state === 'playing' ? '暂停' : '播放'}
@@ -152,10 +154,10 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
 
       {/* Right: Volume & Queue */}
       <div className="relative flex items-center justify-end w-1/4 min-w-[180px] gap-3">
-        <button onClick={onToggleQueue} className="text-text-secondary hover:text-text-primary transition-colors duration-200 cursor-pointer" aria-label="播放队列">
+        <button onClick={onToggleQueue} className="text-text-secondary hover:text-text-primary transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none rounded p-1" aria-label="播放队列">
           <ListMusic size={20} strokeWidth={1.5} />
         </button>
-        <Volume2 size={16} strokeWidth={1.5} className="text-text-tertiary flex-shrink-0" />
+        <Volume2 size={16} strokeWidth={1.5} className="text-text-tertiary flex-shrink-0" aria-hidden="true" />
         <input
           type="range"
           min={0}

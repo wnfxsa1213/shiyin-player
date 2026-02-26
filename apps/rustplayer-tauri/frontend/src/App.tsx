@@ -171,9 +171,10 @@ export default function App() {
   return (
     <MemoryRouter>
       <LayoutGroup>
+        <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[9999] focus:p-4 focus:bg-accent focus:text-white focus:rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent">跳转到主内容</a>
         <div className="flex h-screen bg-bg-base text-text-primary overflow-hidden pb-20">
           <Sidebar />
-          <main className="relative flex-1 overflow-y-auto bg-bg-base" tabIndex={-1}>
+          <main id="main-content" className="relative flex-1 overflow-y-auto bg-bg-base" tabIndex={-1}>
             <ErrorBoundary>
               <Routes>
                 <Route path="/" element={<HomeView />} />

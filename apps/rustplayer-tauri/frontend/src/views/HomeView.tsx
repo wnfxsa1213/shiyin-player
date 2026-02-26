@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { usePlayerStore } from '@/store/playerStore';
 import { usePlaylistStore } from '@/store/playlistStore';
 import { useToastStore } from '@/store/toastStore';
@@ -86,7 +86,7 @@ export default function HomeView() {
               <button
                 key={`${track.source}-${track.id}`}
                 onClick={() => handlePlayRecent(track)}
-                className="flex-shrink-0 w-48 bg-bg-secondary rounded-xl p-3 flex items-center gap-3 group cursor-pointer hover:bg-bg-hover transition-colors text-left"
+                className="flex-shrink-0 w-48 bg-bg-secondary rounded-xl p-3 flex items-center gap-3 group cursor-pointer hover:bg-bg-hover transition-colors text-left focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
               >
                 <CoverImage
                   src={track.coverUrl}
@@ -112,10 +112,10 @@ export default function HomeView() {
         ) : (
           <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {playlists.slice(0, 5).map((pl) => (
-              <button
+              <Link
                 key={`${pl.source}-${pl.id}`}
-                onClick={() => navigate(`/playlist/${pl.source}/${pl.id}`)}
-                className="group text-left cursor-pointer"
+                to={`/playlist/${pl.source}/${pl.id}`}
+                className="group text-left cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none rounded-xl block"
               >
                 <div className="aspect-square rounded-xl bg-bg-secondary mb-2 flex items-center justify-center relative overflow-hidden hover:shadow-md transition-all duration-300">
                   <CoverImage
@@ -125,14 +125,14 @@ export default function HomeView() {
                     iconSize={32}
                     resetKey={pl.id}
                   />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200 flex items-center justify-center">
                     <div className="w-10 h-10 rounded-full bg-accent flex items-center justify-center shadow-lg">
                       <Play size={16} fill="currentColor" className="text-white ml-0.5" />
                     </div>
                   </div>
                 </div>
                 <p className="text-sm text-text-secondary truncate" title={pl.name}>{pl.name}</p>
-              </button>
+              </Link>
             ))}
           </div>
         )}

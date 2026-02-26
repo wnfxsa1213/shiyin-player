@@ -100,6 +100,8 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
                 layoutId="cover-shared"
                 src={currentTrack.coverUrl}
                 alt=""
+                width={384}
+                height={384}
                 className="w-96 h-96 rounded-2xl object-cover shadow-[var(--shadow-glow-strong)] transition-shadow duration-700"
                 transition={springTransition}
                 onError={() => setCoverFailed(true)}
@@ -111,7 +113,7 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
                 className="w-96 h-96 rounded-2xl bg-bg-secondary flex items-center justify-center shadow-xl"
                 transition={springTransition}
               >
-                <Music size={64} className="text-text-tertiary" />
+                <Music size={64} className="text-text-tertiary" aria-hidden="true" />
               </motion.div>
             )}
           </div>
@@ -121,7 +123,7 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
             <div className="flex items-center justify-end px-8 py-6 z-20 absolute right-0 top-0">
               <button
                 onClick={onClose}
-                className="w-10 h-10 rounded-full bg-bg-secondary/50 backdrop-blur-md flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors duration-200 cursor-pointer"
+                className="w-10 h-10 rounded-full bg-bg-secondary/50 backdrop-blur-md flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
                 aria-label="关闭歌词"
               >
                 <X size={20} strokeWidth={2} />
@@ -146,7 +148,7 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
                   lyrics.map((line, i) => (
                     <div
                       key={i}
-                      className={`transition-all duration-500 origin-left ${
+                      className={`transition-[transform,opacity,filter] duration-500 origin-left ${
                         i === activeIndex ? 'scale-105' : 'opacity-30 blur-[1px]'
                       }`}
                     >
@@ -158,7 +160,7 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
                         }`}
                         style={{ transition: 'background-image 0.8s ease' }}
                       >
-                        {line.text || '···'}
+                        {line.text || '…'}
                       </p>
                       {line.translation && (
                         <p

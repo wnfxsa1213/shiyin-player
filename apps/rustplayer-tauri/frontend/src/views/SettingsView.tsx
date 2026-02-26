@@ -106,7 +106,7 @@ export default function SettingsView() {
           <span className="text-text-secondary text-sm">主题</span>
           <button
             onClick={toggleTheme}
-            className="px-4 py-2 bg-bg-hover rounded-lg text-sm text-text-primary hover:bg-bg-elevated transition-all duration-200 cursor-pointer"
+            className="px-4 py-2 bg-bg-hover rounded-lg text-sm text-text-primary hover:bg-bg-elevated transition-all duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
             {theme === 'dark' ? '浅色模式' : '深色模式'}
           </button>
@@ -146,7 +146,7 @@ export default function SettingsView() {
               <button
                 key={m.value}
                 onClick={() => setMode(m.value)}
-                className={`px-4 py-1.5 rounded-full text-sm transition-all duration-200 cursor-pointer ${
+                className={`px-4 py-1.5 rounded-full text-sm transition-all duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
                   mode === m.value
                     ? 'bg-gradient-accent text-white font-medium'
                     : 'bg-bg-hover text-text-secondary hover:text-text-primary'
@@ -165,7 +165,7 @@ export default function SettingsView() {
               <button
                 key={p.name}
                 onClick={() => applyPreset(p.name)}
-                className="w-8 h-8 rounded-full border-2 transition-all duration-200 cursor-pointer hover:scale-110"
+                className="w-8 h-8 rounded-full border-2 transition-all duration-200 cursor-pointer hover:scale-110 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
                 style={{ background: `linear-gradient(135deg, ${p.primary}, ${p.secondary})`, borderColor: colors.primary === p.primary ? 'var(--accent)' : 'transparent' }}
                 aria-label={p.name}
                 title={p.name}
@@ -183,7 +183,7 @@ export default function SettingsView() {
                   type="color"
                   value={colors[key]}
                   onChange={(e) => setColors({ ...colors, [key]: e.target.value })}
-                  className="w-7 h-7 rounded border-0 cursor-pointer bg-transparent"
+                  className="w-7 h-7 rounded border-0 cursor-pointer bg-transparent focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
                 />
                 {key === 'primary' ? '主色' : key === 'secondary' ? '副色' : '粒子'}
               </label>
@@ -213,7 +213,7 @@ export default function SettingsView() {
               key={s}
               onClick={() => { setSource(s); setCookie(''); }}
               disabled={loginStatus === 'webview-pending'}
-              className={`px-3 py-1.5 rounded-full text-sm transition-all duration-200 ${
+              className={`px-3 py-1.5 rounded-full text-sm transition-all duration-200 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
                 loginStatus === 'webview-pending'
                   ? 'opacity-50 cursor-not-allowed'
                   : 'cursor-pointer'
@@ -236,7 +236,7 @@ export default function SettingsView() {
             </span>
             <button
               onClick={handleLogout}
-              className="px-3 py-1.5 text-sm rounded-lg text-text-secondary hover:text-red-400 bg-bg-hover hover:bg-red-500/10 transition-all duration-200 cursor-pointer"
+              className="px-3 py-1.5 text-sm rounded-lg text-text-secondary hover:text-red-400 bg-bg-hover hover:bg-red-500/10 transition-all duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
             >
               登出
             </button>
@@ -246,14 +246,14 @@ export default function SettingsView() {
             <button
               onClick={handleWebViewLogin}
               disabled={isLoading}
-              className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium text-sm transition-all duration-200 ${
+              className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium text-sm transition-all duration-200 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
                 isLoading
                   ? 'bg-accent/60 text-white/80 cursor-not-allowed'
                   : 'bg-accent text-white hover:bg-accent-hover active:bg-accent-active cursor-pointer'
               }`}
             >
               {loginStatus === 'webview-pending' ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /> 等待登录窗口...</>
+                <><Loader2 className="w-4 h-4 animate-spin" /> 等待登录窗口…</>
               ) : (
                 <><LogIn className="w-4 h-4" /> 一键登录</>
               )}
@@ -268,7 +268,7 @@ export default function SettingsView() {
             {/* Advanced: manual cookie input */}
             <button
               onClick={() => setShowAdvanced(!showAdvanced)}
-              className="flex items-center gap-1.5 text-sm text-text-tertiary hover:text-text-secondary cursor-pointer transition-colors duration-200 select-none mt-4"
+              className="flex items-center gap-1.5 text-sm text-text-tertiary hover:text-text-secondary cursor-pointer transition-colors duration-200 select-none mt-4 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none rounded"
               aria-expanded={showAdvanced}
               aria-controls="advanced-cookie-section"
             >
@@ -290,18 +290,20 @@ export default function SettingsView() {
                     value={cookie}
                     onChange={(e) => setCookie(e.target.value)}
                     placeholder="MUSIC_U=..."
+                    autoComplete="off"
+                    spellCheck={false}
                     className="flex-1 bg-bg-base border border-border-primary px-4 py-2 rounded-lg text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent-subtle transition-all duration-200 text-sm"
                   />
                   <button
                     onClick={handleCookieLogin}
                     disabled={loginStatus === 'cookie-submitting' || !cookie.trim()}
-                    className={`px-5 py-2 bg-accent text-white rounded-lg font-medium transition-all duration-200 ${
+                    className={`px-5 py-2 bg-accent text-white rounded-lg font-medium transition-all duration-200 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent focus-visible:outline-none ${
                       loginStatus === 'cookie-submitting' || !cookie.trim()
                         ? 'opacity-50 cursor-not-allowed'
                         : 'hover:bg-accent-hover active:bg-accent-active cursor-pointer'
                     }`}
                   >
-                    {loginStatus === 'cookie-submitting' ? '登录中...' : '登录'}
+                    {loginStatus === 'cookie-submitting' ? '登录中…' : '登录'}
                   </button>
                 </div>
               </div>

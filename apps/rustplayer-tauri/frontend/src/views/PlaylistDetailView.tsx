@@ -82,10 +82,10 @@ export default function PlaylistDetailView() {
                 )}
                 <p className="text-xs text-text-tertiary">{playlist.tracks.length} 首歌曲</p>
                 <div className="flex gap-3 mt-2">
-                  <button onClick={handlePlayAll} className="flex items-center gap-2 px-5 py-2 bg-gradient-accent text-white rounded-full text-sm font-medium hover:shadow-glow transition-all cursor-pointer">
+                  <button onClick={handlePlayAll} className="flex items-center gap-2 px-5 py-2 bg-gradient-accent text-white rounded-full text-sm font-medium hover:shadow-glow transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent focus-visible:outline-none">
                     <Play size={16} fill="currentColor" /> 播放全部
                   </button>
-                  <button onClick={handleShuffleAll} className="flex items-center gap-2 px-5 py-2 bg-bg-secondary text-text-primary rounded-full text-sm hover:bg-bg-hover transition-all cursor-pointer">
+                  <button onClick={handleShuffleAll} className="flex items-center gap-2 px-5 py-2 bg-bg-secondary text-text-primary rounded-full text-sm hover:bg-bg-hover transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
                     <Shuffle size={16} strokeWidth={1.5} /> 随机播放
                   </button>
                 </div>
@@ -100,7 +100,7 @@ export default function PlaylistDetailView() {
           <p className="text-text-tertiary mb-4">歌单加载失败</p>
           <button
             onClick={() => setRetryKey((k) => k + 1)}
-            className="px-4 py-2 bg-bg-secondary text-text-primary rounded-lg text-sm hover:bg-bg-hover transition-colors cursor-pointer"
+            className="px-4 py-2 bg-bg-secondary text-text-primary rounded-lg text-sm hover:bg-bg-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
             重试
           </button>
