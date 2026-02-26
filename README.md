@@ -1,27 +1,33 @@
-# RustPlayer 🎵
+# 拾音 (RustPlayer) 🎵
 
-基于 Rust + Tauri v2 的跨平台桌面音乐播放器，支持网易云音乐和 QQ 音乐双平台聚合搜索与播放。
+基于 Rust + Tauri v2 的跨平台桌面音乐播放器，支持网易云音乐和 QQ 音乐双音源聚合搜索与播放。
 
 ## 功能特性
 
-- 聚合搜索：同时搜索网易云音乐和 QQ 音乐
-- 在线播放：基于 GStreamer 的高质量音频播放引擎
-- 歌词同步：逐行歌词滚动 + 翻译显示
-- 复古未来主义 UI：霓虹灯光效、CRT 扫描线、赛博朋克风格
-- 键盘快捷键：空格播放/暂停、方向键调节音量和进度
-- Cookie 登录：支持网易云/QQ 音乐 Cookie 登录获取高级权限
-- 搜索缓存：LRU + TTL 缓存策略，减少重复请求
-- 明暗主题切换
+- **聚合搜索** — 同时搜索网易云音乐和 QQ 音乐，三级缓存（内存 LRU → SQLite → API）
+- **在线播放** — GStreamer 音频引擎，独立线程运行，支持播放队列与多种播放模式
+- **歌词同步** — 逐行歌词滚动显示，支持翻译歌词
+- **频谱可视化** — 柱状 / 波形 / 环形三种模式，粒子效果，自定义配色
+- **动态主题色** — 从当前播放封面提取主色调，动态设置全局主题色
+- **一键登录** — WebView 扫码登录，自动提取 HttpOnly Cookie（Linux 通过 webkit2gtk 原生 API）
+- **Cookie 登录** — 手动粘贴 Cookie 登录，获取歌单等高级权限
+- **歌单管理** — 查看和播放用户歌单
+- **键盘快捷键** — 空格播放/暂停、方向键调节音量和进度、Ctrl+B 切换侧边栏
+- **明暗主题** — 深色 / 浅色主题切换
+- **结构化日志** — tracing 日志系统，按天滚动，支持 traceId 端到端链路追踪
+- **安全加固** — CSP 策略、域名白名单、Cookie 验证、输入校验
 
 ## 技术栈
 
 | 层级 | 技术 |
 |------|------|
 | 框架 | Tauri v2 |
-| 前端 | React 18 + TypeScript + Tailwind CSS |
-| 后端 | Rust (Cargo Workspace) |
-| 音频 | GStreamer 0.23 |
-| 状态管理 | Zustand |
+| 前端 | React 18 + TypeScript + Tailwind CSS + Zustand |
+| 后端 | Rust (Cargo Workspace, 6 crates) |
+| 音频 | GStreamer (gstreamer-rs) |
+| 动画 | Framer Motion（共享布局动画） |
+| 虚拟滚动 | @tanstack/react-virtual |
+| 持久化 | tauri-plugin-store + SQLite (rusqlite + r2d2) |
 | 加密 | AES-128-CBC + RSA (网易 weapi) / MD5 签名 (QQ) |
 
 ## 项目结构
@@ -29,27 +35,29 @@
 ```
 rust-music/
 ├── apps/rustplayer-tauri/
-│   ├── frontend/          # React 前端
-│   │   ├── src/
-│   │   │   ├── components/  # UI 组件
-│   │   │   ├── views/       # 页面视图
-│   │   │   ├── store/       # Zustand 状态
-│   │   │   ├── lib/         # IPC 封装 + 工具函数
-│   │   │   └── styles/      # 主题样式
-│   │   └── package.json
-│   └── src-tauri/         # Rust 后端
+│   ├── frontend/            # React 前端
+│   │   └── src/
+│   │       ├── components/    # UI 组件 (layout / player / common)
+│   │       ├── views/         # 页面 (Home / Search / Settings / PlaylistDetail)
+│   │       ├── store/         # Zustand stores (player / ui / visualizer / toast / playlist)
+│   │       ├── hooks/         # 自定义 hooks (useDynamicTheme / useFocusTrap)
+│   │       └── lib/           # IPC 封装 / 设置持久化 / 工具函数
+│   └── src-tauri/           # Rust 后端
 │       └── src/
-│           ├── main.rs      # 应用入口
-│           ├── commands/    # Tauri IPC 命令
-│           └── events.rs    # 后端→前端事件转发
+│           ├── main.rs        # 应用入口与初始化
+│           ├── commands/      # Tauri IPC 命令
+│           ├── events.rs      # 播放器事件转发
+│           ├── db.rs          # SQLite 持久缓存
+│           ├── logging.rs     # 日志系统初始化
+│           └── store.rs       # Cookie 持久化
 ├── crates/
-│   ├── core/              # 核心类型定义
-│   ├── player/            # GStreamer 播放引擎
-│   ├── sources/           # 音源注册中心
-│   ├── netease/           # 网易云音乐 API
-│   ├── qqmusic/           # QQ 音乐 API
-│   └── cache/             # LRU 搜索缓存
-└── Cargo.toml             # Workspace 配置
+│   ├── core/                # 核心类型 (Track, PlayerState, MusicSource trait)
+│   ├── player/              # GStreamer 播放引擎 + 频谱分析
+│   ├── sources/             # 音源注册中心 (SourceRegistry)
+│   ├── netease/             # 网易云音乐 API (weapi 加密)
+│   ├── qqmusic/             # QQ 音乐 API (签名计算)
+│   └── cache/               # 内存 LRU 搜索缓存 (5min TTL)
+└── Cargo.toml               # Workspace 配置
 ```
 
 ## 环境要求
@@ -63,8 +71,11 @@ rust-music/
 
 ```bash
 # 系统依赖
-sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
-sudo apt install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly
+sudo apt install -y \
+  libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+  libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+  gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
+  libasound2-dev libssl-dev pkg-config
 
 # Tauri CLI
 cargo install tauri-cli --version "^2"
@@ -73,36 +84,35 @@ cargo install tauri-cli --version "^2"
 ## 构建与运行
 
 ```bash
-# 开发模式
+# 前端依赖
 cd apps/rustplayer-tauri/frontend && npm install && cd -
+
+# 开发模式
 cargo tauri dev
 
 # 生产构建
 cargo tauri build
-
-# 二进制文件位于
-./target/release/rustplayer-tauri
 ```
 
 ## 日志与调试
 
-- 后端日志：使用 `tracing` 落盘到“应用数据目录”的 `logs/` 下，按天滚动，文件名形如 `rustplayer-backend.jsonl.YYYY-MM-DD`
-- 前端错误：`window.error` / `unhandledrejection` / React ErrorBoundary 会 best-effort 转存到后端日志（便于 release 环境排查）
-- 详细度控制：通过 `RUST_LOG` 调整，例如：
+- 后端日志落盘到 `~/.local/share/com.shiyin.music/logs/`，按天滚动，JSON Lines 格式
+- 前端错误通过 ErrorBoundary + `client_log` IPC 转存到后端日志
+- 每次 IPC 调用携带 `traceId`，可在日志中按 traceId 搜索完整链路
+- 详细度控制：
 
 ```bash
 RUST_LOG=debug cargo tauri dev
 ```
-
-- 端到端排查：每次 IPC 调用会生成并传递 `traceId`（开发模式下 toast 会附带 traceId），在日志里直接按 traceId 搜索即可定位整条链路
 
 ## 快捷键
 
 | 按键 | 功能 |
 |------|------|
 | `Space` | 播放 / 暂停 |
-| `↑` / `↓` | 音量增减 |
+| `↑` / `↓` | 音量 +/- 5% |
 | `←` / `→` | 快退 / 快进 5 秒 |
+| `Ctrl+B` | 切换侧边栏 |
 
 ## 许可证
 
