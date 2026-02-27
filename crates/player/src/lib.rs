@@ -247,23 +247,35 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
 
     if matches!(eng.state, PlayerState::Playing { .. }) {
         // Check if pipeline is actually playing (detect silent failures)
-        // Use a counter to avoid false positives during transient state changes
-        if let Ok(state) = p.state(gst::ClockTime::ZERO) {
-            if state.1 != gst::State::Playing && state.1 != gst::State::Paused {
-                eng.state_mismatch_count += 1;
-                if eng.state_mismatch_count >= 3 {
-                    log::error!("pipeline state mismatch (3 consecutive): expected Playing, got {:?}", state.1);
-                    emit(tx, PlayerEvent::Error {
-                        error: PlayerError::Pipeline(format!("unexpected state: {:?}", state.1))
-                    });
-                    teardown(eng);
-                    set_state(eng, PlayerState::Stopped, tx);
-                    return;
-                }
-            } else {
-                // Reset counter when state is correct
-                eng.state_mismatch_count = 0;
+        // Use destructuring for better readability
+        let (state_change_result, current_state, _pending_state) = p.state(gst::ClockTime::ZERO);
+
+        // Immediately handle critical state change failures
+        if state_change_result.is_err() {
+            log::error!("pipeline state query failed: {:?}", state_change_result);
+            emit(tx, PlayerEvent::Error {
+                error: PlayerError::Pipeline("state query failure".into())
+            });
+            teardown(eng);
+            set_state(eng, PlayerState::Stopped, tx);
+            return;
+        }
+
+        // Check for state mismatch with counter-based debouncing
+        if current_state != gst::State::Playing && current_state != gst::State::Paused {
+            eng.state_mismatch_count += 1;
+            if eng.state_mismatch_count >= 3 {
+                log::error!("pipeline state mismatch (3 consecutive): expected Playing, got {:?}", current_state);
+                emit(tx, PlayerEvent::Error {
+                    error: PlayerError::Pipeline(format!("unexpected state: {:?}", current_state))
+                });
+                teardown(eng);
+                set_state(eng, PlayerState::Stopped, tx);
+                return;
             }
+        } else {
+            // Reset counter when state is correct
+            eng.state_mismatch_count = 0;
         }
 
         // Emit Progress at ~2Hz (every ~15 ticks at 33ms interval)
