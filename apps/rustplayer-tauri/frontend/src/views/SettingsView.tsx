@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { LogIn, Loader2, CheckCircle, Info, ChevronRight } from 'lucide-react';
 import { useUiStore } from '@/store/uiStore';
-import { useVisualizerStore, COLOR_PRESETS, type VisualizerMode } from '@/store/visualizerStore';
+import { useVisualizerStore, COLOR_PRESETS } from '@/store/visualizerStore';
 import { useToastStore } from '@/store/toastStore';
 import { sanitizeError } from '@/lib/errorMessages';
 import { ipc, onLoginSuccess, onLoginTimeout, type MusicSource } from '@/lib/ipc';
@@ -19,8 +19,8 @@ export default function SettingsView() {
   });
 
   const {
-    enabled, mode, showParticles, colors,
-    setEnabled, setMode, setShowParticles, setColors, applyPreset,
+    enabled, showParticles, colors,
+    setEnabled, setShowParticles, setColors, applyPreset,
   } = useVisualizerStore();
 
   const loginStatus = loginStatusMap[source];
@@ -88,12 +88,6 @@ export default function SettingsView() {
     }
   };
 
-  const modes: { value: VisualizerMode; label: string }[] = [
-    { value: 'bars', label: '柱状' },
-    { value: 'wave', label: '波形' },
-    { value: 'circle', label: '环形' },
-  ];
-
   const isLoading = loginStatus === 'webview-pending' || loginStatus === 'cookie-submitting';
 
   return (
@@ -137,25 +131,6 @@ export default function SettingsView() {
           >
             <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${showParticles ? 'translate-x-5' : ''}`} />
           </button>
-        </div>
-
-        <div className="mb-4">
-          <span className="text-text-secondary text-sm block mb-2">模式</span>
-          <div className="flex gap-2">
-            {modes.map((m) => (
-              <button
-                key={m.value}
-                onClick={() => setMode(m.value)}
-                className={`px-4 py-1.5 rounded-full text-sm transition-all duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
-                  mode === m.value
-                    ? 'bg-gradient-accent text-white font-medium'
-                    : 'bg-bg-hover text-text-secondary hover:text-text-primary'
-                }`}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
         </div>
 
         <div className="mb-4">

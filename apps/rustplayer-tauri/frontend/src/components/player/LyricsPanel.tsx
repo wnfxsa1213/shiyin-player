@@ -90,7 +90,7 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
-          className="fixed inset-0 bg-bg-base/90 backdrop-blur-3xl z-[60] flex overflow-hidden border-l border-border-primary"
+          className="fixed inset-0 bg-bg-base z-[60] flex overflow-hidden border-l border-border-primary"
         >
           {/* Left Side: Shared Layout Album Cover */}
           <div className="w-1/2 flex items-center justify-center p-12">
@@ -134,7 +134,7 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
               <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-bg-base/90 to-transparent z-10 pointer-events-none" />
               <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-bg-base/90 to-transparent z-10 pointer-events-none" />
 
-              <div className="absolute inset-0 pointer-events-none opacity-20 z-0" aria-hidden="true">
+              <div className="absolute inset-0 pointer-events-none opacity-35 z-0" aria-hidden="true">
                 <ParticleSystem width={size.w / 2} height={size.h} />
               </div>
 

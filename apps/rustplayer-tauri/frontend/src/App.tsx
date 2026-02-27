@@ -72,8 +72,6 @@ export default function App() {
 
         const vizEnabled = await loadSetting<boolean>('visualizer.enabled');
         if (vizEnabled !== null) useVisualizerStore.setState({ enabled: vizEnabled });
-        const vizMode = await loadSetting<string>('visualizer.mode');
-        if (vizMode) useVisualizerStore.setState({ mode: vizMode as any });
         const vizParticles = await loadSetting<boolean>('visualizer.showParticles');
         if (vizParticles !== null) useVisualizerStore.setState({ showParticles: vizParticles });
         const vizColors = await loadSetting<{ primary: string; secondary: string; particle: string }>('visualizer.colors');

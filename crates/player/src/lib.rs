@@ -70,6 +70,7 @@ struct Engine {
     state: PlayerState,
     current_track: Option<Track>,
     progress_counter: u32,
+    state_mismatch_count: u32,
 }
 
 fn engine_loop(
@@ -90,6 +91,7 @@ fn engine_loop(
             state: PlayerState::Idle,
             current_track: None,
             progress_counter: 0,
+            state_mismatch_count: 0,
         };
         let mut ticker = tokio::time::interval(Duration::from_millis(33));
 
@@ -234,12 +236,36 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
                         }
                     }
                 }
+                gst::MessageView::Warning(w) => {
+                    let detail = format!("{}{}", w.error(), w.debug().map(|d| format!(" ({d})")).unwrap_or_default());
+                    log::warn!("gstreamer pipeline warning: {detail}");
+                }
                 _ => {}
             }
         }
     }
 
     if matches!(eng.state, PlayerState::Playing { .. }) {
+        // Check if pipeline is actually playing (detect silent failures)
+        // Use a counter to avoid false positives during transient state changes
+        if let Ok(state) = p.state(gst::ClockTime::ZERO) {
+            if state.1 != gst::State::Playing && state.1 != gst::State::Paused {
+                eng.state_mismatch_count += 1;
+                if eng.state_mismatch_count >= 3 {
+                    log::error!("pipeline state mismatch (3 consecutive): expected Playing, got {:?}", state.1);
+                    emit(tx, PlayerEvent::Error {
+                        error: PlayerError::Pipeline(format!("unexpected state: {:?}", state.1))
+                    });
+                    teardown(eng);
+                    set_state(eng, PlayerState::Stopped, tx);
+                    return;
+                }
+            } else {
+                // Reset counter when state is correct
+                eng.state_mismatch_count = 0;
+            }
+        }
+
         // Emit Progress at ~2Hz (every ~15 ticks at 33ms interval)
         eng.progress_counter += 1;
         if eng.progress_counter >= 15 {

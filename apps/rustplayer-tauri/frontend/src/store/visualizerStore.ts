@@ -1,8 +1,6 @@
 import { create } from 'zustand';
 import { saveSetting } from '@/lib/settings';
 
-export type VisualizerMode = 'bars' | 'wave' | 'circle';
-
 export interface ColorPreset {
   name: string;
   primary: string;
@@ -20,12 +18,10 @@ export const COLOR_PRESETS: ColorPreset[] = [
 
 interface VisualizerStore {
   enabled: boolean;
-  mode: VisualizerMode;
   showParticles: boolean;
   colors: { primary: string; secondary: string; particle: string };
   magnitudes: number[];
   setEnabled: (v: boolean) => void;
-  setMode: (m: VisualizerMode) => void;
   setShowParticles: (v: boolean) => void;
   setColors: (c: { primary: string; secondary: string; particle: string }) => void;
   applyPreset: (name: string) => void;
@@ -34,17 +30,12 @@ interface VisualizerStore {
 
 export const useVisualizerStore = create<VisualizerStore>((set) => ({
   enabled: true,
-  mode: 'bars',
   showParticles: true,
   colors: COLOR_PRESETS[0],
   magnitudes: new Array(64).fill(0),
   setEnabled: (enabled) => {
     set({ enabled });
     saveSetting('visualizer.enabled', enabled).catch(console.error);
-  },
-  setMode: (mode) => {
-    set({ mode });
-    saveSetting('visualizer.mode', mode).catch(console.error);
   },
   setShowParticles: (showParticles) => {
     set({ showParticles });

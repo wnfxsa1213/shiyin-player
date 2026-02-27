@@ -88,18 +88,48 @@ pub async fn lyrics(
     http: &reqwest::Client,
     track_id: &str,
 ) -> Result<Vec<LyricsLine>, SourceError> {
-    let res = http
-        .get("https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg")
-        .query(&[("songmid", track_id), ("format", "json"), ("nobase64", "1")])
-        .send()
-        .await
-        .map_err(|e| SourceError::Network(e.to_string()))?;
-    if !res.status().is_success() {
-        return Err(SourceError::Network(format!("http {}", res.status())));
+    // Retry up to 2 times on network errors
+    let mut last_error = None;
+    for attempt in 0..2 {
+        if attempt > 0 {
+            log::debug!("qqmusic lyrics: retry attempt {attempt} for track {track_id}");
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        }
+
+        let res = match http
+            .get("https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg")
+            .query(&[("songmid", track_id), ("format", "json"), ("nobase64", "1")])
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                last_error = Some(SourceError::Network(e.to_string()));
+                continue;
+            }
+        };
+
+        if !res.status().is_success() {
+            last_error = Some(SourceError::Network(format!("http {}", res.status())));
+            continue;
+        }
+
+        let value: Value = match res.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                last_error = Some(SourceError::InvalidResponse(e.to_string()));
+                continue;
+            }
+        };
+
+        let lrc = value.get("lyric").and_then(|v| v.as_str()).unwrap_or("");
+        if lrc.is_empty() {
+            log::debug!("qqmusic lyrics: no lyric content for track {track_id}");
+        }
+        return Ok(parse_lyrics(lrc, ""));
     }
-    let value: Value = res.json().await.map_err(|e| SourceError::InvalidResponse(e.to_string()))?;
-    let lrc = value.get("lyric").and_then(|v| v.as_str()).unwrap_or("");
-    Ok(parse_lyrics(lrc, ""))
+
+    Err(last_error.unwrap_or_else(|| SourceError::Network("all retry attempts failed".into())))
 }
 
 // --- Internal helpers ---

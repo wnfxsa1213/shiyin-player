@@ -850,7 +850,7 @@ const COVER_DOMAIN_ALLOWLIST: &[&str] = &[
     "qqmusic.qq.com",
 ];
 
-const MAX_COVER_BYTES: usize = 2 * 1024 * 1024; // 2MB
+const MAX_COVER_BYTES: usize = 5 * 1024 * 1024; // 5MB
 
 fn is_allowed_cover_url(url: &reqwest::Url) -> bool {
     if url.scheme() != "https" && url.scheme() != "http" {
@@ -937,7 +937,30 @@ fn extract_dominant_hsl(img_bytes: &[u8]) -> Option<[f64; 3]> {
     let best = buckets.iter().enumerate()
         .max_by_key(|(_, b)| b.3)?;
     if best.1 .3 == 0 {
-        return None;
+        log::debug!("no colorful pixels found, falling back to average color");
+        let mut sin_sum = 0.0f64;
+        let mut cos_sum = 0.0f64;
+        let mut total_s = 0.0;
+        let mut total_l = 0.0;
+        let mut count = 0u32;
+        for pixel in rgb.pixels() {
+            let (h, s, l) = rgb_to_hsl(pixel[0], pixel[1], pixel[2]);
+            if l > 10.0 && l < 95.0 {
+                let rad = h.to_radians();
+                sin_sum += rad.sin();
+                cos_sum += rad.cos();
+                total_s += s;
+                total_l += l;
+                count += 1;
+            }
+        }
+        if count == 0 {
+            return None;
+        }
+        let avg_h = sin_sum.atan2(cos_sum).to_degrees().rem_euclid(360.0);
+        let avg_s = (total_s / count as f64).max(30.0);
+        let avg_l = (total_l / count as f64).clamp(45.0, 65.0);
+        return Some([avg_h, avg_s, avg_l]);
     }
     let count = best.1 .3 as f64;
     let h = best.1 .0 / count;
