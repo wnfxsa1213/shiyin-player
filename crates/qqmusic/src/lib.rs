@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use rustplayer_core::{
-    AuthToken, Credentials, LyricsLine, MusicSource, MusicSourceId, SearchQuery,
-    SourceError, StreamInfo, Track,
+    AuthToken, Credentials, LyricsLine, MusicSource, MusicSourceId, Playlist, PlaylistBrief,
+    SearchQuery, SourceError, StreamInfo, Track,
 };
 
 pub mod api;
@@ -69,6 +69,12 @@ impl MusicSource for QqMusicClient {
             }
             Credentials::Password { .. } => Err(SourceError::Unimplemented),
         }
+    }
+    async fn get_user_playlists(&self) -> Result<Vec<PlaylistBrief>, SourceError> {
+        api::user_playlists(&self.http, &self.base_url, self.cookie().as_deref()).await
+    }
+    async fn get_playlist_detail(&self, id: &str) -> Result<Playlist, SourceError> {
+        api::playlist_detail(&self.http, &self.base_url, id, self.cookie().as_deref()).await
     }
     fn logout(&self) {
         if let Ok(mut guard) = self.cookie.write() {

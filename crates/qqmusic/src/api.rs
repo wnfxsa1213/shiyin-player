@@ -1,8 +1,17 @@
 use std::collections::HashMap;
 
 use reqwest::header::COOKIE;
-use rustplayer_core::{LyricsLine, MusicSourceId, SearchQuery, SourceError, StreamInfo, Track};
+use rustplayer_core::{
+    LyricsLine, MusicSourceId, Playlist, PlaylistBrief, SearchQuery, SourceError, StreamInfo, Track,
+};
 use serde_json::{json, Value};
+
+// QQ 音乐 API 客户端标识常量
+const API_CLIENT_TYPE: &str = "19";
+const API_CLIENT_VERSION: &str = "1859";
+
+// 默认歌单名称（当 API 返回空字符串时使用）
+const DEFAULT_PLAYLIST_NAME: &str = "未命名歌单";
 
 pub async fn search(
     http: &reqwest::Client,
@@ -132,6 +141,124 @@ pub async fn lyrics(
     Err(last_error.unwrap_or_else(|| SourceError::Network("all retry attempts failed".into())))
 }
 
+pub async fn user_playlists(
+    http: &reqwest::Client,
+    base_url: &str,
+    cookie: Option<&str>,
+) -> Result<Vec<PlaylistBrief>, SourceError> {
+    user_playlists_with_pagination(http, base_url, cookie, 0, 100).await
+}
+
+pub async fn user_playlists_with_pagination(
+    http: &reqwest::Client,
+    base_url: &str,
+    cookie: Option<&str>,
+    offset: u32,
+    limit: u32,
+) -> Result<Vec<PlaylistBrief>, SourceError> {
+    let data = json!({
+        "comm": { "ct": API_CLIENT_TYPE, "cv": API_CLIENT_VERSION, "uin": "0" },
+        "req": {
+            "module": "music.playlist.PlaylistSquare",
+            "method": "GetMyPlaylist",
+            "param": {
+                "uin": 0,
+                "sin": offset,
+                "size": limit
+            }
+        }
+    });
+
+    let value = musicu_post(http, base_url, &data, cookie).await?;
+    let code = value.pointer("/req/code").and_then(|v| v.as_i64()).unwrap_or(-1);
+
+    // 细化错误码映射
+    match code {
+        0 => {}, // 成功
+        -100 | -200 => return Err(SourceError::Unauthorized), // 鉴权失败
+        -1001 | -1002 => return Err(SourceError::RateLimited), // 限流
+        _ => {
+            log::warn!("qqmusic user_playlists: unexpected code {}", code);
+            return Err(SourceError::Internal(format!("api error code {}", code)));
+        }
+    }
+
+    let Some(list) = value.pointer("/req/data/list").and_then(|v| v.as_array()) else {
+        return Ok(Vec::new());
+    };
+
+    Ok(list.iter().filter_map(parse_playlist_brief).collect())
+}
+
+pub async fn playlist_detail(
+    http: &reqwest::Client,
+    base_url: &str,
+    playlist_id: &str,
+    cookie: Option<&str>,
+) -> Result<Playlist, SourceError> {
+    // 输入验证：检查 playlist_id 长度和字符集
+    if playlist_id.is_empty() || playlist_id.len() > 64 {
+        return Err(SourceError::InvalidResponse("invalid playlist_id length".into()));
+    }
+    if !playlist_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return Err(SourceError::InvalidResponse("invalid playlist_id format".into()));
+    }
+
+    let data = json!({
+        "comm": { "ct": API_CLIENT_TYPE, "cv": API_CLIENT_VERSION, "uin": "0" },
+        "req": {
+            "module": "music.srfDissInfo.airia",
+            "method": "uniform_get_Dissinfo",
+            "param": {
+                "disstid": playlist_id,
+                "userinfo": 1,
+                "tag": 1
+            }
+        }
+    });
+
+    let value = musicu_post(http, base_url, &data, cookie).await?;
+    let code = value.pointer("/req/code").and_then(|v| v.as_i64()).unwrap_or(-1);
+
+    // 细化错误码映射
+    match code {
+        0 => {}, // 成功
+        -100 | -200 => return Err(SourceError::Unauthorized), // 鉴权失败
+        -404 | 404 => return Err(SourceError::NotFound), // 歌单不存在
+        -1001 | -1002 => return Err(SourceError::RateLimited), // 限流
+        _ => {
+            log::warn!("qqmusic playlist_detail: unexpected code {} for playlist {}", code, playlist_id);
+            return Err(SourceError::Internal(format!("api error code {}", code)));
+        }
+    }
+
+    let data = value.pointer("/req/data").ok_or(SourceError::NotFound)?;
+    let dirinfo = data.get("dirinfo").ok_or(SourceError::NotFound)?;
+
+    // 使用默认值处理空字符串
+    let name = dirinfo.get("title")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(DEFAULT_PLAYLIST_NAME)
+        .to_string();
+    let description = dirinfo.get("desc").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let cover_url = dirinfo.get("logo").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let tracks = data
+        .get("songlist")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(parse_song).collect())
+        .unwrap_or_default();
+
+    Ok(Playlist {
+        id: playlist_id.to_string(),
+        name,
+        description,
+        cover_url,
+        tracks,
+        source: MusicSourceId::Qqmusic,
+    })
+}
+
 // --- Internal helpers ---
 
 async fn musicu_post(
@@ -187,6 +314,54 @@ fn parse_song(song: &Value) -> Option<Track> {
         duration_ms,
         source: MusicSourceId::Qqmusic,
         cover_url,
+    })
+}
+
+fn parse_playlist_brief(item: &Value) -> Option<PlaylistBrief> {
+    // dissid/tid 可能是字符串或数字
+    let id = item.get("dissid")
+        .or_else(|| item.get("tid"))
+        .and_then(|v| {
+            if let Some(s) = v.as_str() {
+                Some(s.to_string())
+            } else {
+                v.as_i64().map(|n| n.to_string())
+            }
+        })?;
+
+    // 使用默认值处理空字符串
+    let name = item.get("dissname")
+        .or_else(|| item.get("diss_name"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(DEFAULT_PLAYLIST_NAME)
+        .to_string();
+
+    let cover_url = item
+        .get("logo")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    // song_cnt 兼容字符串和数字类型，使用 saturating_cast 防止溢出
+    let track_count = item.get("song_cnt")
+        .and_then(|v| {
+            if let Some(n) = v.as_u64() {
+                Some(n)
+            } else if let Some(s) = v.as_str() {
+                s.parse::<u64>().ok()
+            } else {
+                None
+            }
+        })
+        .unwrap_or(0)
+        .min(u32::MAX as u64) as u32; // 防止 u64 -> u32 溢出
+
+    Some(PlaylistBrief {
+        id,
+        name,
+        cover_url,
+        track_count,
+        source: MusicSourceId::Qqmusic,
     })
 }
 
