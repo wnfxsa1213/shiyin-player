@@ -175,7 +175,7 @@ pub async fn user_playlists_with_pagination(
     // 细化错误码映射
     match code {
         0 => {}, // 成功
-        -100 | -200 => return Err(SourceError::Unauthorized), // 鉴权失败
+        -100 | -200 | 40000 => return Err(SourceError::Unauthorized), // 鉴权失败/需要登录
         -1001 | -1002 => return Err(SourceError::RateLimited), // 限流
         _ => {
             log::warn!("qqmusic user_playlists: unexpected code {}", code);
@@ -223,7 +223,7 @@ pub async fn playlist_detail(
     // 细化错误码映射
     match code {
         0 => {}, // 成功
-        -100 | -200 => return Err(SourceError::Unauthorized), // 鉴权失败
+        -100 | -200 | 40000 => return Err(SourceError::Unauthorized), // 鉴权失败/需要登录
         -404 | 404 => return Err(SourceError::NotFound), // 歌单不存在
         -1001 | -1002 => return Err(SourceError::RateLimited), // 限流
         _ => {
