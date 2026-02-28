@@ -13,10 +13,12 @@ export const usePlaylistStore = create<PlaylistStore>((set) => ({
   fetchPlaylists: async () => {
     set({ loading: true });
     try {
+      // Backend handles multi-source aggregation with error isolation
       const results = await ipc.getUserPlaylists();
       set({ playlists: results });
     } catch (e) {
       console.error('Failed to fetch playlists:', e);
+      // Backend already isolates errors per source, so this only triggers on total failure
     } finally {
       set({ loading: false });
     }

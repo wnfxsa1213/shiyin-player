@@ -18,6 +18,10 @@ export function sanitizeError(error: unknown): string {
           traceId,
         );
       case 'unauthorized':
+        // Special handling for QQ Music error code 40000
+        if (detail && detail.includes('api error code 40000')) {
+          return withTraceId('QQ音乐登录信息不完整或已过期，请重新登录', traceId);
+        }
         return withTraceId('请先登录', traceId);
       case 'not_found':
         return withTraceId('未找到相关内容', traceId);

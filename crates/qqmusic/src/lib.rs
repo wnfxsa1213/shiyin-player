@@ -62,16 +62,35 @@ impl MusicSource for QqMusicClient {
                 if cookie.contains('\r') || cookie.contains('\n') || cookie.len() > 4096 {
                     return Err(SourceError::InvalidResponse("invalid cookie".into()));
                 }
-                if let Ok(mut guard) = self.cookie.write() {
-                    *guard = Some(cookie.clone());
+                // Validate cookie first before storing it
+                log::info!("qqmusic login: validating cookie by calling user_playlists API (len={})", cookie.len());
+                api::user_playlists(&self.http, &self.base_url, Some(&cookie)).await?;
+                log::info!("qqmusic login: cookie validation succeeded");
+
+                // Only store cookie after successful validation
+                match self.cookie.write() {
+                    Ok(mut guard) => {
+                        *guard = Some(cookie.clone());
+                        log::info!("qqmusic login: cookie stored successfully");
+                    }
+                    Err(e) => {
+                        log::error!("qqmusic login: failed to acquire write lock: {e}");
+                        return Err(SourceError::Internal("failed to set cookie".into()));
+                    }
                 }
+
                 Ok(AuthToken { access_token: cookie, expires_at: None })
             }
             Credentials::Password { .. } => Err(SourceError::Unimplemented),
         }
     }
     async fn get_user_playlists(&self) -> Result<Vec<PlaylistBrief>, SourceError> {
-        api::user_playlists(&self.http, &self.base_url, self.cookie().as_deref()).await
+        let cookie = self.cookie();
+        log::info!("qqmusic get_user_playlists: cookie present = {}", cookie.is_some());
+        if let Some(ref c) = cookie {
+            log::debug!("qqmusic get_user_playlists: cookie length = {}", c.len());
+        }
+        api::user_playlists(&self.http, &self.base_url, cookie.as_deref()).await
     }
     async fn get_playlist_detail(&self, id: &str) -> Result<Playlist, SourceError> {
         api::playlist_detail(&self.http, &self.base_url, id, self.cookie().as_deref()).await

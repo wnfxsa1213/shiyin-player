@@ -20,6 +20,25 @@ const CLIENT_LOG_RATE_LIMIT: u64 = 60;
 /// Per-source timeout for concurrent API requests (search, playlists).
 const SOURCE_TIMEOUT: Duration = Duration::from_secs(15);
 
+// --- 登录相关 Cookie 最小集合 ---
+//
+// 设计目标：
+// 1) 清理范围最小化：避免误删同域下与其它功能相关的 cookie（代码审查 Major#1）。
+// 2) 持久化最小化：只保存后续鉴权必需的 cookie，避免落盘敏感 token（代码审查 Major#3）。
+//
+// 注意：这里只包含"必要/最小集合"。可选项如需排查问题，只应在内存诊断日志中体现，
+// 不应持久化到本地存储。
+const QQMUSIC_LOGIN_COOKIES: &[&str] = &["qqmusic_key", "p_skey", "skey", "p_uin", "uin"];
+const QQMUSIC_ESSENTIAL_COOKIES: &[&str] = &[
+    "qqmusic_key",
+    "p_skey",
+    "skey",
+    "p_uin",
+    "uin",
+    "qm_keyst", // 仅用于兼容部分登录态的兜底，不一定对所有接口有效
+];
+const NETEASE_LOGIN_COOKIES: &[&str] = &["MUSIC_U", "NMTID", "__csrf"];
+
 static CLIENT_LOG_COUNT: AtomicU64 = AtomicU64::new(0);
 static CLIENT_LOG_WINDOW: AtomicU64 = AtomicU64::new(0);
 
@@ -324,14 +343,21 @@ pub async fn open_login_window(
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
 
-        let (login_url, cookie_domain): (&str, &str) = match source {
+        let (login_url, cookie_domains): (&str, Vec<&str>) = match source {
             MusicSourceId::Netease => (
                 "https://music.163.com/#/login",
-                "https://music.163.com",
+                vec!["https://music.163.com"],
             ),
             MusicSourceId::Qqmusic => (
                 "https://y.qq.com/",
-                "https://y.qq.com",
+                // 重要：webkit2gtk CookieManager 的 cookies() 需要"合法 URI"。
+                // 之前的 "https://.qq.com" 不是合法 URI，会导致查询失败，
+                // 进而拿不到 HttpOnly 的关键 cookie（如 p_skey/p_uin），最终用 qm_keyst 误算 g_tk 触发 40000。
+                vec![
+                    "https://y.qq.com/",
+                    "https://qq.com/",
+                    "https://music.qq.com/",
+                ],
             ),
         };
 
@@ -368,11 +394,25 @@ pub async fn open_login_window(
         .build()
         .map_err(|e| IpcError::Internal(format!("failed to create login window: {e}")))?;
 
+        // Clear old cookies before login to prevent false positives from expired cookies
+        #[cfg(target_os = "linux")]
+        {
+            tracing::info!("clearing old cookies for {source:?} before login");
+            // 代码审查 Major#1：只清理登录相关的"最小集合"，避免影响同域其它功能。
+            let clear_keys: &[&str] = match source {
+                MusicSourceId::Netease => NETEASE_LOGIN_COOKIES,
+                MusicSourceId::Qqmusic => QQMUSIC_LOGIN_COOKIES,
+            };
+            for domain in &cookie_domains {
+                clear_cookies_webkit(&login_window, domain, clear_keys).await;
+            }
+        }
+
         // Spawn async task: poll for login detection + handle callback
         let window_handle = login_window.clone();
         let app_clone = app.clone();
         let registry_clone = registry.inner().clone();
-        let cookie_domain = cookie_domain.to_string();
+        let cookie_domains_owned: Vec<String> = cookie_domains.iter().map(|s| s.to_string()).collect();
 
         tauri::async_runtime::spawn(async move {
             let closed = Arc::new(AtomicBool::new(false));
@@ -395,9 +435,10 @@ pub async fn open_login_window(
             let mut login_detected = false;
 
             // Essential cookie keys per source (only persist what's needed)
+            // 代码审查 Major#3：持久化 cookie 严格收敛到"必需 key"，可选 key 只做诊断不落盘。
             let essential_keys: &[&str] = match source {
-                MusicSourceId::Netease => &["MUSIC_U", "NMTID", "__csrf"],
-                MusicSourceId::Qqmusic => &["qqmusic_key", "Q_H_L", "qm_keyst"],
+                MusicSourceId::Netease => NETEASE_LOGIN_COOKIES,
+                MusicSourceId::Qqmusic => QQMUSIC_ESSENTIAL_COOKIES,
             };
 
             // Strong auth key: only this cookie proves login succeeded.
@@ -415,8 +456,8 @@ pub async fn open_login_window(
                 // Strategy 2 (Linux): fire-and-forget cookie probe as a separate select branch.
                 // Avoids blocking the tick handler while waiting for webkit response.
                 #[cfg(target_os = "linux")]
-                let probe_fut = probe_cookies_webkit(
-                    &window_handle, &cookie_domain, &probe_key_owned,
+                let probe_fut = probe_cookies_webkit_any(
+                    &window_handle, &cookie_domains_owned, &probe_key_owned,
                 );
                 #[cfg(not(target_os = "linux"))]
                 let probe_fut = std::future::pending::<bool>();
@@ -460,6 +501,12 @@ pub async fn open_login_window(
                     }
                     probed = probe_fut => {
                         if probed {
+                            // Double-check window wasn't closed before marking login as detected
+                            if closed.load(Ordering::SeqCst) {
+                                tracing::info!("cookie probe detected login but window already closed, ignoring");
+                                let _ = app_clone.emit("login://timeout", source);
+                                break;
+                            }
                             tracing::info!("cookie probe detected login for {source:?}");
                             login_detected = true;
                             break;
@@ -479,13 +526,19 @@ pub async fn open_login_window(
                 return;
             }
 
+            // Final check: ensure window is still open before extracting cookies
+            if closed.load(Ordering::SeqCst) {
+                tracing::info!("window closed before cookie extraction, aborting");
+                return;
+            }
+
             // Small delay: cookies may still be written by the browser after URL change
             tokio::time::sleep(Duration::from_millis(500)).await;
 
             tracing::info!("login detected for {source:?}, extracting cookies");
 
-            let cookie_str = extract_cookies_platform(
-                &window_handle, &cookie_domain, essential_keys, source,
+            let cookie_str = extract_cookies_from_domains(
+                &window_handle, &cookie_domains, essential_keys, source,
             ).await;
 
             if cookie_str.is_empty() {
@@ -499,12 +552,17 @@ pub async fn open_login_window(
 
             // Validate cookie by attempting login
             if let Some(src) = registry_clone.get(source) {
+                tracing::info!("found source in registry, calling login");
                 let creds = Credentials::Cookie { cookie: cookie_str.clone() };
                 match src.login(creds).await {
                     Ok(_) => {
+                        tracing::info!("login validation succeeded, saving cookie");
                         if let Err(e) = store::save_cookie(&app_clone, source, &cookie_str) {
                             tracing::error!("failed to save cookie: {e}");
+                        } else {
+                            tracing::info!("cookie saved successfully");
                         }
+                        tracing::info!("emitting login://success event");
                         let _ = app_clone.emit("login://success", source);
                     }
                     Err(e) => {
@@ -512,6 +570,8 @@ pub async fn open_login_window(
                         let _ = app_clone.emit("login://timeout", source);
                     }
                 }
+            } else {
+                tracing::error!("source {source:?} not found in registry!");
             }
             let _ = window_handle.close();
         });
@@ -664,6 +724,96 @@ fn sid_label(sid: MusicSourceId) -> &'static str {
 
 // --- Platform-specific cookie extraction ---
 
+/// Extract cookies from multiple domains and merge them.
+async fn extract_cookies_from_domains(
+    window: &tauri::WebviewWindow,
+    cookie_domains: &[&str],
+    essential_keys: &[&str],
+    source: MusicSourceId,
+) -> String {
+    // 代码审查 Minor#4：使用 BTreeMap 保证输出稳定（避免 HashMap 迭代顺序不确定）。
+    // Cookie header 对顺序不敏感，但稳定输出便于日志比对与问题复现。
+    let mut all_cookies = std::collections::BTreeMap::new();
+
+    for domain in cookie_domains {
+        tracing::info!("extracting cookies from domain: {}", domain);
+        let cookies = extract_cookies_platform(window, domain, essential_keys, source).await;
+
+        if cookies.is_empty() {
+            tracing::info!("no cookies extracted from domain: {}", domain);
+            continue;
+        }
+
+        // 诊断日志（任务 B.1）：仅输出"提取到的 cookie 名称集合"（不含 value）。
+        // 说明：cookie 的 HttpOnly/Secure 等属性在 Linux(webkit2gtk) 路径下会在 extract_cookies_webkit 内以 debug 级别输出。
+        let mut domain_keys: Vec<String> = Vec::new();
+
+        // Parse and merge cookies
+        for pair in cookies.split("; ") {
+            if let Some((key, value)) = pair.split_once('=') {
+                domain_keys.push(key.to_string());
+                all_cookies.insert(key.to_string(), value.to_string());
+            }
+        }
+
+        domain_keys.sort();
+        domain_keys.dedup();
+        tracing::info!(
+            "domain {} extracted {} cookie keys (values omitted): {:?}",
+            domain,
+            domain_keys.len(),
+            domain_keys
+        );
+    }
+
+    if all_cookies.is_empty() {
+        tracing::warn!("no cookies extracted from any domain");
+        return String::new();
+    }
+
+    // 任务 C.3：必需 cookie 校验（避免进入后续验证后才以 40000 失败）。
+    // QQ 音乐的最小鉴权集合（当前实现要求）：
+    // - p_skey|skey：用于计算 g_tk
+    // - p_uin|uin：用于请求体 uin
+    // - qqmusic_key：强鉴权 cookie（也用于登录态探测）
+    if matches!(source, MusicSourceId::Qqmusic) {
+        let has_skey = all_cookies.contains_key("p_skey") || all_cookies.contains_key("skey");
+        let has_uin = all_cookies.contains_key("p_uin") || all_cookies.contains_key("uin");
+        let has_qqmusic_key = all_cookies.contains_key("qqmusic_key");
+
+        if !(has_skey && has_uin && has_qqmusic_key) {
+            let mut present_keys: Vec<String> = all_cookies.keys().cloned().collect();
+            present_keys.sort();
+            tracing::warn!(
+                "qqmusic cookie incomplete after extraction: has(p_skey|skey)={}, has(p_uin|uin)={}, has(qqmusic_key)={}, keys_present={:?}",
+                has_skey,
+                has_uin,
+                has_qqmusic_key,
+                present_keys
+            );
+            return String::new();
+        }
+    }
+
+    // 诊断：输出最终合并后的 cookie key 集合（不含 value）
+    let mut merged_keys: Vec<String> = all_cookies.keys().cloned().collect();
+    merged_keys.sort();
+
+    // Reconstruct cookie string
+    let result = all_cookies.iter()
+        .map(|(k, v)| format!("{}={}", k, v))
+        .collect::<Vec<_>>()
+        .join("; ");
+
+    tracing::info!(
+        "merged {} unique cookies from {} domains: {:?}",
+        all_cookies.len(),
+        cookie_domains.len(),
+        merged_keys
+    );
+    result
+}
+
 /// Extract cookies from the webview. On Linux, uses webkit2gtk CookieManager
 /// to read HttpOnly cookies. On other platforms, falls back to JS document.cookie.
 async fn extract_cookies_platform(
@@ -712,7 +862,9 @@ async fn extract_cookies_webkit(
 ) -> String {
     let (cookie_tx, cookie_rx) = tokio::sync::oneshot::channel::<String>();
     let domain = cookie_domain.to_string();
-    let keys: Vec<String> = essential_keys.iter().map(|s| s.to_string()).collect();
+    let domain_for_log = domain.clone();
+    // 代码审查 Minor#5：预先构建 HashSet，避免多次 keys.iter().any() 的 O(N×M)。
+    let key_set: std::collections::HashSet<String> = essential_keys.iter().map(|s| s.to_string()).collect();
 
     let extract_result = window.with_webview(move |platform_wv| {
         use webkit2gtk::*;
@@ -726,20 +878,65 @@ async fn extract_cookies_webkit(
                     move |result: Result<Vec<soup::Cookie>, glib::Error>| {
                         let cookie_str = match result {
                             Ok(mut cookies) => {
-                                cookies.iter_mut()
-                                    .filter_map(|c| {
-                                        let name = c.name()?;
-                                        if !keys.iter().any(|k| k == &name) {
-                                            return None;
+                                tracing::info!("webkit found {} total cookies for domain {}", cookies.len(), domain_for_log);
+                                let mut matched_keys = Vec::new();
+                                let mut cookie_name_set: Vec<String> = Vec::new();
+
+                                for c in cookies.iter_mut() {
+                                    if let Some(name) = c.name() {
+                                        // Log cookie name and domain for debugging
+                                        let cookie_domain = c.domain().map(|d| d.to_string()).unwrap_or_else(|| "none".to_string());
+                                        cookie_name_set.push(format!(
+                                            "{}(domain={}, httponly={}, secure={})",
+                                            name,
+                                            cookie_domain,
+                                            c.is_http_only(),
+                                            c.is_secure()
+                                        ));
+                                        tracing::debug!("cookie available: {} (domain={}, httponly={}, secure={})",
+                                            name, cookie_domain, c.is_http_only(), c.is_secure());
+
+                                        if let Some(value) = c.value() {
+                                            if !value.is_empty() && key_set.contains(name.as_str()) {
+                                                matched_keys.push(name.to_string());
+                                            }
                                         }
-                                        let value = c.value()?;
-                                        if value.is_empty() {
-                                            return None;
+                                    }
+                                }
+
+                                // 任务 B.1：每个 URI 的 cookie 名称集合（含属性），仅用于诊断；严禁输出 value。
+                                cookie_name_set.sort();
+                                tracing::debug!(
+                                    "webkit cookie name set for domain {} (values omitted): {:?}",
+                                    domain_for_log,
+                                    cookie_name_set
+                                );
+                                tracing::info!("matched {} essential cookies: {:?}", matched_keys.len(), matched_keys);
+
+                                // Filter and deduplicate: only return essential cookies
+                                // This prevents same-name cookie conflicts and reduces auth failures
+                                let mut essential_cookies: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+                                for c in cookies.iter_mut() {
+                                    if let (Some(name), Some(value)) = (c.name(), c.value()) {
+                                        if !value.is_empty() && key_set.contains(name.as_str()) {
+                                            // Deduplicate by name (last one wins)
+                                            essential_cookies.insert(name.to_string(), value.to_string());
                                         }
-                                        Some(format!("{name}={value}"))
-                                    })
-                                    .collect::<Vec<_>>()
-                                    .join("; ")
+                                    }
+                                }
+
+                                if essential_cookies.is_empty() {
+                                    tracing::warn!("no essential cookies found, returning empty string");
+                                    String::new()
+                                } else {
+                                    let result = essential_cookies.iter()
+                                        .map(|(k, v)| format!("{k}={v}"))
+                                        .collect::<Vec<_>>()
+                                        .join("; ");
+                                    tracing::info!("returning {} essential cookies (deduplicated)", essential_cookies.len());
+                                    result
+                                }
                             }
                             Err(e) => {
                                 tracing::error!("webkit cookie extraction failed: {e}");
@@ -834,6 +1031,96 @@ async fn probe_cookies_webkit(
         .ok()
         .and_then(|r| r.ok())
         .unwrap_or(false)
+}
+
+/// Linux-only: probe multiple domains for auth cookie (checks all domains, not just first).
+/// Returns true if ANY domain has the auth key.
+#[cfg(target_os = "linux")]
+async fn probe_cookies_webkit_any(
+    window: &tauri::WebviewWindow,
+    cookie_domains: &[String],
+    auth_key: &str,
+) -> bool {
+    // 代码审查 Major#2：只 probe 首域名可能漏判（cookie 可能落在其它域）。
+    // 这里按顺序遍历，命中后短路返回 true。
+    for domain in cookie_domains {
+        if domain.trim().is_empty() {
+            continue;
+        }
+        if probe_cookies_webkit(window, domain.as_str(), auth_key).await {
+            return true;
+        }
+    }
+    false
+}
+
+/// Linux-only: clear specified cookies for a specific domain.
+/// Used before opening login window to prevent false positives from expired cookies.
+#[cfg(target_os = "linux")]
+async fn clear_cookies_webkit(
+    window: &tauri::WebviewWindow,
+    cookie_domain: &str,
+    keys_to_clear: &[&str],
+) {
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    let domain = cookie_domain.to_string();
+    let domain_for_log = domain.clone();
+    // 代码审查 Major#1：只清理最小集合，避免误删同域其它 cookie。
+    let key_set: std::collections::HashSet<String> = keys_to_clear.iter().map(|s| s.to_string()).collect();
+    let tx = std::sync::Mutex::new(Some(tx));
+
+    let ok = window.with_webview(move |platform_wv| {
+        use webkit2gtk::*;
+
+        let webview: webkit2gtk::WebView = platform_wv.inner();
+        let dm = webview.website_data_manager();
+        let cm = dm.as_ref().and_then(|d| d.cookie_manager());
+        if let Some(cm) = cm {
+            // cookie_manager 是 GObject，clone 成本很低，避免在回调里反复从 dm 取。
+            let cm_delete = cm.clone();
+            let sender = tx.lock().ok().and_then(|mut g| g.take());
+            // Get all cookies for this domain
+            cm.cookies(
+                &domain,
+                gio::Cancellable::NONE,
+                move |result: Result<Vec<soup::Cookie>, glib::Error>| {
+                    if let Ok(mut cookies) = result {
+                        let mut cleared_count = 0;
+                        // Delete only specified cookies
+                        for cookie in cookies.iter_mut() {
+                            if let Some(name) = cookie.name() {
+                                if key_set.contains(name.as_str()) {
+                                    cm_delete.delete_cookie(cookie, gio::Cancellable::NONE, |_| {});
+                                    cleared_count += 1;
+                                }
+                            }
+                        }
+                        tracing::debug!(
+                            "cleared {} login-related cookies for domain {} (total cookies seen={})",
+                            cleared_count,
+                            domain_for_log,
+                            cookies.len()
+                        );
+                    }
+                    if let Some(sender) = sender {
+                        let _ = sender.send(());
+                    }
+                },
+            );
+        } else {
+            if let Some(sender) = tx.lock().ok().and_then(|mut g| g.take()) {
+                let _ = sender.send(());
+            }
+        }
+    });
+
+    if let Err(e) = ok {
+        tracing::warn!("clear_cookies_webkit with_webview failed: {e}");
+        return;
+    }
+
+    // Wait for completion with timeout
+    let _ = tokio::time::timeout(Duration::from_secs(2), rx).await;
 }
 
 // --- Cover color extraction (bypasses CORS) ---

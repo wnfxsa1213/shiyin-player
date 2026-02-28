@@ -1,0 +1,269 @@
+{
+  "timestamp": "2026-02-27T16:32:02",
+  "project": "rust-music (拾音 / ShiYin)",
+  "root_claude_md": "CLAUDE.md",
+  "modules": [
+    {
+      "path": "crates/core",
+      "language": "Rust",
+      "claude_md": "crates/core/CLAUDE.md",
+      "entry": "crates/core/src/lib.rs",
+      "interfaces": [
+        "MusicSource trait",
+        "PlayerState",
+        "PlayerCommand",
+        "PlayerEvent",
+        "Track",
+        "StreamInfo",
+        "Credentials",
+        "AuthToken",
+        "LyricsLine",
+        "Playlist",
+        "PlaylistBrief",
+        "SourceError",
+        "PlayerError"
+      ],
+      "tests": null,
+      "config": "crates/core/Cargo.toml",
+      "important_files": [
+        "crates/core/src/lib.rs"
+      ],
+      "coverage": "full",
+      "gaps": [
+        "no tests"
+      ]
+    },
+    {
+      "path": "crates/player",
+      "language": "Rust",
+      "claude_md": "crates/player/CLAUDE.md",
+      "entry": "crates/player/src/lib.rs",
+      "interfaces": [
+        "Player::new()",
+        "Player::subscribe()",
+        "Player::send()"
+      ],
+      "tests": null,
+      "config": "crates/player/Cargo.toml",
+      "important_files": [
+        "crates/player/src/lib.rs"
+      ],
+      "coverage": "full",
+      "gaps": [
+        "no tests"
+      ]
+    },
+    {
+      "path": "crates/sources",
+      "language": "Rust",
+      "claude_md": "crates/sources/CLAUDE.md",
+      "entry": "crates/sources/src/lib.rs",
+      "interfaces": [
+        "SourceRegistry::register()",
+        "SourceRegistry::get()",
+        "SourceRegistry::all()"
+      ],
+      "tests": null,
+      "config": "crates/sources/Cargo.toml",
+      "important_files": [
+        "crates/sources/src/lib.rs"
+      ],
+      "coverage": "full",
+      "gaps": [
+        "no tests"
+      ]
+    },
+    {
+      "path": "crates/netease",
+      "language": "Rust",
+      "claude_md": "crates/netease/CLAUDE.md",
+      "entry": "crates/netease/src/lib.rs",
+      "interfaces": [
+        "NeteaseClient (MusicSource)",
+        "weapi_encrypt()"
+      ],
+      "tests": null,
+      "config": "crates/netease/Cargo.toml",
+      "important_files": [
+        "crates/netease/src/lib.rs",
+        "crates/netease/src/crypto.rs",
+        "crates/netease/src/api.rs"
+      ],
+      "coverage": "full",
+      "gaps": [
+        "no tests"
+      ]
+    },
+    {
+      "path": "crates/qqmusic",
+      "language": "Rust",
+      "claude_md": "crates/qqmusic/CLAUDE.md",
+      "entry": "crates/qqmusic/src/lib.rs",
+      "interfaces": [
+        "QqMusicClient (MusicSource)",
+        "sign_request()",
+        "generate_guid()"
+      ],
+      "tests": null,
+      "config": "crates/qqmusic/Cargo.toml",
+      "important_files": [
+        "crates/qqmusic/src/lib.rs",
+        "crates/qqmusic/src/sign.rs",
+        "crates/qqmusic/src/api.rs"
+      ],
+      "coverage": "full",
+      "gaps": [
+        "no tests"
+      ]
+    },
+    {
+      "path": "crates/cache",
+      "language": "Rust",
+      "claude_md": "crates/cache/CLAUDE.md",
+      "entry": "crates/cache/src/lib.rs",
+      "interfaces": [
+        "SearchCache::get()",
+        "SearchCache::set()"
+      ],
+      "tests": null,
+      "config": "crates/cache/Cargo.toml",
+      "important_files": [
+        "crates/cache/src/lib.rs"
+      ],
+      "coverage": "full",
+      "gaps": [
+        "no tests"
+      ]
+    },
+    {
+      "path": "apps/rustplayer-tauri/src-tauri",
+      "language": "Rust",
+      "claude_md": "apps/rustplayer-tauri/src-tauri/CLAUDE.md",
+      "entry": "apps/rustplayer-tauri/src-tauri/src/main.rs",
+      "interfaces": [
+        "search_music",
+        "play_track",
+        "toggle_playback",
+        "seek",
+        "set_volume",
+        "get_lyrics",
+        "login",
+        "logout",
+        "open_login_window",
+        "check_login_status",
+        "get_user_playlists",
+        "get_playlist_detail",
+        "extract_cover_color",
+        "client_log",
+        "player://state",
+        "player://progress",
+        "player://spectrum",
+        "player://error",
+        "login://success",
+        "login://timeout"
+      ],
+      "tests": null,
+      "config": "apps/rustplayer-tauri/src-tauri/Cargo.toml",
+      "important_files": [
+        "apps/rustplayer-tauri/src-tauri/src/main.rs",
+        "apps/rustplayer-tauri/src-tauri/src/commands/mod.rs",
+        "apps/rustplayer-tauri/src-tauri/src/events.rs",
+        "apps/rustplayer-tauri/src-tauri/src/db.rs",
+        "apps/rustplayer-tauri/src-tauri/src/store.rs",
+        "apps/rustplayer-tauri/src-tauri/src/logging.rs",
+        "apps/rustplayer-tauri/src-tauri/src/trace_ctx.rs",
+        "apps/rustplayer-tauri/src-tauri/tauri.conf.json"
+      ],
+      "coverage": "full",
+      "gaps": [
+        "no tests"
+      ]
+    },
+    {
+      "path": "apps/rustplayer-tauri/frontend",
+      "language": "TypeScript/React",
+      "claude_md": "apps/rustplayer-tauri/frontend/CLAUDE.md",
+      "entry": "apps/rustplayer-tauri/frontend/src/main.tsx",
+      "interfaces": [
+        "ipc.* (14 commands)",
+        "onPlayerState",
+        "onPlayerProgress",
+        "onPlayerError",
+        "onPlayerSpectrum",
+        "onLoginSuccess",
+        "onLoginTimeout"
+      ],
+      "tests": null,
+      "config": "apps/rustplayer-tauri/frontend/package.json",
+      "important_files": [
+        "apps/rustplayer-tauri/frontend/src/App.tsx",
+        "apps/rustplayer-tauri/frontend/src/lib/ipc.ts",
+        "apps/rustplayer-tauri/frontend/src/lib/errorMessages.ts",
+        "apps/rustplayer-tauri/frontend/src/store/playerStore.ts",
+        "apps/rustplayer-tauri/frontend/src/store/visualizerStore.ts",
+        "apps/rustplayer-tauri/frontend/src/store/uiStore.ts",
+        "apps/rustplayer-tauri/frontend/src/store/toastStore.ts",
+        "apps/rustplayer-tauri/frontend/src/store/playlistStore.ts",
+        "apps/rustplayer-tauri/frontend/src/hooks/useDynamicTheme.ts",
+        "apps/rustplayer-tauri/frontend/src/hooks/useFocusTrap.ts",
+        "apps/rustplayer-tauri/frontend/src/components/layout/Sidebar.tsx",
+        "apps/rustplayer-tauri/frontend/src/components/layout/PlayerBar.tsx",
+        "apps/rustplayer-tauri/frontend/src/components/player/LyricsPanel.tsx",
+        "apps/rustplayer-tauri/frontend/src/components/player/QueuePanel.tsx",
+        "apps/rustplayer-tauri/frontend/src/components/player/SpectrumVisualizer.tsx",
+        "apps/rustplayer-tauri/frontend/src/components/common/VirtualTrackList.tsx",
+        "apps/rustplayer-tauri/frontend/src/views/HomeView.tsx",
+        "apps/rustplayer-tauri/frontend/src/views/SearchView.tsx",
+        "apps/rustplayer-tauri/frontend/src/views/SettingsView.tsx",
+        "apps/rustplayer-tauri/frontend/src/views/PlaylistDetailView.tsx"
+      ],
+      "coverage": "full",
+      "gaps": [
+        "no tests"
+      ]
+    }
+  ],
+  "scan_stats": {
+    "total_source_files": 52,
+    "scanned_files": 52,
+    "coverage_percent": 100,
+    "truncated": false,
+    "ignored_patterns": [
+      "node_modules/**",
+      "target/**",
+      "dist/**",
+      ".git/**",
+      ".agents/**",
+      ".augment/**",
+      "*.lock",
+      "gen/schemas/**"
+    ],
+    "ignored_stats": {
+      "node_modules": "~150+ packages",
+      "target": "build artifacts",
+      "gen/schemas": "auto-generated Tauri schemas"
+    }
+  },
+  "new_features_since_last_scan": [
+    "traceId 端到端链路追踪（前端自动生成，后端记录到日志）",
+    "结构化日志系统（tracing + JSON Lines，按天滚动，保留 7 天）",
+    "WebView 登录窗口（webkit2gtk CookieManager 提取 HttpOnly Cookie）",
+    "封面色提取（HSL 色相分桶算法，域名白名单校验）",
+    "前端日志转发（client_log command，限流 60 条/分钟）",
+    "错误消息国际化（sanitizeError，开发/生产环境差异化显示）",
+    "登录事件监听（login://success, login://timeout）",
+    "全局错误捕获（window.error, unhandledrejection, ErrorBoundary）",
+    "定时缓存清理（每小时清理过期 SQLite 缓存）",
+    "并发音源查询（search_music 和 get_user_playlists 支持多音源并发）"
+  ],
+  "gap_summary": {
+    "global": [
+      "no test files in any module"
+    ],
+    "next_steps": [
+      "建议优先添加单元测试：weapi 加密、QQ 音乐签名、LRC 解析、缓存 TTL",
+      "建议添加集成测试：使用 wiremock 模拟 API 响应",
+      "建议添加前端测试：Zustand store 逻辑、组件渲染、IPC mock"
+    ]
+  }
+}

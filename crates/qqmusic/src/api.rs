@@ -6,6 +6,8 @@ use rustplayer_core::{
 };
 use serde_json::{json, Value};
 
+use crate::sign::{calculate_g_tk, extract_skey_selection, extract_uin_from_cookie, SkeySource};
+
 // QQ 音乐 API 客户端标识常量
 const API_CLIENT_TYPE: &str = "19";
 const API_CLIENT_VERSION: &str = "1859";
@@ -156,26 +158,45 @@ pub async fn user_playlists_with_pagination(
     offset: u32,
     limit: u32,
 ) -> Result<Vec<PlaylistBrief>, SourceError> {
+    // Extract real uin from cookie, fallback to "0" if not found
+    let uin = cookie
+        .and_then(extract_uin_from_cookie)
+        .unwrap_or_else(|| "0".to_string());
+
     let data = json!({
-        "comm": { "ct": API_CLIENT_TYPE, "cv": API_CLIENT_VERSION, "uin": "0" },
+        "comm": { "ct": API_CLIENT_TYPE, "cv": API_CLIENT_VERSION, "uin": uin },
         "req": {
             "module": "music.playlist.PlaylistSquare",
             "method": "GetMyPlaylist",
             "param": {
-                "uin": 0,
+                "uin": uin.parse::<i64>().unwrap_or(0),
                 "sin": offset,
                 "size": limit
             }
         }
     });
 
+    log::debug!("qqmusic user_playlists: calling API with cookie = {}, uin = {}", cookie.is_some(), uin);
     let value = musicu_post(http, base_url, &data, cookie).await?;
     let code = value.pointer("/req/code").and_then(|v| v.as_i64()).unwrap_or(-1);
+    log::info!("qqmusic user_playlists: API returned code = {}", code);
 
     // 细化错误码映射
     match code {
         0 => {}, // 成功
-        -100 | -200 | 40000 => return Err(SourceError::Unauthorized), // 鉴权失败/需要登录
+        -100 | -200 | 40000 => {
+            // Enhanced logging for 40000 error - log full response for diagnosis
+            let msg = value.pointer("/req/msg").and_then(|v| v.as_str()).unwrap_or("");
+            let subcode = value.pointer("/req/subcode").and_then(|v| v.as_i64()).unwrap_or(0);
+            log::warn!(
+                "qqmusic user_playlists: unauthorized (code {}), cookie present = {}, msg = '{}', subcode = {}",
+                code, cookie.is_some(), msg, subcode
+            );
+            if code == 40000 {
+                log::debug!("qqmusic user_playlists: full response for 40000 error: {}", serde_json::to_string(&value).unwrap_or_default());
+            }
+            return Err(SourceError::Unauthorized);
+        }
         -1001 | -1002 => return Err(SourceError::RateLimited), // 限流
         _ => {
             log::warn!("qqmusic user_playlists: unexpected code {}", code);
@@ -268,8 +289,39 @@ async fn musicu_post(
     cookie: Option<&str>,
 ) -> Result<Value, SourceError> {
     let url = format!("{base_url}/cgi-bin/musicu.fcg");
+
+    // 任务 B.2：记录 g_tk 来源（p_skey/skey/qm_keyst/none）与 key 长度（严禁打印 value）。
+    // 同时避免"cookie 存在但缺少 skey/p_skey"时悄悄回落到 5381，导致后续出现 40000 unauthorized 难以定位。
+    let (skey_opt, source) = cookie
+        .map(extract_skey_selection)
+        .unwrap_or((None, SkeySource::None));
+    let key_len = skey_opt.as_ref().map(|s| s.len()).unwrap_or(0);
+
+    if cookie.is_some() {
+        let source_label = match source {
+            SkeySource::PSkey => "p_skey",
+            SkeySource::Skey => "skey",
+            SkeySource::QmKeyst => "qm_keyst",
+            SkeySource::None => "none",
+        };
+        // 正常路径（p_skey/skey）用 debug，异常/兜底（qm_keyst/none）用 info，便于线上定位。
+        if matches!(source, SkeySource::QmKeyst | SkeySource::None) {
+            log::info!("qqmusic musicu_post: g_tk source = {source_label}, key_len = {key_len}");
+        } else {
+            log::debug!("qqmusic musicu_post: g_tk source = {source_label}, key_len = {key_len}");
+        }
+    }
+
+    // Calculate g_tk from selected key (or default when not available).
+    let g_tk = skey_opt.map(|s| calculate_g_tk(&s)).unwrap_or(5381);
+
     let mut req = http.post(url)
-        .query(&[("format", "json")])
+        .query(&[
+            ("format", "json"),
+            ("g_tk", &g_tk.to_string()),
+            ("platform", "yqq"),
+            ("needNewCode", "0"),
+        ])
         .header("Referer", "https://y.qq.com/")
         .json(data);
     if let Some(c) = cookie {

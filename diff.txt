@@ -1,0 +1,2054 @@
+diff --git a/README.md b/README.md
+index 60de828..f0ec885 100644
+--- a/README.md
++++ b/README.md
+@@ -84,6 +84,18 @@ cargo tauri build
+ ./target/release/rustplayer-tauri
+ ```
+ 
++## 日志与调试
++
++- 后端日志：使用 `tracing` 落盘到“应用数据目录”的 `logs/` 下，按天滚动，文件名形如 `rustplayer-backend.jsonl.YYYY-MM-DD`
++- 前端错误：`window.error` / `unhandledrejection` / React ErrorBoundary 会 best-effort 转存到后端日志（便于 release 环境排查）
++- 详细度控制：通过 `RUST_LOG` 调整，例如：
++
++```bash
++RUST_LOG=debug cargo tauri dev
++```
++
++- 端到端排查：每次 IPC 调用会生成并传递 `traceId`（开发模式下 toast 会附带 traceId），在日志里直接按 traceId 搜索即可定位整条链路
++
+ ## 快捷键
+ 
+ | 按键 | 功能 |
+diff --git a/apps/rustplayer-tauri/frontend/src/App.tsx b/apps/rustplayer-tauri/frontend/src/App.tsx
+index 134d871..b233165 100644
+--- a/apps/rustplayer-tauri/frontend/src/App.tsx
++++ b/apps/rustplayer-tauri/frontend/src/App.tsx
+@@ -8,6 +8,7 @@ import { useToastStore } from '@/store/toastStore';
+ import { usePlaylistStore } from '@/store/playlistStore';
+ import { loadSetting } from '@/lib/settings';
+ import { ipc, onPlayerState, onPlayerProgress, onPlayerError, onPlayerSpectrum } from '@/lib/ipc';
++import { sanitizeError } from '@/lib/errorMessages';
+ import { useDynamicTheme } from '@/hooks/useDynamicTheme';
+ import Sidebar from '@/components/layout/Sidebar';
+ import PlayerBar from '@/components/layout/PlayerBar';
+@@ -29,6 +30,33 @@ export default function App() {
+   // 挂载全局动态主题萃取钩子
+   useDynamicTheme();
+ 
++  // 将前端运行时错误落盘到后端日志（release 下也能排查）
++  useEffect(() => {
++    const onError = (e: ErrorEvent) => {
++      const stack = (e.error && typeof e.error === 'object' && 'stack' in e.error) ? (e.error as any).stack : '';
++      ipc.clientLog(
++        'error',
++        `window.error: ${e.message}\n${e.filename}:${e.lineno}:${e.colno}\n${stack ?? ''}`,
++      );
++    };
++    const onUnhandledRejection = (e: PromiseRejectionEvent) => {
++      const reason = (() => {
++        try {
++          return typeof e.reason === 'string' ? e.reason : JSON.stringify(e.reason);
++        } catch {
++          return String(e.reason);
++        }
++      })();
++      ipc.clientLog('error', `unhandledrejection: ${reason}`);
++    };
++    window.addEventListener('error', onError);
++    window.addEventListener('unhandledrejection', onUnhandledRejection);
++    return () => {
++      window.removeEventListener('error', onError);
++      window.removeEventListener('unhandledrejection', onUnhandledRejection);
++    };
++  }, []);
++
+   // Load persisted settings on startup
+   useEffect(() => {
+     (async () => {
+@@ -77,7 +105,7 @@ export default function App() {
+         updateProgress(positionMs, durationMs);
+       }),
+       onPlayerError((err) => {
+-        addToast('error', String(err));
++        addToast('error', sanitizeError(err));
+       }),
+       onPlayerSpectrum(({ magnitudes }) => {
+         useVisualizerStore.getState().updateMagnitudes(magnitudes);
+@@ -89,6 +117,7 @@ export default function App() {
+   useEffect(() => {
+     const onKey = (e: KeyboardEvent) => {
+       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
++      if (e.target instanceof HTMLElement && e.target.isContentEditable) return;
+       const st = usePlayerStore.getState();
+       switch (e.code) {
+         case 'Space':
+diff --git a/apps/rustplayer-tauri/frontend/src/components/common/ErrorBoundary.tsx b/apps/rustplayer-tauri/frontend/src/components/common/ErrorBoundary.tsx
+index 0a18f8c..4e8a76a 100644
+--- a/apps/rustplayer-tauri/frontend/src/components/common/ErrorBoundary.tsx
++++ b/apps/rustplayer-tauri/frontend/src/components/common/ErrorBoundary.tsx
+@@ -1,5 +1,6 @@
+ import { Component, type ReactNode, type ErrorInfo } from 'react';
+ import { AlertTriangle } from 'lucide-react';
++import { ipc } from '@/lib/ipc';
+ 
+ interface Props {
+   children: ReactNode;
+@@ -19,6 +20,11 @@ export default class ErrorBoundary extends Component<Props, State> {
+ 
+   componentDidCatch(error: Error, info: ErrorInfo) {
+     console.error('ErrorBoundary caught:', error, info);
++    const detail = [
++      error?.stack ? `stack:\n${error.stack}` : '',
++      info?.componentStack ? `componentStack:\n${info.componentStack}` : '',
++    ].filter(Boolean).join('\n\n');
++    ipc.clientLog('error', `ErrorBoundary caught: ${error?.message ?? String(error)}\n\n${detail}`);
+   }
+ 
+   render() {
+@@ -28,7 +34,7 @@ export default class ErrorBoundary extends Component<Props, State> {
+           <AlertTriangle size={48} strokeWidth={1} className="text-warning opacity-60" />
+           <p className="text-text-secondary text-sm">页面出现了问题</p>
+           <p className="text-text-tertiary text-xs max-w-md text-center">
+-            {this.state.error?.message}
++            发生了意外错误，请尝试重试
+           </p>
+           <button
+             onClick={() => this.setState({ hasError: false, error: null })}
+diff --git a/apps/rustplayer-tauri/frontend/src/components/layout/PlayerBar.tsx b/apps/rustplayer-tauri/frontend/src/components/layout/PlayerBar.tsx
+index 133a3ad..084e25e 100644
+--- a/apps/rustplayer-tauri/frontend/src/components/layout/PlayerBar.tsx
++++ b/apps/rustplayer-tauri/frontend/src/components/layout/PlayerBar.tsx
+@@ -57,6 +57,7 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
+                     alt=""
+                     className={`w-full h-full shadow-sm object-cover transition-[border-radius] duration-500 ${isPlaying ? 'rounded-full' : 'rounded-lg'}`}
+                     transition={{ layout: { type: 'spring', stiffness: 200, damping: 28 } }}
++                    onError={(e) => console.warn('[PlayerBar] cover load failed:', currentTrack.coverUrl, e.nativeEvent)}
+                   />
+                 ) : (
+                   <motion.div
+diff --git a/apps/rustplayer-tauri/frontend/src/components/player/LyricsPanel.tsx b/apps/rustplayer-tauri/frontend/src/components/player/LyricsPanel.tsx
+index 10a3f87..b5d802f 100644
+--- a/apps/rustplayer-tauri/frontend/src/components/player/LyricsPanel.tsx
++++ b/apps/rustplayer-tauri/frontend/src/components/player/LyricsPanel.tsx
+@@ -1,6 +1,8 @@
+ import { useEffect, useState, useRef } from 'react';
+ import { usePlayerStore } from '@/store/playerStore';
+ import { useToastStore } from '@/store/toastStore';
++import { sanitizeError } from '@/lib/errorMessages';
++import { useFocusTrap } from '@/hooks/useFocusTrap';
+ import { ipc } from '@/lib/ipc';
+ import ParticleSystem from '@/components/player/ParticleSystem';
+ import { X, Music } from 'lucide-react';
+@@ -23,8 +25,11 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
+   const currentTrack = usePlayerStore((s) => s.currentTrack);
+   const [lyrics, setLyrics] = useState<LyricsLine[]>([]);
+   const containerRef = useRef<HTMLDivElement>(null);
++  const panelRef = useRef<HTMLDivElement>(null);
+   const [size, setSize] = useState({ w: 800, h: 600 });
+ 
++  useFocusTrap(panelRef, isOpen, onClose);
++
+   // Fetch lyrics with race condition protection
+   useEffect(() => {
+     if (!isOpen || !currentTrack) { setLyrics([]); return; }
+@@ -34,7 +39,7 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
+       .catch((err) => {
+         if (active) {
+           setLyrics([]);
+-          useToastStore.getState().addToast('error', `歌词加载失败: ${err}`);
++          useToastStore.getState().addToast('error', `歌词加载失败: ${sanitizeError(err)}`);
+         }
+       });
+     return () => { active = false; };
+@@ -70,6 +75,11 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
+     <AnimatePresence>
+       {isOpen && (
+         <motion.div
++          ref={panelRef}
++          role="dialog"
++          aria-label="歌词面板"
++          aria-modal="true"
++          tabIndex={-1}
+           initial={{ opacity: 0 }}
+           animate={{ opacity: 1 }}
+           exit={{ opacity: 0 }}
+@@ -86,6 +96,7 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
+                 alt=""
+                 className="w-96 h-96 rounded-2xl object-cover shadow-[var(--shadow-glow-strong)] transition-shadow duration-700"
+                 transition={springTransition}
++                onError={(e) => console.warn('[LyricsPanel] cover load failed:', currentTrack.coverUrl, e.nativeEvent)}
+               />
+             ) : (
+               <motion.div
+diff --git a/apps/rustplayer-tauri/frontend/src/components/player/QueuePanel.tsx b/apps/rustplayer-tauri/frontend/src/components/player/QueuePanel.tsx
+index 416a122..9ee3216 100644
+--- a/apps/rustplayer-tauri/frontend/src/components/player/QueuePanel.tsx
++++ b/apps/rustplayer-tauri/frontend/src/components/player/QueuePanel.tsx
+@@ -1,5 +1,6 @@
+-import { useState } from 'react';
++import { useState, useRef } from 'react';
+ import { usePlayerStore, type PlayMode } from '@/store/playerStore';
++import { useFocusTrap } from '@/hooks/useFocusTrap';
+ import { Repeat, Repeat1, Shuffle, X, Trash2 } from 'lucide-react';
+ 
+ interface Props {
+@@ -14,6 +15,7 @@ const modeIcons: { mode: PlayMode; icon: typeof Repeat; label: string }[] = [
+ ];
+ 
+ export default function QueuePanel({ isOpen, onClose }: Props) {
++  const containerRef = useRef<HTMLDivElement>(null);
+   const queue = usePlayerStore((s) => s.queue);
+   const queueIndex = usePlayerStore((s) => s.queueIndex);
+   const playMode = usePlayerStore((s) => s.playMode);
+@@ -23,11 +25,19 @@ export default function QueuePanel({ isOpen, onClose }: Props) {
+   const setPlayMode = usePlayerStore((s) => s.setPlayMode);
+   const [confirmClear, setConfirmClear] = useState(false);
+ 
++  useFocusTrap(containerRef, isOpen, onClose);
++
+   if (!isOpen) return null;
+ 
+   return (
+-    <div className="fixed right-0 top-0 bottom-20 w-80 z-40 bg-bg-primary/95 glass border-l border-border-primary flex flex-col animate-slide-in-right">
+-      {/* Header */}
++    <div
++      ref={containerRef}
++      role="dialog"
++      aria-label="播放队列"
++      aria-modal="true"
++      tabIndex={-1}
++      className="fixed right-0 top-0 bottom-20 w-80 z-40 bg-bg-primary/95 glass border-l border-border-primary flex flex-col animate-slide-in-right"
++    >      {/* Header */}
+       <div className="flex items-center justify-between px-4 py-3 border-b border-border-secondary">
+         <h2 className="text-sm font-semibold">播放队列 ({queue.length})</h2>
+         <div className="flex items-center gap-1">
+@@ -38,13 +48,13 @@ export default function QueuePanel({ isOpen, onClose }: Props) {
+                   clearQueue();
+                   setConfirmClear(false);
+                 }}
+-                className="px-2 py-1 rounded text-xs bg-error/20 text-error hover:bg-error/30 transition-colors cursor-pointer"
++                className="px-2 py-1 rounded text-xs bg-error/20 text-error hover:bg-error/30 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+               >
+                 确认
+               </button>
+               <button
+                 onClick={() => setConfirmClear(false)}
+-                className="px-2 py-1 rounded text-xs text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
++                className="px-2 py-1 rounded text-xs text-text-tertiary hover:text-text-primary transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+               >
+                 取消
+               </button>
+@@ -52,13 +62,13 @@ export default function QueuePanel({ isOpen, onClose }: Props) {
+           ) : (
+             <button
+               onClick={() => queue.length > 0 && setConfirmClear(true)}
+-              className="p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer"
++              className="p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+               aria-label="清空队列"
+             >
+               <Trash2 size={16} strokeWidth={1.5} />
+             </button>
+           )}
+-          <button onClick={onClose} className="p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer" aria-label="关闭">
++          <button onClick={onClose} className="p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none" aria-label="关闭">
+             <X size={16} strokeWidth={1.5} />
+           </button>
+         </div>
+diff --git a/apps/rustplayer-tauri/frontend/src/components/player/SpectrumVisualizer.tsx b/apps/rustplayer-tauri/frontend/src/components/player/SpectrumVisualizer.tsx
+index 70cf36b..4420f95 100644
+--- a/apps/rustplayer-tauri/frontend/src/components/player/SpectrumVisualizer.tsx
++++ b/apps/rustplayer-tauri/frontend/src/components/player/SpectrumVisualizer.tsx
+@@ -75,6 +75,7 @@ export default function SpectrumVisualizer({ width, height }: { width: number; h
+       height={height}
+       className="w-full h-full"
+       style={{ filter: 'drop-shadow(0 0 8px var(--accent))' }}
++      aria-hidden="true"
+     />
+   );
+ }
+diff --git a/apps/rustplayer-tauri/frontend/src/lib/ipc.ts b/apps/rustplayer-tauri/frontend/src/lib/ipc.ts
+index 90a0d6e..adc3aed 100644
+--- a/apps/rustplayer-tauri/frontend/src/lib/ipc.ts
++++ b/apps/rustplayer-tauri/frontend/src/lib/ipc.ts
+@@ -2,12 +2,40 @@ import { invoke } from '@tauri-apps/api/core';
+ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+ import type { Track } from '@/store/playerStore';
+ 
++export type MusicSource = 'netease' | 'qqmusic';
++
++let traceSeq = 0;
++
++function newTraceId(): string {
++  const uuid = globalThis.crypto?.randomUUID?.();
++  if (uuid) return uuid;
++  const ms = Date.now().toString(16);
++  const seq = (++traceSeq).toString(16);
++  const rand = Math.floor(Math.random() * 0xffffffff).toString(16);
++  return `${ms}-${seq}-${rand}`;
++}
++
++function wrapInvokeError(error: unknown, traceId: string) {
++  if (error && typeof error === 'object') {
++    (error as any).traceId = traceId;
++    return error;
++  }
++  return { kind: 'internal', message: String(error ?? 'unknown error'), traceId };
++}
++
++function invokeWithTrace<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
++  const traceId = newTraceId();
++  return invoke<T>(cmd, { ...(args ?? {}), traceId }).catch((e) => {
++    throw wrapInvokeError(e, traceId);
++  });
++}
++
+ export interface PlaylistBrief {
+   id: string;
+   name: string;
+   coverUrl?: string;
+   trackCount: number;
+-  source: 'netease' | 'qqmusic';
++  source: MusicSource;
+ }
+ 
+ export interface Playlist {
+@@ -16,42 +44,48 @@ export interface Playlist {
+   description?: string;
+   coverUrl?: string;
+   tracks: Track[];
+-  source: 'netease' | 'qqmusic';
++  source: MusicSource;
+ }
+ 
+ export const ipc = {
+-  searchMusic: (query: string, source?: string) =>
+-    invoke<Track[]>('search_music', { query, source }),
++  searchMusic: (query: string, source?: MusicSource) =>
++    invokeWithTrace<Track[]>('search_music', { query, source }),
+ 
+   playTrack: (track: Track) =>
+-    invoke<void>('play_track', { track }),
++    invokeWithTrace<void>('play_track', { track }),
+ 
+-  togglePlayback: () => invoke<void>('toggle_playback'),
++  togglePlayback: () => invokeWithTrace<void>('toggle_playback'),
+ 
+-  seek: (positionMs: number) => invoke<void>('seek', { positionMs }),
++  seek: (positionMs: number) => invokeWithTrace<void>('seek', { positionMs }),
+ 
+-  setVolume: (volume: number) => invoke<void>('set_volume', { volume }),
++  setVolume: (volume: number) => invokeWithTrace<void>('set_volume', { volume }),
+ 
+-  getLyrics: (trackId: string, source: string) =>
+-    invoke<{ time_ms: number; text: string; translation: string | null }[]>('get_lyrics', { trackId, source }),
++  getLyrics: (trackId: string, source: MusicSource) =>
++    invokeWithTrace<{ time_ms: number; text: string; translation: string | null }[]>('get_lyrics', { trackId, source }),
+ 
+-  login: (source: string, cookie: string) =>
+-    invoke<{ access_token: string; expires_at: number | null }>('login', {
++  login: (source: MusicSource, cookie: string) =>
++    invokeWithTrace<{ access_token: string; expires_at: number | null }>('login', {
+       source,
+       credentials: { type: 'cookie', cookie },
+     }),
+ 
+-  logout: (source: string) =>
+-    invoke<void>('logout', { source }),
++  logout: (source: MusicSource) =>
++    invokeWithTrace<void>('logout', { source }),
+ 
+-  getUserPlaylists: (source?: string) =>
+-    invoke<PlaylistBrief[]>('get_user_playlists', { source }),
++  getUserPlaylists: (source?: MusicSource) =>
++    invokeWithTrace<PlaylistBrief[]>('get_user_playlists', { source }),
+ 
+-  getPlaylistDetail: (id: string, source: string) =>
+-    invoke<Playlist>('get_playlist_detail', { id, source }),
++  getPlaylistDetail: (id: string, source: MusicSource) =>
++    invokeWithTrace<Playlist>('get_playlist_detail', { id, source }),
+ 
+   extractCoverColor: (url: string) =>
+-    invoke<[number, number, number]>('extract_cover_color', { url }),
++    invokeWithTrace<[number, number, number]>('extract_cover_color', { url }),
++
++  // Best-effort frontend->backend log relay (for release debugging).
++  clientLog: (level: 'debug' | 'info' | 'warn' | 'error', message: string, traceId?: string) => {
++    const id = traceId ?? newTraceId();
++    return invoke<void>('client_log', { level, message, traceId: id }).catch(() => {});
++  },
+ };
+ 
+ export function onPlayerState(cb: (state: string) => void): Promise<UnlistenFn> {
+diff --git a/apps/rustplayer-tauri/frontend/src/store/playerStore.ts b/apps/rustplayer-tauri/frontend/src/store/playerStore.ts
+index 9aaaba1..496f2c9 100644
+--- a/apps/rustplayer-tauri/frontend/src/store/playerStore.ts
++++ b/apps/rustplayer-tauri/frontend/src/store/playerStore.ts
+@@ -2,6 +2,7 @@ import { create } from 'zustand';
+ import { ipc } from '@/lib/ipc';
+ import { saveSetting } from '@/lib/settings';
+ import { useToastStore } from '@/store/toastStore';
++import { sanitizeError } from '@/lib/errorMessages';
+ 
+ export interface Track {
+   id: string;
+@@ -52,6 +53,8 @@ function generateShuffleOrder(length: number): number[] {
+   return order;
+ }
+ 
++let playSeq = 0;
++
+ export const usePlayerStore = create<PlayerStore>((set, get) => ({
+   currentTrack: null,
+   state: 'idle',
+@@ -111,7 +114,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
+     }
+     set({ queue: newQueue, queueIndex: newIndex });
+   },
+-  clearQueue: () => set({ queue: [], queueIndex: -1, shuffleOrder: [] }),
++  clearQueue: () => { ++playSeq; set({ queue: [], queueIndex: -1, shuffleOrder: [], currentTrack: null, state: 'idle' }); },
+   setPlayMode: (mode) => set((state) => ({
+     playMode: mode,
+     shuffleOrder: mode === 'shuffle' && state.queue.length > 0
+@@ -122,8 +125,10 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
+     const { queue } = get();
+     if (index >= 0 && index < queue.length) {
+       const track = queue[index];
++      const seq = ++playSeq;
+       ipc.playTrack(track).catch((err) => {
+-        useToastStore.getState().addToast('error', `播放失败: ${err}`);
++        if (seq !== playSeq) return; // stale request, ignore
++        useToastStore.getState().addToast('error', `播放失败: ${sanitizeError(err)}`);
+         set({ state: 'idle' });
+       });
+       set((s) => ({
+diff --git a/apps/rustplayer-tauri/frontend/src/store/toastStore.ts b/apps/rustplayer-tauri/frontend/src/store/toastStore.ts
+index ad73f8c..64b92ca 100644
+--- a/apps/rustplayer-tauri/frontend/src/store/toastStore.ts
++++ b/apps/rustplayer-tauri/frontend/src/store/toastStore.ts
+@@ -8,6 +8,8 @@ export interface Toast {
+   message: string;
+ }
+ 
++const timerMap = new Map<string, ReturnType<typeof setTimeout>>();
++
+ interface ToastStore {
+   toasts: Toast[];
+   addToast: (type: ToastType, message: string) => void;
+@@ -21,9 +23,18 @@ export const useToastStore = create<ToastStore>((set) => ({
+     set((state) => ({
+       toasts: [...state.toasts, { id, type, message }].slice(-3),
+     }));
+-    setTimeout(() => {
++    const timer = setTimeout(() => {
++      timerMap.delete(id);
+       set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) }));
+     }, 3000);
++    timerMap.set(id, timer);
++  },
++  removeToast: (id) => {
++    const timer = timerMap.get(id);
++    if (timer) {
++      clearTimeout(timer);
++      timerMap.delete(id);
++    }
++    set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) }));
+   },
+-  removeToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
+ }));
+diff --git a/apps/rustplayer-tauri/frontend/src/views/HomeView.tsx b/apps/rustplayer-tauri/frontend/src/views/HomeView.tsx
+index 71a4131..ea33bcb 100644
+--- a/apps/rustplayer-tauri/frontend/src/views/HomeView.tsx
++++ b/apps/rustplayer-tauri/frontend/src/views/HomeView.tsx
+@@ -64,7 +64,7 @@ export default function HomeView() {
+           <button
+             key={card.label}
+             onClick={() => handleCardClick(card.label)}
+-            className="stagger-item aspect-square rounded-xl bg-bg-secondary flex flex-col items-center justify-center gap-3 text-text-secondary transition-colors duration-200 group animate-fade-in-up cursor-pointer hover:bg-bg-hover"
++            className="stagger-item aspect-square rounded-xl bg-bg-secondary flex flex-col items-center justify-center gap-3 text-text-secondary transition-colors duration-200 group animate-fade-in-up cursor-pointer hover:bg-bg-hover focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
+           >
+             <div className={`w-12 h-12 rounded-xl ${card.gradient} flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform duration-300`}>
+               <card.icon size={24} strokeWidth={1.5} className="text-white" />
+@@ -88,7 +88,7 @@ export default function HomeView() {
+                 className="flex-shrink-0 w-48 bg-bg-secondary rounded-xl p-3 flex items-center gap-3 group cursor-pointer hover:bg-bg-hover transition-colors text-left"
+               >
+                 {track.coverUrl ? (
+-                  <img src={track.coverUrl} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
++                  <img src={track.coverUrl} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" onError={() => console.warn('[HomeView] recent track cover load failed:', track.coverUrl, track.id, track.source)} />
+                 ) : (
+                   <div className="w-10 h-10 rounded-lg bg-bg-elevated flex items-center justify-center flex-shrink-0">
+                     <Music size={16} strokeWidth={1.5} className="text-text-tertiary group-hover:text-accent transition-colors" />
+@@ -118,7 +118,7 @@ export default function HomeView() {
+               >
+                 <div className="aspect-square rounded-xl bg-bg-secondary mb-2 flex items-center justify-center relative overflow-hidden hover:shadow-md transition-all duration-300">
+                   {pl.coverUrl ? (
+-                    <img src={pl.coverUrl} alt="" className="w-full h-full object-cover" />
++                    <img src={pl.coverUrl} alt="" className="w-full h-full object-cover" onError={() => console.warn('[HomeView] playlist cover load failed:', pl.coverUrl, pl.id, pl.source)} />
+                   ) : (
+                     <Music size={32} strokeWidth={1.5} className="text-text-tertiary" />
+                   )}
+diff --git a/apps/rustplayer-tauri/frontend/src/views/PlaylistDetailView.tsx b/apps/rustplayer-tauri/frontend/src/views/PlaylistDetailView.tsx
+index 14d8205..0b316d1 100644
+--- a/apps/rustplayer-tauri/frontend/src/views/PlaylistDetailView.tsx
++++ b/apps/rustplayer-tauri/frontend/src/views/PlaylistDetailView.tsx
+@@ -14,6 +14,11 @@ export default function PlaylistDetailView() {
+ 
+   useEffect(() => {
+     if (!source || !id) return;
++    if (source !== 'netease' && source !== 'qqmusic') {
++      setPlaylist(null);
++      setLoading(false);
++      return;
++    }
+     let active = true;
+     setLoading(true);
+     setPlaylist(null);
+@@ -45,7 +50,7 @@ export default function PlaylistDetailView() {
+     <div className="flex flex-col h-full pb-28">
+       <BackButton />
+       {loading && (
+-        <div className="p-8 space-y-4 animate-pulse">
++        <div className="p-8 space-y-4 animate-pulse" role="status" aria-busy="true" aria-label="加载中">
+           <div className="flex gap-6">
+             <div className="w-40 h-40 bg-bg-secondary rounded-xl" />
+             <div className="flex-1 space-y-3 py-2">
+@@ -61,7 +66,7 @@ export default function PlaylistDetailView() {
+           <div className="p-8 pb-0">
+             <div className="flex gap-6 mb-8">
+               {playlist.coverUrl ? (
+-                <img src={playlist.coverUrl} alt="" className="w-40 h-40 rounded-xl object-cover shadow-md" />
++                <img src={playlist.coverUrl} alt={`${playlist.name} 封面`} className="w-40 h-40 rounded-xl object-cover shadow-md" onError={() => console.warn('[PlaylistDetail] cover load failed:', playlist.coverUrl, playlist.name)} />
+               ) : (
+                 <div className="w-40 h-40 rounded-xl bg-bg-secondary flex items-center justify-center">
+                   <Play size={40} strokeWidth={1} className="text-text-tertiary" />
+diff --git a/apps/rustplayer-tauri/frontend/src/views/SearchView.tsx b/apps/rustplayer-tauri/frontend/src/views/SearchView.tsx
+index 7810ab6..e58885b 100644
+--- a/apps/rustplayer-tauri/frontend/src/views/SearchView.tsx
++++ b/apps/rustplayer-tauri/frontend/src/views/SearchView.tsx
+@@ -2,9 +2,12 @@ import { useState, useEffect } from 'react';
+ import { ipc } from '@/lib/ipc';
+ import { Track } from '@/store/playerStore';
+ import { useToastStore } from '@/store/toastStore';
++import { sanitizeError } from '@/lib/errorMessages';
+ import VirtualTrackList from '@/components/common/VirtualTrackList';
+ import { Search, SearchX, Music } from 'lucide-react';
+ 
++let searchSeq = 0;
++
+ export default function SearchView() {
+   const [query, setQuery] = useState('');
+   const [debounced, setDebounced] = useState('');
+@@ -18,16 +21,15 @@ export default function SearchView() {
+   }, [query]);
+ 
+   useEffect(() => {
+-    if (!debounced.trim()) { setResults([]); return; }
+-    let active = true;
++    const seq = ++searchSeq;
++    if (!debounced.trim()) { setResults([]); setLoading(false); return; }
+     setLoading(true);
+     ipc.searchMusic(debounced, source === 'all' ? undefined : source)
+-      .then((r) => { if (active) setResults(r); })
++      .then((r) => { if (seq === searchSeq) setResults(r); })
+       .catch((err) => {
+-        if (active) useToastStore.getState().addToast('error', `搜索失败: ${err}`);
++        if (seq === searchSeq) useToastStore.getState().addToast('error', `搜索失败: ${sanitizeError(err)}`);
+       })
+-      .finally(() => { if (active) setLoading(false); });
+-    return () => { active = false; };
++      .finally(() => { if (seq === searchSeq) setLoading(false); });
+   }, [debounced, source]);
+ 
+   const tabs = ['all', 'netease', 'qqmusic'] as const;
+@@ -39,7 +41,7 @@ export default function SearchView() {
+       <div className="relative w-full max-w-xl mb-6 animate-fade-in-up [animation-delay:50ms]">
+         <Search size={20} strokeWidth={1.5} className="absolute left-4 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none" />
+         <input
+-          type="text"
++          type="search"
+           placeholder="输入关键词..."
+           value={query}
+           onChange={(e) => setQuery(e.target.value)}
+@@ -67,7 +69,7 @@ export default function SearchView() {
+ 
+       <div className="flex-1 overflow-y-auto min-h-0" role="tabpanel">
+         {loading && (
+-          <div className="space-y-3 py-4">
++          <div className="space-y-3 py-4" role="status" aria-busy="true" aria-label="搜索中">
+             {Array.from({ length: 6 }).map((_, i) => (
+               <div key={i} className="flex items-center px-4 py-2.5 gap-3 animate-pulse">
+                 <div className="w-10 h-4 bg-bg-secondary rounded" />
+diff --git a/apps/rustplayer-tauri/frontend/src/views/SettingsView.tsx b/apps/rustplayer-tauri/frontend/src/views/SettingsView.tsx
+index d7090c3..dafdbeb 100644
+--- a/apps/rustplayer-tauri/frontend/src/views/SettingsView.tsx
++++ b/apps/rustplayer-tauri/frontend/src/views/SettingsView.tsx
+@@ -3,6 +3,7 @@ import { useUiStore } from '@/store/uiStore';
+ import { useVisualizerStore, COLOR_PRESETS, type VisualizerMode } from '@/store/visualizerStore';
+ import { useToastStore } from '@/store/toastStore';
+ import { usePlaylistStore } from '@/store/playlistStore';
++import { sanitizeError } from '@/lib/errorMessages';
+ import { ipc } from '@/lib/ipc';
+ 
+ export default function SettingsView() {
+@@ -26,7 +27,7 @@ export default function SettingsView() {
+       toast('success', '登录成功');
+       usePlaylistStore.getState().fetchPlaylists();
+     } catch (e) {
+-      toast('error', `登录失败: ${e}`);
++      toast('error', `登录失败: ${sanitizeError(e)}`);
+     } finally {
+       setLoginLoading(false);
+     }
+@@ -63,7 +64,7 @@ export default function SettingsView() {
+           <span className="text-text-secondary text-sm">启用可视化</span>
+           <button
+             onClick={() => setEnabled(!enabled)}
+-            className={`w-11 h-6 rounded-full transition-colors duration-200 cursor-pointer relative ${enabled ? 'bg-accent' : 'bg-bg-hover'}`}
++            className={`w-11 h-6 rounded-full transition-colors duration-200 cursor-pointer relative focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${enabled ? 'bg-accent' : 'bg-bg-hover'}`}
+             role="switch" aria-checked={enabled}
+           >
+             <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${enabled ? 'translate-x-5' : ''}`} />
+@@ -74,7 +75,7 @@ export default function SettingsView() {
+           <span className="text-text-secondary text-sm">粒子效果</span>
+           <button
+             onClick={() => setShowParticles(!showParticles)}
+-            className={`w-11 h-6 rounded-full transition-colors duration-200 cursor-pointer relative ${showParticles ? 'bg-accent' : 'bg-bg-hover'}`}
++            className={`w-11 h-6 rounded-full transition-colors duration-200 cursor-pointer relative focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${showParticles ? 'bg-accent' : 'bg-bg-hover'}`}
+             role="switch" aria-checked={showParticles}
+           >
+             <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${showParticles ? 'translate-x-5' : ''}`} />
+diff --git a/apps/rustplayer-tauri/src-tauri/Cargo.toml b/apps/rustplayer-tauri/src-tauri/Cargo.toml
+index 3ed92ec..ed68d2c 100644
+--- a/apps/rustplayer-tauri/src-tauri/Cargo.toml
++++ b/apps/rustplayer-tauri/src-tauri/Cargo.toml
+@@ -20,9 +20,14 @@ rustplayer-netease = { path = "../../../crates/netease" }
+ rustplayer-qqmusic = { path = "../../../crates/qqmusic" }
+ rustplayer-cache = { path = "../../../crates/cache" }
+ rusqlite = { version = "0.31", features = ["bundled"] }
++r2d2 = "0.8"
++r2d2_sqlite = "0.24"
+ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+ image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+ log = "0.4"
+-env_logger = "0.11"
++tracing = "0.1"
++tracing-appender = "0.2"
++tracing-log = "0.2"
++tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+ futures-util = "0.3"
+ bytes = "1"
+diff --git a/apps/rustplayer-tauri/src-tauri/src/commands/mod.rs b/apps/rustplayer-tauri/src-tauri/src/commands/mod.rs
+index 23ab691..2780ed3 100644
+--- a/apps/rustplayer-tauri/src-tauri/src/commands/mod.rs
++++ b/apps/rustplayer-tauri/src-tauri/src/commands/mod.rs
+@@ -1,210 +1,370 @@
+ use std::sync::Arc;
+ use std::net::IpAddr;
++use serde::Serialize;
+ use tauri::{AppHandle, State};
+-use rustplayer_core::{AuthToken, Credentials, LyricsLine, MusicSourceId, Playlist, PlaylistBrief, PlayerCommand, SearchQuery, Track};
++use rustplayer_core::{AuthToken, Credentials, LyricsLine, MusicSourceId, Playlist, PlaylistBrief, PlayerCommand, SearchQuery, SourceError, PlayerError, Track};
+ use rustplayer_player::Player;
+ use rustplayer_sources::SourceRegistry;
+ use rustplayer_cache::SearchCache;
+ use crate::store;
+ use crate::db::Db;
++use crate::trace_ctx;
++use tracing::Instrument;
++
++// --- Structured IPC Error ---
++
++#[derive(Debug, Clone, Serialize)]
++#[serde(tag = "kind", content = "message", rename_all = "snake_case")]
++pub enum IpcError {
++    Network(String),
++    Unauthorized(String),
++    NotFound(String),
++    RateLimited(String),
++    InvalidInput(String),
++    Internal(String),
++}
++
++impl From<SourceError> for IpcError {
++    fn from(e: SourceError) -> Self {
++        match e {
++            SourceError::Network(m) => IpcError::Network(m),
++            SourceError::Unauthorized => IpcError::Unauthorized("unauthorized".into()),
++            SourceError::NotFound => IpcError::NotFound("not found".into()),
++            SourceError::RateLimited => IpcError::RateLimited("rate limited".into()),
++            SourceError::InvalidResponse(m) => IpcError::Internal(m),
++            SourceError::Unimplemented => IpcError::Internal("unimplemented".into()),
++            SourceError::Internal(m) => IpcError::Internal(m),
++        }
++    }
++}
++
++impl From<PlayerError> for IpcError {
++    fn from(e: PlayerError) -> Self {
++        match e {
++            PlayerError::InvalidState(m) => IpcError::InvalidInput(m),
++            PlayerError::ChannelClosed => IpcError::Internal("channel closed".into()),
++            _ => IpcError::Internal(e.to_string()),
++        }
++    }
++}
++
++async fn run_with_trace<T, F>(cmd: &'static str, trace_id: Option<String>, fut: F) -> Result<T, IpcError>
++where
++    F: std::future::Future<Output = Result<T, IpcError>>,
++{
++    let trace_id = trace_ctx::ensure_trace_id(trace_id);
++    let span = trace_ctx::command_span(cmd, &trace_id);
++    let result = fut.instrument(span).await;
++    if let Err(ref e) = result {
++        match e {
++            IpcError::Internal(_) => tracing::error!(error = ?e, "command failed"),
++            _ => tracing::warn!(error = ?e, "command failed"),
++        }
++    }
++    result
++}
+ 
+ #[tauri::command]
+ pub async fn search_music(
+     query: String,
+     source: Option<MusicSourceId>,
++    trace_id: Option<String>,
+     registry: State<'_, Arc<SourceRegistry>>,
+     cache: State<'_, Arc<SearchCache>>,
+     db: State<'_, Arc<Db>>,
+-) -> Result<Vec<Track>, String> {
+-    let query = query.trim().to_string();
+-    if query.is_empty() {
+-        return Ok(Vec::new());
+-    }
+-    let sq = SearchQuery { keyword: query.clone(), limit: Some(30), offset: Some(0) };
+-    let sources: Vec<Arc<dyn rustplayer_core::MusicSource>> = match source {
+-        Some(id) => registry.get(id).cloned().into_iter().collect(),
+-        None => registry.all().to_vec(),
+-    };
+-
+-    let mut results = Vec::new();
+-    let mut errors = Vec::new();
+-    for src in sources {
+-        let sid = src.id();
+-        // L1: memory LRU
+-        if let Some(cached) = cache.get(sid, &query) {
+-            results.extend(cached);
+-            continue;
++) -> Result<Vec<Track>, IpcError> {
++    run_with_trace("search_music", trace_id, async {
++        let query = query.trim().to_string();
++        if query.is_empty() {
++            return Ok(Vec::new());
+         }
+-        // L2: SQLite (spawn_blocking to avoid blocking async runtime)
+-        let db_ref = db.inner().clone();
+-        let kw = query.clone();
+-        match tauri::async_runtime::spawn_blocking(move || {
+-            db_ref.get_cached_tracks(sid, &kw)
+-        }).await {
+-            Ok(Ok(Some(cached))) => {
+-                cache.set(sid, query.clone(), cached.clone());
+-                results.extend(cached);
+-                continue;
+-            }
+-            Ok(Err(e)) => log::warn!("db cache read error for {sid:?}: {e}"),
+-            Err(e) => log::warn!("spawn_blocking join error: {e}"),
+-            _ => {}
++        let sq = SearchQuery { keyword: query.clone(), limit: Some(30), offset: Some(0) };
++        let sources: Vec<Arc<dyn rustplayer_core::MusicSource>> = match source {
++            Some(id) => registry.get(id).cloned().into_iter().collect(),
++            None => registry.all().to_vec(),
++        };
++
++        // Parallel search across all sources
++        let parent_span = tracing::Span::current();
++        let mut handles = Vec::new();
++        for src in sources {
++            let sid = src.id();
++            let cache = cache.inner().clone();
++            let db = db.inner().clone();
++            let kw = query.clone();
++            let sq = sq.clone();
++            let span = parent_span.clone();
++            handles.push(tokio::spawn(async move {
++                // L1: memory LRU
++                if let Some(cached) = cache.get(sid, &kw) {
++                    return Ok(cached);
++                }
++                // L2: SQLite
++                let db_ref = db.clone();
++                let kw2 = kw.clone();
++                match tauri::async_runtime::spawn_blocking(move || {
++                    db_ref.get_cached_tracks(sid, &kw2)
++                }).await {
++                    Ok(Ok(Some(cached))) => {
++                        cache.set(sid, kw, cached.clone());
++                        return Ok(cached);
++                    }
++                    Ok(Err(e)) => log::warn!("db cache read error for {sid:?}: {e}"),
++                    Err(e) => log::warn!("spawn_blocking join error: {e}"),
++                    _ => {}
++                }
++                // L3: API
++                match src.search(sq).await {
++                    Ok(tracks) => {
++                        cache.set(sid, kw.clone(), tracks.clone());
++                        let db_ref = db.clone();
++                        let kw3 = kw;
++                        let t = tracks.clone();
++                        let span = tracing::Span::current();
++                        tokio::spawn(async move {
++                            if let Err(e) = tauri::async_runtime::spawn_blocking(move || {
++                                db_ref.cache_tracks(sid, &kw3, &t)
++                            }).await.unwrap_or_else(|e| Err(e.to_string())) {
++                                log::warn!("db cache write error for {sid:?}: {e}");
++                            }
++                        }.instrument(span));
++                        Ok(tracks)
++                    }
++                    Err(e) => {
++                        log::warn!("search error from {}: {e}", sid_label(sid));
++                        Err((sid_label(sid), e))
++                    }
++                }
++            }.instrument(span)));
+         }
+-        // L3: API
+-        match src.search(sq.clone()).await {
+-            Ok(tracks) => {
+-                cache.set(sid, query.clone(), tracks.clone());
+-                let db_ref = db.inner().clone();
+-                let kw = query.clone();
+-                let t = tracks.clone();
+-                let _ = tauri::async_runtime::spawn_blocking(move || {
+-                    db_ref.cache_tracks(sid, &kw, &t)
+-                });
+-                results.extend(tracks);
+-            }
+-            Err(e) => {
+-                let msg = format!("{}: {e}", src.name());
+-                log::warn!("search error: {msg}");
+-                errors.push(msg);
++
++        let mut results = Vec::new();
++        let mut errors: Vec<(&str, SourceError)> = Vec::new();
++        for handle in handles {
++            match handle.await {
++                Ok(Ok(tracks)) => results.extend(tracks),
++                Ok(Err((label, e))) => errors.push((label, e)),
++                Err(e) => {
++                    tracing::error!(error = ?e, "search task join error");
++                    errors.push(("task", SourceError::Internal(format!("join: {e}"))));
++                }
+             }
+         }
+-    }
+-    if results.is_empty() && !errors.is_empty() {
+-        return Err(errors.join("; "));
+-    }
+-    Ok(results)
++        if results.is_empty() && !errors.is_empty() {
++            // Pick the most representative error type from collected errors
++            let summary = errors.iter()
++                .map(|(label, e)| format!("{label}: {e}"))
++                .collect::<Vec<_>>()
++                .join("; ");
++            // Use the first error's type to determine the IpcError kind
++            let representative = &errors[0].1;
++            return Err(match representative {
++                SourceError::Unauthorized => IpcError::Unauthorized(summary),
++                SourceError::NotFound => IpcError::NotFound(summary),
++                SourceError::RateLimited => IpcError::RateLimited(summary),
++                SourceError::InvalidResponse(_) => IpcError::Internal(summary),
++                SourceError::Unimplemented => IpcError::Internal(summary),
++                SourceError::Internal(_) => IpcError::Internal(summary),
++                SourceError::Network(_) => IpcError::Network(summary),
++            });
++        }
++        Ok(results)
++    }).await
+ }
+ 
+ #[tauri::command]
+ pub async fn play_track(
+     track: Track,
++    trace_id: Option<String>,
+     registry: State<'_, Arc<SourceRegistry>>,
+     player: State<'_, Arc<Player>>,
+-) -> Result<(), String> {
+-    let src = registry.get(track.source).ok_or("source not found")?;
+-    let stream = src.get_stream_url(&track.id).await.map_err(|e| e.to_string())?;
+-    player.send(PlayerCommand::Load(track, stream)).await.map_err(|e| e.to_string())
++) -> Result<(), IpcError> {
++    run_with_trace("play_track", trace_id, async {
++        let src = registry.get(track.source).ok_or(IpcError::NotFound("source not found".into()))?;
++        let stream = src.get_stream_url(&track.id).await.map_err(IpcError::from)?;
++        player.send(PlayerCommand::Load(track, stream)).await.map_err(IpcError::from)
++    }).await
+ }
+ 
+ #[tauri::command]
+-pub async fn toggle_playback(player: State<'_, Arc<Player>>) -> Result<(), String> {
+-    player.send(PlayerCommand::Toggle).await.map_err(|e| e.to_string())
++pub async fn toggle_playback(trace_id: Option<String>, player: State<'_, Arc<Player>>) -> Result<(), IpcError> {
++    run_with_trace("toggle_playback", trace_id, async {
++        player.send(PlayerCommand::Toggle).await.map_err(IpcError::from)
++    }).await
+ }
+ 
+ #[tauri::command]
+-pub async fn seek(position_ms: u64, player: State<'_, Arc<Player>>) -> Result<(), String> {
+-    player.send(PlayerCommand::Seek(position_ms)).await.map_err(|e| e.to_string())
++pub async fn seek(trace_id: Option<String>, position_ms: u64, player: State<'_, Arc<Player>>) -> Result<(), IpcError> {
++    run_with_trace("seek", trace_id, async {
++        player.send(PlayerCommand::Seek(position_ms)).await.map_err(IpcError::from)
++    }).await
+ }
+ 
+ #[tauri::command]
+-pub async fn set_volume(volume: f32, player: State<'_, Arc<Player>>) -> Result<(), String> {
+-    if !volume.is_finite() {
+-        return Err("invalid volume value".into());
+-    }
+-    let volume = volume.clamp(0.0, 1.0);
+-    player.send(PlayerCommand::SetVolume(volume)).await.map_err(|e| e.to_string())
++pub async fn set_volume(trace_id: Option<String>, volume: f32, player: State<'_, Arc<Player>>) -> Result<(), IpcError> {
++    run_with_trace("set_volume", trace_id, async {
++        if !volume.is_finite() {
++            return Err(IpcError::InvalidInput("invalid volume value".into()));
++        }
++        let volume = volume.clamp(0.0, 1.0);
++        player.send(PlayerCommand::SetVolume(volume)).await.map_err(IpcError::from)
++    }).await
+ }
+ 
+ #[tauri::command]
+ pub async fn get_lyrics(
+     track_id: String,
+     source: MusicSourceId,
++    trace_id: Option<String>,
+     registry: State<'_, Arc<SourceRegistry>>,
+     db: State<'_, Arc<Db>>,
+-) -> Result<Vec<LyricsLine>, String> {
+-    let track_id = track_id.trim().to_string();
+-    if track_id.is_empty() {
+-        return Err("track_id is empty".into());
+-    }
+-    // Check SQLite cache first (spawn_blocking)
+-    let db_ref = db.inner().clone();
+-    let tid = track_id.clone();
+-    match tauri::async_runtime::spawn_blocking(move || {
+-        db_ref.get_cached_lyrics(&tid, source)
+-    }).await {
+-        Ok(Ok(Some(cached))) => return Ok(cached),
+-        Ok(Err(e)) => log::warn!("db lyrics cache read error: {e}"),
+-        Err(e) => log::warn!("spawn_blocking join error: {e}"),
+-        _ => {}
+-    }
+-    let src = registry.get(source).ok_or("source not found")?;
+-    let lyrics = src.get_lyrics(&track_id).await.map_err(|e| e.to_string())?;
+-    let db_ref = db.inner().clone();
+-    let tid = track_id.clone();
+-    let l = lyrics.clone();
+-    let _ = tauri::async_runtime::spawn_blocking(move || {
+-        db_ref.cache_lyrics(&tid, source, &l)
+-    });
+-    Ok(lyrics)
++) -> Result<Vec<LyricsLine>, IpcError> {
++    run_with_trace("get_lyrics", trace_id, async {
++        let track_id = track_id.trim().to_string();
++        if track_id.is_empty() {
++            return Err(IpcError::InvalidInput("track_id is empty".into()));
++        }
++        let db_ref = db.inner().clone();
++        let tid = track_id.clone();
++        match tauri::async_runtime::spawn_blocking(move || {
++            db_ref.get_cached_lyrics(&tid, source)
++        }).await {
++            Ok(Ok(Some(cached))) => return Ok(cached),
++            Ok(Err(e)) => log::warn!("db lyrics cache read error: {e}"),
++            Err(e) => log::warn!("spawn_blocking join error: {e}"),
++            _ => {}
++        }
++        let src = registry.get(source).ok_or(IpcError::NotFound("source not found".into()))?;
++        let lyrics = src.get_lyrics(&track_id).await.map_err(IpcError::from)?;
++        let db_ref = db.inner().clone();
++        let tid = track_id.clone();
++        let l = lyrics.clone();
++        let span = tracing::Span::current();
++        tokio::spawn(async move {
++            if let Err(e) = tauri::async_runtime::spawn_blocking(move || {
++                db_ref.cache_lyrics(&tid, source, &l)
++            }).await.unwrap_or_else(|e| Err(e.to_string())) {
++                log::warn!("db lyrics cache write error: {e}");
++            }
++        }.instrument(span));
++        Ok(lyrics)
++    }).await
+ }
+ 
+ #[tauri::command]
+ pub async fn login(
+     source: MusicSourceId,
+     credentials: Credentials,
++    trace_id: Option<String>,
+     registry: State<'_, Arc<SourceRegistry>>,
+     app: AppHandle,
+-) -> Result<AuthToken, String> {
+-    let src = registry.get(source).ok_or("source not found")?;
+-    let token = src.login(credentials.clone()).await.map_err(|e| e.to_string())?;
+-
+-    // Persist cookie if login succeeded (only for Cookie credentials)
+-    if let Credentials::Cookie { cookie } = &credentials {
+-        if let Err(e) = store::save_cookie(&app, source, cookie) {
+-            log::error!("failed to persist cookie for {source:?}: {e}");
++) -> Result<AuthToken, IpcError> {
++    run_with_trace("login", trace_id, async {
++        let src = registry.get(source).ok_or(IpcError::NotFound("source not found".into()))?;
++        let token = src.login(credentials.clone()).await.map_err(IpcError::from)?;
++        if let Credentials::Cookie { cookie } = &credentials {
++            if let Err(e) = store::save_cookie(&app, source, cookie) {
++                log::error!("failed to persist cookie for {source:?}: {e}");
++            }
+         }
+-    }
+-
+-    Ok(token)
++        Ok(token)
++    }).await
+ }
+ 
+ #[tauri::command]
+ pub async fn logout(
+     source: MusicSourceId,
++    trace_id: Option<String>,
++    registry: State<'_, Arc<SourceRegistry>>,
+     app: AppHandle,
+-) -> Result<(), String> {
+-    store::delete_cookie(&app, source)
++) -> Result<(), IpcError> {
++    run_with_trace("logout", trace_id, async {
++        // Clear in-memory session
++        if let Some(src) = registry.get(source) {
++            src.logout();
++        }
++        // Delete persisted cookie
++        store::delete_cookie(&app, source).map_err(IpcError::Internal)
++    }).await
++}
++
++#[tauri::command]
++pub async fn client_log(
++    level: String,
++    message: String,
++    trace_id: Option<String>,
++) -> Result<(), IpcError> {
++    run_with_trace("client_log", trace_id, async {
++        // Frontend log relay: keep it lightweight and structured for release debugging.
++        match level.as_str() {
++            "error" => tracing::error!(message = %message, "client"),
++            "warn" => tracing::warn!(message = %message, "client"),
++            "info" => tracing::info!(message = %message, "client"),
++            "debug" => tracing::debug!(message = %message, "client"),
++            other => tracing::info!(level = %other, message = %message, "client"),
++        }
++        Ok(())
++    }).await
+ }
+ 
+ #[tauri::command]
+ pub async fn get_user_playlists(
+     source: Option<MusicSourceId>,
++    trace_id: Option<String>,
+     registry: State<'_, Arc<SourceRegistry>>,
+-) -> Result<Vec<PlaylistBrief>, String> {
+-    let sources: Vec<Arc<dyn rustplayer_core::MusicSource>> = match source {
+-        Some(id) => registry.get(id).cloned().into_iter().collect(),
+-        None => registry.all().to_vec(),
+-    };
+-    let mut results = Vec::new();
+-    let mut errors = Vec::new();
+-    for src in sources {
+-        match src.get_user_playlists().await {
+-            Ok(playlists) => results.extend(playlists),
+-            Err(e) => {
+-                let msg = format!("{}: {e}", src.name());
+-                log::warn!("playlist error: {msg}");
+-                errors.push(msg);
++) -> Result<Vec<PlaylistBrief>, IpcError> {
++    run_with_trace("get_user_playlists", trace_id, async {
++        let sources: Vec<Arc<dyn rustplayer_core::MusicSource>> = match source {
++            Some(id) => registry.get(id).cloned().into_iter().collect(),
++            None => registry.all().to_vec(),
++        };
++        // Parallel fetch
++        let parent_span = tracing::Span::current();
++        let mut handles = Vec::new();
++        for src in sources {
++            let span = parent_span.clone();
++            handles.push(tokio::spawn(async move {
++                src.get_user_playlists().await.map_err(|e| format!("{}: {e}", src.name()))
++            }.instrument(span)));
++        }
++        let mut results = Vec::new();
++        let mut errors = Vec::new();
++        for handle in handles {
++            match handle.await {
++                Ok(Ok(playlists)) => results.extend(playlists),
++                Ok(Err(msg)) => { log::warn!("playlist error: {msg}"); errors.push(msg); }
++                Err(e) => errors.push(format!("task join: {e}")),
+             }
+         }
+-    }
+-    if results.is_empty() && !errors.is_empty() {
+-        return Err(errors.join("; "));
+-    }
+-    Ok(results)
++        if results.is_empty() && !errors.is_empty() {
++            return Err(IpcError::Network(errors.join("; ")));
++        }
++        Ok(results)
++    }).await
+ }
+ 
+ #[tauri::command]
+ pub async fn get_playlist_detail(
+     id: String,
+     source: MusicSourceId,
++    trace_id: Option<String>,
+     registry: State<'_, Arc<SourceRegistry>>,
+-) -> Result<Playlist, String> {
+-    let id = id.trim().to_string();
+-    if id.is_empty() {
+-        return Err("playlist id is empty".into());
++) -> Result<Playlist, IpcError> {
++    run_with_trace("get_playlist_detail", trace_id, async {
++        let id = id.trim().to_string();
++        if id.is_empty() {
++            return Err(IpcError::InvalidInput("playlist id is empty".into()));
++        }
++        let src = registry.get(source).ok_or(IpcError::NotFound("source not found".into()))?;
++        src.get_playlist_detail(&id).await.map_err(IpcError::from)
++    }).await
++}
++
++fn sid_label(sid: MusicSourceId) -> &'static str {
++    match sid {
++        MusicSourceId::Netease => "网易云音乐",
++        MusicSourceId::Qqmusic => "QQ音乐",
+     }
+-    let src = registry.get(source).ok_or("source not found")?;
+-    src.get_playlist_detail(&id).await.map_err(|e| e.to_string())
+ }
+ 
+ // --- Cover color extraction (bypasses CORS) ---
+@@ -224,7 +384,6 @@ const COVER_DOMAIN_ALLOWLIST: &[&str] = &[
+ const MAX_COVER_BYTES: usize = 2 * 1024 * 1024; // 2MB
+ 
+ fn is_allowed_cover_url(url: &reqwest::Url) -> bool {
+-    // Allow both http and https for whitelisted CDN domains (Netease CDN uses http)
+     if url.scheme() != "https" && url.scheme() != "http" {
+         return false;
+     }
+@@ -232,7 +391,6 @@ fn is_allowed_cover_url(url: &reqwest::Url) -> bool {
+         Some(h) => h,
+         None => return false,
+     };
+-    // Reject IP addresses (prevents SSRF to private networks)
+     if host.parse::<IpAddr>().is_ok() {
+         return false;
+     }
+@@ -241,7 +399,6 @@ fn is_allowed_cover_url(url: &reqwest::Url) -> bool {
+     })
+ }
+ 
+-/// Upgrade http cover URLs to https (Netease CDN supports both)
+ fn upgrade_cover_url(url: &str) -> String {
+     if url.starts_with("http://") {
+         format!("https://{}", &url[7..])
+@@ -251,15 +408,12 @@ fn upgrade_cover_url(url: &str) -> String {
+ }
+ 
+ fn is_image_magic(bytes: &[u8]) -> bool {
+-    // JPEG: FF D8 FF
+     if bytes.len() >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF {
+         return true;
+     }
+-    // PNG: 89 50 4E 47
+     if bytes.len() >= 4 && bytes[..4] == [0x89, 0x50, 0x4E, 0x47] {
+         return true;
+     }
+-    // WebP: RIFF....WEBP
+     if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+         return true;
+     }
+@@ -289,7 +443,6 @@ fn rgb_to_hsl(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
+ }
+ 
+ fn extract_dominant_hsl(img_bytes: &[u8]) -> Option<[f64; 3]> {
+-    // Validate image dimensions before full decode (prevent decompression bombs)
+     let reader = image::ImageReader::new(std::io::Cursor::new(img_bytes))
+         .with_guessed_format().ok()?;
+     let (w, h) = reader.into_dimensions().ok()?;
+@@ -297,14 +450,10 @@ fn extract_dominant_hsl(img_bytes: &[u8]) -> Option<[f64; 3]> {
+         log::warn!("cover image too large: {w}x{h}");
+         return None;
+     }
+-
+     let img = image::load_from_memory(img_bytes).ok()?;
+     let thumb = img.resize_exact(20, 20, image::imageops::FilterType::Triangle);
+     let rgb = thumb.to_rgb8();
+-
+-    // 12 hue buckets of 30° each: (sum_h, sum_s, sum_l, count)
+     let mut buckets = [(0.0f64, 0.0f64, 0.0f64, 0u32); 12];
+-
+     for pixel in rgb.pixels() {
+         let (h, s, l) = rgb_to_hsl(pixel[0], pixel[1], pixel[2]);
+         if s < 20.0 || l < 15.0 || l > 90.0 {
+@@ -316,71 +465,67 @@ fn extract_dominant_hsl(img_bytes: &[u8]) -> Option<[f64; 3]> {
+         buckets[idx].2 += l;
+         buckets[idx].3 += 1;
+     }
+-
+     let best = buckets.iter().enumerate()
+         .max_by_key(|(_, b)| b.3)?;
+     if best.1 .3 == 0 {
+         return None;
+     }
+-
+     let count = best.1 .3 as f64;
+     let h = best.1 .0 / count;
+     let s = (best.1 .1 / count).max(50.0);
+     let l = (best.1 .2 / count).clamp(45.0, 65.0);
+-
+     Some([h, s, l])
+ }
+ 
+ #[tauri::command]
+ pub async fn extract_cover_color(
+     url: String,
++    trace_id: Option<String>,
+     http: State<'_, reqwest::Client>,
+-) -> Result<[f64; 3], String> {
+-    let upgraded = upgrade_cover_url(&url);
+-    let parsed = reqwest::Url::parse(&upgraded).map_err(|e| format!("invalid url: {e}"))?;
+-    if !is_allowed_cover_url(&parsed) {
+-        return Err("url not in cover domain allowlist".into());
+-    }
+-
+-    let resp = http.get(parsed)
+-        .send().await
+-        .map_err(|e| format!("fetch failed: {e}"))?;
+-
+-    if !resp.status().is_success() {
+-        return Err(format!("http {}", resp.status()));
+-    }
+-
+-    // Pre-check Content-Length if available
+-    if let Some(cl) = resp.content_length() {
+-        if cl as usize > MAX_COVER_BYTES {
+-            return Err("cover image too large".into());
++) -> Result<[f64; 3], IpcError> {
++    run_with_trace("extract_cover_color", trace_id, async {
++        let upgraded = upgrade_cover_url(&url);
++        let parsed = reqwest::Url::parse(&upgraded).map_err(|e| IpcError::InvalidInput(format!("invalid url: {e}")))?;
++        if !is_allowed_cover_url(&parsed) {
++            log::warn!("cover url rejected (not in allowlist): {upgraded}");
++            return Err(IpcError::InvalidInput("url not in cover domain allowlist".into()));
+         }
+-    }
+-
+-    // Stream body with size limit
+-    use futures_util::StreamExt;
+-    let mut stream = resp.bytes_stream();
+-    let mut buf = Vec::new();
+-    while let Some(chunk) = stream.next().await {
+-        let chunk = chunk.map_err(|e| format!("read body: {e}"))?;
+-        buf.extend_from_slice(&chunk);
+-        if buf.len() > MAX_COVER_BYTES {
+-            return Err("cover image too large".into());
++        let resp = http.get(parsed.clone())
++            .send().await
++            .map_err(|e| {
++                log::warn!("cover fetch failed for {upgraded}: {e}");
++                IpcError::Network(format!("fetch failed: {e}"))
++            })?;
++        if !resp.status().is_success() {
++            log::warn!("cover fetch returned http {} for {upgraded}", resp.status());
++            return Err(IpcError::Network(format!("http {}", resp.status())));
+         }
+-    }
+-    let bytes = bytes::Bytes::from(buf);
+-
+-    // Magic bytes sniff
+-    if !is_image_magic(&bytes) {
+-        return Err("response is not a valid image".into());
+-    }
+-
+-    // Extract dominant color in blocking task (image decoding is CPU-bound)
+-    let hsl = tauri::async_runtime::spawn_blocking(move || {
+-        extract_dominant_hsl(&bytes)
++        if let Some(cl) = resp.content_length() {
++            if cl as usize > MAX_COVER_BYTES {
++                return Err(IpcError::InvalidInput("cover image too large".into()));
++            }
++        }
++        use futures_util::StreamExt;
++        let mut stream = resp.bytes_stream();
++        let mut buf = Vec::new();
++        while let Some(chunk) = stream.next().await {
++            let chunk = chunk.map_err(|e| IpcError::Network(format!("read body: {e}")))?;
++            buf.extend_from_slice(&chunk);
++            if buf.len() > MAX_COVER_BYTES {
++                return Err(IpcError::InvalidInput("cover image too large".into()));
++            }
++        }
++        let bytes = bytes::Bytes::from(buf);
++        if !is_image_magic(&bytes) {
++            log::warn!("cover response is not a valid image ({} bytes) for {upgraded}", bytes.len());
++            return Err(IpcError::InvalidInput("response is not a valid image".into()));
++        }
++        let hsl = tauri::async_runtime::spawn_blocking(move || {
++            extract_dominant_hsl(&bytes)
++        }).await
++            .map_err(|e| IpcError::Internal(format!("task join: {e}")))?
++            .ok_or_else(|| IpcError::Internal("could not extract color".to_string()))?;
++        Ok(hsl)
+     }).await
+-        .map_err(|e| format!("task join: {e}"))?
+-        .ok_or_else(|| "could not extract color".to_string())?;
+-
+-    Ok(hsl)
+ }
++
+diff --git a/apps/rustplayer-tauri/src-tauri/src/db.rs b/apps/rustplayer-tauri/src-tauri/src/db.rs
+index c9aecfe..4181e4b 100644
+--- a/apps/rustplayer-tauri/src-tauri/src/db.rs
++++ b/apps/rustplayer-tauri/src-tauri/src/db.rs
+@@ -1,57 +1,71 @@
+ use std::path::PathBuf;
+-use std::sync::Mutex;
+-use rusqlite::Connection;
++use r2d2::Pool;
++use r2d2_sqlite::SqliteConnectionManager;
+ use rustplayer_core::{LyricsLine, MusicSourceId, Track};
+ 
+-const CACHE_TTL_SECS: i64 = 7 * 24 * 3600; // 7 days
++const CACHE_TTL_SECS: i64 = 24 * 3600; // 1 day
+ 
+ pub struct Db {
+-    conn: Mutex<Connection>,
++    pool: Pool<SqliteConnectionManager>,
+ }
+ 
+ impl Db {
+     pub fn open(app_data_dir: PathBuf) -> Result<Self, String> {
+         std::fs::create_dir_all(&app_data_dir).map_err(|e| e.to_string())?;
+         let db_path = app_data_dir.join("rustplayer.db");
+-        let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+-        let db = Self { conn: Mutex::new(conn) };
+-        db.init_tables()?;
+-        Ok(db)
++        let manager = SqliteConnectionManager::file(db_path)
++            .with_init(|c| c.execute_batch("PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL;"));
++        let pool = Pool::builder()
++            .max_size(8)
++            .build(manager)
++            .map_err(|e| e.to_string())?;
++
++        // Enable WAL mode and initialize tables
++        {
++            let conn = pool.get().map_err(|e| e.to_string())?;
++            conn.execute_batch("PRAGMA journal_mode=WAL;").map_err(|e| e.to_string())?;
++            conn.execute_batch(
++                "CREATE TABLE IF NOT EXISTS tracks (
++                    id TEXT NOT NULL,
++                    source TEXT NOT NULL,
++                    name TEXT NOT NULL,
++                    artist TEXT NOT NULL,
++                    album TEXT NOT NULL,
++                    duration_ms INTEGER NOT NULL,
++                    cover_url TEXT,
++                    search_keyword TEXT NOT NULL,
++                    cached_at INTEGER NOT NULL,
++                    PRIMARY KEY (id, source, search_keyword)
++                );
++                CREATE INDEX IF NOT EXISTS idx_tracks_cached_at ON tracks(cached_at);
++                CREATE TABLE IF NOT EXISTS lyrics (
++                    track_id TEXT NOT NULL,
++                    source TEXT NOT NULL,
++                    lines_json TEXT NOT NULL,
++                    cached_at INTEGER NOT NULL,
++                    PRIMARY KEY (track_id, source)
++                );
++                CREATE INDEX IF NOT EXISTS idx_lyrics_cached_at ON lyrics(cached_at);",
++            ).map_err(|e| e.to_string())?;
++        }
++
++        Ok(Self { pool })
+     }
+ 
+-    fn init_tables(&self) -> Result<(), String> {
+-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+-        conn.execute_batch(
+-            "CREATE TABLE IF NOT EXISTS tracks (
+-                id TEXT NOT NULL,
+-                source TEXT NOT NULL,
+-                name TEXT NOT NULL,
+-                artist TEXT NOT NULL,
+-                album TEXT NOT NULL,
+-                duration_ms INTEGER NOT NULL,
+-                cover_url TEXT,
+-                search_keyword TEXT NOT NULL,
+-                cached_at INTEGER NOT NULL,
+-                PRIMARY KEY (id, source, search_keyword)
+-            );
+-            CREATE INDEX IF NOT EXISTS idx_tracks_cached_at ON tracks(cached_at);
+-            CREATE TABLE IF NOT EXISTS lyrics (
+-                track_id TEXT NOT NULL,
+-                source TEXT NOT NULL,
+-                lines_json TEXT NOT NULL,
+-                cached_at INTEGER NOT NULL,
+-                PRIMARY KEY (track_id, source)
+-            );
+-            CREATE INDEX IF NOT EXISTS idx_lyrics_cached_at ON lyrics(cached_at);",
+-        ).map_err(|e| e.to_string())?;
++    pub fn purge_expired(&self) -> Result<(), String> {
++        let conn = self.pool.get().map_err(|e| e.to_string())?;
++        let cutoff = now_epoch() - CACHE_TTL_SECS;
++        conn.execute("DELETE FROM tracks WHERE cached_at <= ?1", rusqlite::params![cutoff])
++            .map_err(|e| e.to_string())?;
++        conn.execute("DELETE FROM lyrics WHERE cached_at <= ?1", rusqlite::params![cutoff])
++            .map_err(|e| e.to_string())?;
+         Ok(())
+     }
++
+     pub fn cache_tracks(&self, source: MusicSourceId, keyword: &str, tracks: &[Track]) -> Result<(), String> {
+-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
++        let conn = self.pool.get().map_err(|e| e.to_string())?;
+         let now = now_epoch();
+         let src = source_str(source);
+-
+-        // Use transaction for batch inserts
+         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+         for t in tracks {
+             tx.execute(
+@@ -65,19 +79,13 @@ impl Db {
+     }
+ 
+     pub fn get_cached_tracks(&self, source: MusicSourceId, keyword: &str) -> Result<Option<Vec<Track>>, String> {
+-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
++        let conn = self.pool.get().map_err(|e| e.to_string())?;
+         let cutoff = now_epoch() - CACHE_TTL_SECS;
+         let src = source_str(source);
+-
+-        // Cleanup expired entries (limited to avoid long mutex hold)
+-        let _ = conn.execute(
+-            "DELETE FROM tracks WHERE rowid IN (SELECT rowid FROM tracks WHERE cached_at <= ?1 LIMIT 500)",
+-            rusqlite::params![cutoff],
+-        );
+-
+         let mut stmt = conn.prepare(
+             "SELECT id, name, artist, album, duration_ms, cover_url FROM tracks
+-             WHERE source = ?1 AND search_keyword = ?2 AND cached_at > ?3"
++             WHERE source = ?1 AND search_keyword = ?2 AND cached_at > ?3
++             ORDER BY rowid"
+         ).map_err(|e| e.to_string())?;
+         let rows = stmt.query_map(rusqlite::params![src, keyword, cutoff], |row| {
+             Ok(Track {
+@@ -98,7 +106,7 @@ impl Db {
+     }
+ 
+     pub fn cache_lyrics(&self, track_id: &str, source: MusicSourceId, lines: &[LyricsLine]) -> Result<(), String> {
+-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
++        let conn = self.pool.get().map_err(|e| e.to_string())?;
+         let json = serde_json::to_string(lines).map_err(|e| e.to_string())?;
+         conn.execute(
+             "INSERT OR REPLACE INTO lyrics (track_id, source, lines_json, cached_at) VALUES (?1, ?2, ?3, ?4)",
+@@ -108,15 +116,8 @@ impl Db {
+     }
+ 
+     pub fn get_cached_lyrics(&self, track_id: &str, source: MusicSourceId) -> Result<Option<Vec<LyricsLine>>, String> {
+-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
++        let conn = self.pool.get().map_err(|e| e.to_string())?;
+         let cutoff = now_epoch() - CACHE_TTL_SECS;
+-
+-        // Cleanup expired entries (limited to avoid long mutex hold)
+-        let _ = conn.execute(
+-            "DELETE FROM lyrics WHERE rowid IN (SELECT rowid FROM lyrics WHERE cached_at <= ?1 LIMIT 100)",
+-            rusqlite::params![cutoff],
+-        );
+-
+         let mut stmt = conn.prepare(
+             "SELECT lines_json FROM lyrics WHERE track_id = ?1 AND source = ?2 AND cached_at > ?3"
+         ).map_err(|e| e.to_string())?;
+diff --git a/apps/rustplayer-tauri/src-tauri/src/events.rs b/apps/rustplayer-tauri/src-tauri/src/events.rs
+index af0e864..7749482 100644
+--- a/apps/rustplayer-tauri/src-tauri/src/events.rs
++++ b/apps/rustplayer-tauri/src-tauri/src/events.rs
+@@ -1,4 +1,5 @@
+ use std::sync::Arc;
++use std::time::Instant;
+ use rustplayer_core::{PlayerEvent, PlayerState};
+ use rustplayer_player::Player;
+ use tauri::{AppHandle, Emitter};
+@@ -7,6 +8,7 @@ pub fn spawn_event_forwarder(app: AppHandle, player: &Arc<Player>) {
+     let mut rx = player.subscribe();
+ 
+     tauri::async_runtime::spawn(async move {
++        let mut last_spectrum_emit: Option<Instant> = None;
+         loop {
+             match rx.recv().await {
+                 Ok(event) => {
+@@ -21,6 +23,13 @@ pub fn spawn_event_forwarder(app: AppHandle, player: &Arc<Player>) {
+                             }))
+                         }
+                         PlayerEvent::Spectrum { magnitudes } => {
++                            let now = Instant::now();
++                            if let Some(last) = last_spectrum_emit {
++                                if now.duration_since(last) < std::time::Duration::from_millis(66) {
++                                    continue; // throttle to ~15fps
++                                }
++                            }
++                            last_spectrum_emit = Some(now);
+                             ("player://spectrum", serde_json::json!({
+                                 "magnitudes": magnitudes,
+                             }))
+diff --git a/apps/rustplayer-tauri/src-tauri/src/main.rs b/apps/rustplayer-tauri/src-tauri/src/main.rs
+index 83fe353..bdca64f 100644
+--- a/apps/rustplayer-tauri/src-tauri/src/main.rs
++++ b/apps/rustplayer-tauri/src-tauri/src/main.rs
+@@ -3,7 +3,9 @@
+ mod commands;
+ mod db;
+ mod events;
++mod logging;
+ mod store;
++mod trace_ctx;
+ 
+ use std::sync::Arc;
+ use std::time::Duration;
+@@ -16,56 +18,11 @@ use rustplayer_cache::SearchCache;
+ use tauri::Manager;
+ 
+ fn main() {
+-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+-        .format_timestamp_millis()
+-        .init();
+-
+-    let player = Player::new().unwrap_or_else(|e| {
+-        log::error!("failed to initialize audio player: {e}");
+-        std::process::exit(1);
+-    });
+-    let player = Arc::new(player);
+-    let mut registry = SourceRegistry::new();
+-    registry.register(Arc::new(NeteaseClient::new()));
+-    registry.register(Arc::new(QqMusicClient::new()));
+-    let registry = Arc::new(registry);
+-    let cache = Arc::new(SearchCache::new());
+-
+-    // Shared reqwest client for cover image fetching (connection pool reuse)
+-    let cover_http = reqwest::Client::builder()
+-        .connect_timeout(Duration::from_secs(3))
+-        .timeout(Duration::from_secs(8))
+-        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+-            // Allow up to 3 redirects, but only to whitelisted cover CDN domains
+-            if attempt.previous().len() >= 3 {
+-                return attempt.stop();
+-            }
+-            let url = attempt.url();
+-            let host = match url.host_str() {
+-                Some(h) => h,
+-                None => return attempt.stop(),
+-            };
+-            const ALLOWED: &[&str] = &[
+-                "music.126.net", "p1.music.126.net", "p2.music.126.net",
+-                "p3.music.126.net", "p4.music.126.net",
+-                "y.gtimg.cn", "imgcache.qq.com", "y.qq.com", "qqmusic.qq.com",
+-            ];
+-            let ok = ALLOWED.iter().any(|a| host == *a || host.ends_with(&format!(".{a}")));
+-            if ok { attempt.follow() } else { attempt.stop() }
+-        }))
+-        .build()
+-        .expect("failed to build cover http client");
+-
+-    let player_for_events = player.clone();
+-    let registry_for_setup = registry.clone();
++    let ctx = tauri::generate_context!();
+ 
+     tauri::Builder::default()
+         .plugin(tauri_plugin_shell::init())
+         .plugin(tauri_plugin_store::Builder::default().build())
+-        .manage(player)
+-        .manage(registry)
+-        .manage(cache)
+-        .manage(cover_http)
+         .invoke_handler(tauri::generate_handler![
+             commands::search_music,
+             commands::play_track,
+@@ -78,37 +35,116 @@ fn main() {
+             commands::get_user_playlists,
+             commands::get_playlist_detail,
+             commands::extract_cover_color,
++            commands::client_log,
+         ])
+-        .setup(move |app| {
+-            events::spawn_event_forwarder(app.handle().clone(), &player_for_events);
+-
+-            // Initialize SQLite cache
++        .setup(|app| {
++            // Resolve app data dir first; logging needs it for file output.
+             let app_data_dir = app.path().app_data_dir().unwrap_or_else(|e| {
+-                log::error!("failed to resolve app data directory: {e}");
++                eprintln!("failed to resolve app data directory: {e}");
+                 std::process::exit(1);
+             });
++
++            logging::init(&app_data_dir).unwrap_or_else(|e| {
++                eprintln!("failed to initialize logging: {e}");
++                std::process::exit(1);
++            });
++
++            let player = Arc::new(Player::new().unwrap_or_else(|e| {
++                tracing::error!("failed to initialize audio player: {e}");
++                std::process::exit(1);
++            }));
++
++            let mut registry = SourceRegistry::new();
++            registry.register(Arc::new(NeteaseClient::new().unwrap_or_else(|e| {
++                tracing::error!("failed to create netease client: {e}");
++                std::process::exit(1);
++            })));
++            registry.register(Arc::new(QqMusicClient::new().unwrap_or_else(|e| {
++                tracing::error!("failed to create qqmusic client: {e}");
++                std::process::exit(1);
++            })));
++            let registry = Arc::new(registry);
++
++            let cache = Arc::new(SearchCache::new());
++
++            // Shared reqwest client for cover image fetching (connection pool reuse)
++            let cover_http = reqwest::Client::builder()
++                .connect_timeout(Duration::from_secs(3))
++                .timeout(Duration::from_secs(8))
++                .redirect(reqwest::redirect::Policy::custom(|attempt| {
++                    // Allow up to 3 redirects, but only to whitelisted cover CDN domains
++                    if attempt.previous().len() >= 3 {
++                        return attempt.stop();
++                    }
++                    let url = attempt.url();
++                    let host = match url.host_str() {
++                        Some(h) => h,
++                        None => return attempt.stop(),
++                    };
++                    const ALLOWED: &[&str] = &[
++                        "music.126.net", "p1.music.126.net", "p2.music.126.net",
++                        "p3.music.126.net", "p4.music.126.net",
++                        "y.gtimg.cn", "imgcache.qq.com", "y.qq.com", "qqmusic.qq.com",
++                    ];
++                    let ok = ALLOWED.iter().any(|a| host == *a || host.ends_with(&format!(".{a}")));
++                    if ok { attempt.follow() } else { attempt.stop() }
++                }))
++                .build()
++                .unwrap_or_else(|e| {
++                    tracing::error!("failed to build cover http client: {e}");
++                    std::process::exit(1);
++                });
++
++            app.manage(player.clone());
++            app.manage(registry.clone());
++            app.manage(cache);
++            app.manage(cover_http);
++
++            events::spawn_event_forwarder(app.handle().clone(), &player);
+             let database = db::Db::open(app_data_dir).unwrap_or_else(|e| {
+-                log::error!("failed to open SQLite database: {e}");
++                tracing::error!("failed to open SQLite database: {e}");
+                 std::process::exit(1);
+             });
+-            app.manage(Arc::new(database));
++            let database = Arc::new(database);
++            app.manage(database.clone());
++
++            // Periodic cache cleanup (hourly, with immediate first run)
++            let db_for_cleanup = database.clone();
++            tauri::async_runtime::spawn(async move {
++                let mut ticker = tokio::time::interval(Duration::from_secs(3600));
++                loop {
++                    ticker.tick().await;
++                    let db = db_for_cleanup.clone();
++                    match tokio::task::spawn_blocking(move || db.purge_expired()).await {
++                        Ok(Ok(())) => tracing::info!("periodic cache cleanup completed"),
++                        Ok(Err(e)) => tracing::warn!("periodic cache cleanup failed: {e}"),
++                        Err(e) => tracing::warn!("periodic cache cleanup task panicked: {e}"),
++                    }
++                }
++            });
+ 
+             // Restore cookies on startup
+-            let registry_clone = registry_for_setup.clone();
++            let registry_clone = registry.clone();
+             let app_handle = app.handle().clone();
+             tauri::async_runtime::spawn(async move {
+                 for source_id in [MusicSourceId::Netease, MusicSourceId::Qqmusic] {
+-                    if let Ok(Some(cookie)) = store::load_cookie(&app_handle, source_id) {
+-                        if let Some(src) = registry_clone.get(source_id) {
+-                            let creds = Credentials::Cookie { cookie };
+-                            let _ = src.login(creds).await;
++                    match store::load_cookie(&app_handle, source_id) {
++                        Ok(Some(cookie)) => {
++                            if let Some(src) = registry_clone.get(source_id) {
++                                let creds = Credentials::Cookie { cookie };
++                                if let Err(e) = src.login(creds).await {
++                                    tracing::warn!("restore cookie login failed for {source_id:?}: {e}");
++                                }
++                            }
+                         }
++                        Ok(None) => {}
++                        Err(e) => tracing::warn!("load_cookie failed for {source_id:?}: {e}"),
+                     }
+                 }
+             });
+ 
+             Ok(())
+         })
+-        .run(tauri::generate_context!())
++        .run(ctx)
+         .expect("error running tauri application");
+ }
+diff --git a/apps/rustplayer-tauri/src-tauri/tauri.conf.json b/apps/rustplayer-tauri/src-tauri/tauri.conf.json
+index 4daa4e5..dedcb85 100644
+--- a/apps/rustplayer-tauri/src-tauri/tauri.conf.json
++++ b/apps/rustplayer-tauri/src-tauri/tauri.conf.json
+@@ -10,7 +10,7 @@
+     "frontendDist": "../frontend/dist"
+   },
+   "app": {
+-    "withGlobalTauri": true,
++    "withGlobalTauri": false,
+     "windows": [
+       {
+         "title": "拾音",
+@@ -23,7 +23,7 @@
+       }
+     ],
+     "security": {
+-      "csp": null
++      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://*.music.126.net https://*.gtimg.cn https://*.qq.com http://*.music.126.net data:; connect-src ipc: http://localhost:*"
+     }
+   },
+   "plugins": {}
+diff --git a/crates/core/src/lib.rs b/crates/core/src/lib.rs
+index 1d9026a..b89f841 100644
+--- a/crates/core/src/lib.rs
++++ b/crates/core/src/lib.rs
+@@ -172,4 +172,5 @@ pub trait MusicSource: Send + Sync {
+     async fn get_playlist_detail(&self, _id: &str) -> Result<Playlist, SourceError> {
+         Err(SourceError::Unimplemented)
+     }
++    fn logout(&self) {}
+ }
+diff --git a/crates/netease/Cargo.toml b/crates/netease/Cargo.toml
+index 272f8d8..405037d 100644
+--- a/crates/netease/Cargo.toml
++++ b/crates/netease/Cargo.toml
+@@ -15,3 +15,4 @@ cbc = "0.1"
+ rsa = "0.9"
+ base64 = "0.22"
+ rand = "0.8"
++log = "0.4"
+diff --git a/crates/netease/src/api.rs b/crates/netease/src/api.rs
+index 495697c..20f0a01 100644
+--- a/crates/netease/src/api.rs
++++ b/crates/netease/src/api.rs
+@@ -19,7 +19,15 @@ pub async fn search(
+         "limit": query.limit.unwrap_or(30),
+         "offset": query.offset.unwrap_or(0),
+     });
+-    let value = weapi_post(http, base_url, "/weapi/search/get", payload, cookie).await?;
++    // Try /weapi/cloudsearch/get/web first (richer metadata), fall back to /weapi/search/get
++    let value = match weapi_post(http, base_url, "/weapi/cloudsearch/get/web", payload.clone(), cookie).await {
++        Ok(v) => v,
++        Err(SourceError::Unauthorized) => {
++            log::info!("cloudsearch requires login, falling back to /weapi/search/get");
++            weapi_post(http, base_url, "/weapi/search/get", payload, cookie).await?
++        }
++        Err(e) => return Err(e),
++    };
+     let Some(list) = value.pointer("/result/songs").and_then(|v| v.as_array()) else {
+         return Ok(Vec::new());
+     };
+@@ -96,11 +104,16 @@ async fn weapi_post(
+     }
+     let res = req.send().await.map_err(|e| SourceError::Network(e.to_string()))?;
+     let status = res.status();
+-    let value: Value = res.json().await.map_err(|e| SourceError::InvalidResponse(e.to_string()))?;
+     if !status.is_success() {
+-        return Err(SourceError::Network(format!("http {status}")));
++        let mut body = res.text().await.unwrap_or_default();
++        body.truncate(1024);
++        return Err(SourceError::Network(format!("http {status}: {body}")));
+     }
++    let value: Value = res.json().await.map_err(|e| SourceError::InvalidResponse(e.to_string()))?;
+     if let Some(code) = value.get("code").and_then(|v| v.as_i64()) {
++        if code == 50000005 || code == -462 {
++            return Err(SourceError::Unauthorized);
++        }
+         if code != 200 {
+             return Err(SourceError::InvalidResponse(format!("code {code}")));
+         }
+@@ -118,6 +131,10 @@ fn parse_song(song: &Value) -> Option<Track> {
+     let album_node = song.get("al").or_else(|| song.get("album"));
+     let album = album_node.and_then(|v| v.get("name")).and_then(|v| v.as_str()).unwrap_or("").to_string();
+     let cover_url = album_node.and_then(|v| v.get("picUrl")).and_then(|v| v.as_str()).map(|s| s.to_string());
++    if cover_url.is_none() {
++        log::debug!("netease: song id={id} has no cover_url, album keys: {:?}",
++            album_node.and_then(|v| v.as_object()).map(|m| m.keys().cloned().collect::<Vec<_>>()));
++    }
+     let duration_ms = song.get("dt").or_else(|| song.get("duration")).and_then(|v| v.as_u64()).unwrap_or(0);
+ 
+     Some(Track {
+@@ -170,7 +187,7 @@ pub async fn playlist_detail(
+ ) -> Result<Playlist, SourceError> {
+     let payload = json!({
+         "id": playlist_id,
+-        "n": 100000,
++        "n": 1000,
+     });
+     let value = weapi_post(http, base_url, "/weapi/v6/playlist/detail", payload, cookie).await?;
+     let pl = value.get("playlist").ok_or_else(|| SourceError::NotFound)?;
+diff --git a/crates/netease/src/lib.rs b/crates/netease/src/lib.rs
+index 254c34c..516fba5 100644
+--- a/crates/netease/src/lib.rs
++++ b/crates/netease/src/lib.rs
+@@ -17,16 +17,17 @@ pub struct NeteaseClient {
+ }
+ 
+ impl NeteaseClient {
+-    pub fn new() -> Self {
+-        Self {
+-            http: reqwest::Client::builder()
+-                .cookie_store(true)
+-                .timeout(Duration::from_secs(5))
+-                .build()
+-                .expect("failed to build http client"),
++    pub fn new() -> Result<Self, SourceError> {
++        let http = reqwest::Client::builder()
++            .cookie_store(true)
++            .timeout(Duration::from_secs(5))
++            .build()
++            .map_err(|e| SourceError::Internal(format!("failed to build http client: {e}")))?;
++        Ok(Self {
++            http,
+             base_url: "https://music.163.com".into(),
+             cookie: RwLock::new(None),
+-        }
++        })
+     }
+ 
+     fn cookie(&self) -> Option<String> {
+@@ -73,4 +74,9 @@ impl MusicSource for NeteaseClient {
+     async fn get_playlist_detail(&self, id: &str) -> Result<Playlist, SourceError> {
+         api::playlist_detail(&self.http, &self.base_url, id, self.cookie().as_deref()).await
+     }
++    fn logout(&self) {
++        if let Ok(mut guard) = self.cookie.write() {
++            *guard = None;
++        }
++    }
+ }
+diff --git a/crates/player/src/lib.rs b/crates/player/src/lib.rs
+index 0d17290..0694d6a 100644
+--- a/crates/player/src/lib.rs
++++ b/crates/player/src/lib.rs
+@@ -6,9 +6,9 @@ use rustplayer_core::{PlayerCommand, PlayerError, PlayerEvent, PlayerState, Stre
+ use tokio::sync::{broadcast, mpsc};
+ 
+ pub struct Player {
+-    cmd_tx: mpsc::Sender<PlayerCommand>,
++    cmd_tx: Option<mpsc::Sender<PlayerCommand>>,
+     event_tx: broadcast::Sender<PlayerEvent>,
+-    _thread: std::thread::JoinHandle<()>,
++    thread: Option<std::thread::JoinHandle<()>>,
+ }
+ 
+ impl Player {
+@@ -27,9 +27,9 @@ impl Player {
+             .map_err(|e| PlayerError::Internal(e.to_string()))?;
+ 
+         Ok(Self {
+-            cmd_tx,
++            cmd_tx: Some(cmd_tx),
+             event_tx,
+-            _thread: handle,
++            thread: Some(handle),
+         })
+     }
+ 
+@@ -38,14 +38,18 @@ impl Player {
+     }
+ 
+     pub async fn send(&self, cmd: PlayerCommand) -> Result<(), PlayerError> {
+-        self.cmd_tx.send(cmd).await.map_err(|_| PlayerError::ChannelClosed)
++        self.cmd_tx.as_ref().ok_or(PlayerError::ChannelClosed)?
++            .send(cmd).await.map_err(|_| PlayerError::ChannelClosed)
+     }
+ }
+ 
+ impl Drop for Player {
+     fn drop(&mut self) {
+-        // Close the command channel to signal the engine thread to exit
+-        // The thread will exit when cmd_rx.recv() returns None
++        // Drop cmd_tx to close the channel, signaling the engine thread to exit
++        self.cmd_tx.take();
++        if let Some(handle) = self.thread.take() {
++            let _ = handle.join();
++        }
+     }
+ }
+ 
+@@ -181,6 +185,15 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
+             match msg.view() {
+                 gst::MessageView::Error(e) => {
+                     let detail = format!("{}{}", e.error(), e.debug().map(|d| format!(" ({d})")).unwrap_or_default());
++                    if let Some(track) = &eng.current_track {
++                        log::error!(
++                            "gstreamer pipeline error (track id={}, source={:?}): {detail}",
++                            track.id,
++                            track.source
++                        );
++                    } else {
++                        log::error!("gstreamer pipeline error: {detail}");
++                    }
+                     emit(tx, PlayerEvent::Error { error: PlayerError::Pipeline(detail) });
+                     teardown(eng);
+                     set_state(eng, PlayerState::Stopped, tx);
+diff --git a/crates/qqmusic/src/api.rs b/crates/qqmusic/src/api.rs
+index ef28e7e..e8761c3 100644
+--- a/crates/qqmusic/src/api.rs
++++ b/crates/qqmusic/src/api.rs
+@@ -1,6 +1,5 @@
+ use std::collections::HashMap;
+ 
+-use crate::sign::sign_request;
+ use reqwest::header::COOKIE;
+ use rustplayer_core::{LyricsLine, MusicSourceId, SearchQuery, SourceError, StreamInfo, Track};
+ use serde_json::{json, Value};
+@@ -17,7 +16,7 @@ pub async fn search(
+     let page_num = if limit == 0 { 1 } else { (offset / limit) + 1 };
+ 
+     let data = json!({
+-        "comm": { "ct": 24, "cv": 0 },
++        "comm": { "ct": "19", "cv": "1859", "uin": "0" },
+         "req": {
+             "module": "music.search.SearchCgiService",
+             "method": "DoSearchForQQMusicDesktop",
+@@ -25,7 +24,8 @@ pub async fn search(
+                 "query": query.keyword,
+                 "num_per_page": limit,
+                 "page_num": page_num,
+-                "search_type": 0
++                "search_type": 0,
++                "grp": 1
+             }
+         }
+     });
+@@ -47,7 +47,7 @@ pub async fn song_url(
+     cookie: Option<&str>,
+ ) -> Result<StreamInfo, SourceError> {
+     let data = json!({
+-        "comm": { "ct": 24, "cv": 0 },
++        "comm": { "ct": "19", "cv": "1859", "uin": "0" },
+         "req": {
+             "module": "vkey.GetVkeyServer",
+             "method": "CgiGetVkey",
+@@ -110,9 +110,11 @@ async fn musicu_post(
+     data: &Value,
+     cookie: Option<&str>,
+ ) -> Result<Value, SourceError> {
+-    let sign = sign_request(data);
+     let url = format!("{base_url}/cgi-bin/musicu.fcg");
+-    let mut req = http.post(url).query(&[("format", "json"), ("sign", sign.as_str())]).json(data);
++    let mut req = http.post(url)
++        .query(&[("format", "json")])
++        .header("Referer", "https://y.qq.com/")
++        .json(data);
+     if let Some(c) = cookie {
+         req = req.header(COOKIE, c);
+     }
+@@ -124,16 +126,27 @@ async fn musicu_post(
+ }
+ 
+ fn parse_song(song: &Value) -> Option<Track> {
+-    let mid = song.get("songmid").and_then(|v| v.as_str()).unwrap_or("");
++    // Handle both old format (songmid/songname) and new format (mid/name with nested objects)
++    let mid = song.get("songmid").and_then(|v| v.as_str())
++        .or_else(|| song.get("mid").and_then(|v| v.as_str()))
++        .unwrap_or("");
+     if mid.is_empty() { return None; }
+-    let name = song.get("songname").and_then(|v| v.as_str()).unwrap_or("").to_string();
++    let name = song.get("songname").and_then(|v| v.as_str())
++        .or_else(|| song.get("name").and_then(|v| v.as_str()))
++        .unwrap_or("").to_string();
+     let artists = song.get("singer")
+         .and_then(|v| v.as_array())
+         .map(|arr| arr.iter().filter_map(|a| a.get("name").and_then(|v| v.as_str())).collect::<Vec<_>>().join(" / "))
+         .unwrap_or_else(|| "Unknown".into());
+-    let album = song.get("albumname").and_then(|v| v.as_str()).unwrap_or("").to_string();
++    // Old format: albumname (string), New format: album.name (nested)
++    let album = song.get("albumname").and_then(|v| v.as_str())
++        .or_else(|| song.get("album").and_then(|v| v.get("name")).and_then(|v| v.as_str()))
++        .unwrap_or("").to_string();
+     let duration_ms = song.get("interval").and_then(|v| v.as_u64()).unwrap_or(0) * 1000;
+-    let cover_url = song.get("albummid").and_then(|v| v.as_str())
++    // Old format: albummid (string), New format: album.mid (nested)
++    let album_mid = song.get("albummid").and_then(|v| v.as_str())
++        .or_else(|| song.get("album").and_then(|v| v.get("mid")).and_then(|v| v.as_str()));
++    let cover_url = album_mid
+         .map(|mid| format!("https://y.qq.com/music/photo_new/T002R300x300M000{mid}.jpg"));
+ 
+     Some(Track {
+diff --git a/crates/qqmusic/src/lib.rs b/crates/qqmusic/src/lib.rs
+index 6fb5e81..875a97e 100644
+--- a/crates/qqmusic/src/lib.rs
++++ b/crates/qqmusic/src/lib.rs
+@@ -18,17 +18,18 @@ pub struct QqMusicClient {
+ }
+ 
+ impl QqMusicClient {
+-    pub fn new() -> Self {
+-        Self {
+-            http: reqwest::Client::builder()
+-                .cookie_store(true)
+-                .timeout(Duration::from_secs(5))
+-                .build()
+-                .expect("failed to build http client"),
++    pub fn new() -> Result<Self, SourceError> {
++        let http = reqwest::Client::builder()
++            .cookie_store(true)
++            .timeout(Duration::from_secs(5))
++            .build()
++            .map_err(|e| SourceError::Internal(format!("failed to build http client: {e}")))?;
++        Ok(Self {
++            http,
+             base_url: "https://u.y.qq.com".into(),
+             guid: sign::generate_guid(),
+             cookie: RwLock::new(None),
+-        }
++        })
+     }
+ 
+     fn cookie(&self) -> Option<String> {
+@@ -69,4 +70,9 @@ impl MusicSource for QqMusicClient {
+             Credentials::Password { .. } => Err(SourceError::Unimplemented),
+         }
+     }
++    fn logout(&self) {
++        if let Ok(mut guard) = self.cookie.write() {
++            *guard = None;
++        }
++    }
+ }
