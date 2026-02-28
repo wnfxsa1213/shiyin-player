@@ -79,6 +79,19 @@ impl From<PlayerError> for IpcError {
     }
 }
 
+/// Helper function to map SourceError to IpcError with custom summary message
+fn map_source_error_to_ipc(error: &SourceError, summary: String) -> IpcError {
+    match error {
+        SourceError::Unauthorized => IpcError::Unauthorized(summary),
+        SourceError::NotFound => IpcError::NotFound(summary),
+        SourceError::RateLimited => IpcError::RateLimited(summary),
+        SourceError::InvalidResponse(_) => IpcError::Internal(summary),
+        SourceError::Unimplemented => IpcError::Internal(summary),
+        SourceError::Internal(_) => IpcError::Internal(summary),
+        SourceError::Network(_) => IpcError::Network(summary),
+    }
+}
+
 async fn run_with_trace<T, F>(cmd: &'static str, trace_id: Option<String>, fut: F) -> Result<T, IpcError>
 where
     F: std::future::Future<Output = Result<T, IpcError>>,
@@ -141,8 +154,8 @@ pub async fn search_music(
                         cache.set(sid, kw, cached.clone());
                         return Ok(cached);
                     }
-                    Ok(Err(e)) => log::warn!("db cache read error for {sid:?}: {e}"),
-                    Err(e) => log::warn!("spawn_blocking join error: {e}"),
+                    Ok(Err(e)) => tracing::warn!("db cache read error for {sid:?}: {e}"),
+                    Err(e) => tracing::warn!("spawn_blocking join error: {e}"),
                     _ => {}
                 }
                 // L3: API
@@ -157,13 +170,13 @@ pub async fn search_music(
                             if let Err(e) = tauri::async_runtime::spawn_blocking(move || {
                                 db_ref.cache_tracks(sid, &kw3, &t)
                             }).await.unwrap_or_else(|e| Err(e.to_string())) {
-                                log::warn!("db cache write error for {sid:?}: {e}");
+                                tracing::warn!("db cache write error for {sid:?}: {e}");
                             }
                         }.instrument(span));
                         Ok(tracks)
                     }
                     Err(e) => {
-                        log::warn!("search error from {}: {e}", sid_label(sid));
+                        tracing::warn!("search error from {}: {e}", sid_label(sid));
                         Err((sid_label(sid), e))
                     }
                 }
@@ -197,15 +210,7 @@ pub async fn search_music(
                 .join("; ");
             // Use the first error's type to determine the IpcError kind
             let representative = &errors[0].1;
-            return Err(match representative {
-                SourceError::Unauthorized => IpcError::Unauthorized(summary),
-                SourceError::NotFound => IpcError::NotFound(summary),
-                SourceError::RateLimited => IpcError::RateLimited(summary),
-                SourceError::InvalidResponse(_) => IpcError::Internal(summary),
-                SourceError::Unimplemented => IpcError::Internal(summary),
-                SourceError::Internal(_) => IpcError::Internal(summary),
-                SourceError::Network(_) => IpcError::Network(summary),
-            });
+            return Err(map_source_error_to_ipc(representative, summary));
         }
         Ok(results)
     }).await
@@ -269,8 +274,8 @@ pub async fn get_lyrics(
             db_ref.get_cached_lyrics(&tid, source)
         }).await {
             Ok(Ok(Some(cached))) => return Ok(cached),
-            Ok(Err(e)) => log::warn!("db lyrics cache read error: {e}"),
-            Err(e) => log::warn!("spawn_blocking join error: {e}"),
+            Ok(Err(e)) => tracing::warn!("db lyrics cache read error: {e}"),
+            Err(e) => tracing::warn!("spawn_blocking join error: {e}"),
             _ => {}
         }
         let src = registry.get(source).ok_or(IpcError::NotFound("source not found".into()))?;
@@ -283,7 +288,7 @@ pub async fn get_lyrics(
             if let Err(e) = tauri::async_runtime::spawn_blocking(move || {
                 db_ref.cache_lyrics(&tid, source, &l)
             }).await.unwrap_or_else(|e| Err(e.to_string())) {
-                log::warn!("db lyrics cache write error: {e}");
+                tracing::warn!("db lyrics cache write error: {e}");
             }
         }.instrument(span));
         Ok(lyrics)
@@ -303,7 +308,7 @@ pub async fn login(
         let token = src.login(credentials.clone()).await.map_err(IpcError::from)?;
         if let Credentials::Cookie { cookie } = &credentials {
             if let Err(e) = store::save_cookie(&app, source, cookie) {
-                log::error!("failed to persist cookie for {source:?}: {e}");
+                tracing::error!("failed to persist cookie for {source:?}: {e}");
             }
         }
         let _ = app.emit("login://success", source);
@@ -684,15 +689,7 @@ pub async fn get_user_playlists(
                 .collect::<Vec<_>>()
                 .join("; ");
             let representative = &errors[0].1;
-            return Err(match representative {
-                SourceError::Unauthorized => IpcError::Unauthorized(summary),
-                SourceError::NotFound => IpcError::NotFound(summary),
-                SourceError::RateLimited => IpcError::RateLimited(summary),
-                SourceError::InvalidResponse(_) => IpcError::Internal(summary),
-                SourceError::Unimplemented => IpcError::Internal(summary),
-                SourceError::Internal(_) => IpcError::Internal(summary),
-                SourceError::Network(_) => IpcError::Network(summary),
-            });
+            return Err(map_source_error_to_ipc(representative, summary));
         }
         Ok(results)
     }).await
@@ -1203,7 +1200,7 @@ fn extract_dominant_hsl(img_bytes: &[u8]) -> Option<[f64; 3]> {
         .with_guessed_format().ok()?;
     let (w, h) = reader.into_dimensions().ok()?;
     if w > 8192 || h > 8192 {
-        log::warn!("cover image too large: {w}x{h}");
+        tracing::warn!("cover image too large: {w}x{h}");
         return None;
     }
     let img = image::load_from_memory(img_bytes).ok()?;
@@ -1224,7 +1221,7 @@ fn extract_dominant_hsl(img_bytes: &[u8]) -> Option<[f64; 3]> {
     let best = buckets.iter().enumerate()
         .max_by_key(|(_, b)| b.3)?;
     if best.1 .3 == 0 {
-        log::debug!("no colorful pixels found, falling back to average color");
+        tracing::debug!("no colorful pixels found, falling back to average color");
         let mut sin_sum = 0.0f64;
         let mut cos_sum = 0.0f64;
         let mut total_s = 0.0;
@@ -1266,17 +1263,17 @@ pub async fn extract_cover_color(
         let upgraded = upgrade_cover_url(&url);
         let parsed = reqwest::Url::parse(&upgraded).map_err(|e| IpcError::InvalidInput(format!("invalid url: {e}")))?;
         if !is_allowed_cover_url(&parsed) {
-            log::warn!("cover url rejected (not in allowlist): {upgraded}");
+            tracing::warn!("cover url rejected (not in allowlist): {upgraded}");
             return Err(IpcError::InvalidInput("url not in cover domain allowlist".into()));
         }
         let resp = http.get(parsed.clone())
             .send().await
             .map_err(|e| {
-                log::warn!("cover fetch failed for {upgraded}: {e}");
+                tracing::warn!("cover fetch failed for {upgraded}: {e}");
                 IpcError::Network(format!("fetch failed: {e}"))
             })?;
         if !resp.status().is_success() {
-            log::warn!("cover fetch returned http {} for {upgraded}", resp.status());
+            tracing::warn!("cover fetch returned http {} for {upgraded}", resp.status());
             return Err(IpcError::Network(format!("http {}", resp.status())));
         }
         if let Some(cl) = resp.content_length() {
@@ -1296,7 +1293,7 @@ pub async fn extract_cover_color(
         }
         let bytes = bytes::Bytes::from(buf);
         if !is_image_magic(&bytes) {
-            log::warn!("cover response is not a valid image ({} bytes) for {upgraded}", bytes.len());
+            tracing::warn!("cover response is not a valid image ({} bytes) for {upgraded}", bytes.len());
             return Err(IpcError::InvalidInput("response is not a valid image".into()));
         }
         let hsl = tauri::async_runtime::spawn_blocking(move || {

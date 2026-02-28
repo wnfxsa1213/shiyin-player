@@ -4,12 +4,17 @@ use rustplayer_core::MusicSourceId;
 
 const STORE_PATH: &str = "credentials.json";
 
-pub fn save_cookie(app: &AppHandle, source: MusicSourceId, cookie: &str) -> Result<(), String> {
-    let store = app.store(STORE_PATH).map_err(|e| e.to_string())?;
-    let key = format!("cookie_{}", match source {
+/// Helper function to generate cookie storage key for a given music source
+fn cookie_key(source: MusicSourceId) -> String {
+    format!("cookie_{}", match source {
         MusicSourceId::Netease => "netease",
         MusicSourceId::Qqmusic => "qqmusic",
-    });
+    })
+}
+
+pub fn save_cookie(app: &AppHandle, source: MusicSourceId, cookie: &str) -> Result<(), String> {
+    let store = app.store(STORE_PATH).map_err(|e| e.to_string())?;
+    let key = cookie_key(source);
     store.set(key, serde_json::json!(cookie));
     store.save().map_err(|e| e.to_string())?;
     Ok(())
@@ -17,10 +22,7 @@ pub fn save_cookie(app: &AppHandle, source: MusicSourceId, cookie: &str) -> Resu
 
 pub fn load_cookie(app: &AppHandle, source: MusicSourceId) -> Result<Option<String>, String> {
     let store = app.store(STORE_PATH).map_err(|e| e.to_string())?;
-    let key = format!("cookie_{}", match source {
-        MusicSourceId::Netease => "netease",
-        MusicSourceId::Qqmusic => "qqmusic",
-    });
+    let key = cookie_key(source);
     match store.get(key) {
         Some(val) => Ok(val.as_str().map(|s| s.to_string())),
         None => Ok(None),
@@ -29,10 +31,7 @@ pub fn load_cookie(app: &AppHandle, source: MusicSourceId) -> Result<Option<Stri
 
 pub fn delete_cookie(app: &AppHandle, source: MusicSourceId) -> Result<(), String> {
     let store = app.store(STORE_PATH).map_err(|e| e.to_string())?;
-    let key = format!("cookie_{}", match source {
-        MusicSourceId::Netease => "netease",
-        MusicSourceId::Qqmusic => "qqmusic",
-    });
+    let key = cookie_key(source);
     store.delete(key);
     store.save().map_err(|e| e.to_string())?;
     Ok(())
