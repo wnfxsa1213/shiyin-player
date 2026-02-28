@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use rustplayer_core::{
-    AuthToken, Credentials, LyricsLine, MusicSource, MusicSourceId, Playlist, PlaylistBrief,
+    AuthToken, Credentials, CookieStorage, LyricsLine, MusicSource, MusicSourceId, Playlist, PlaylistBrief,
     SearchQuery, SourceError, StreamInfo, Track,
 };
 
@@ -29,9 +29,11 @@ impl NeteaseClient {
             cookie: RwLock::new(None),
         })
     }
+}
 
-    fn cookie(&self) -> Option<String> {
-        self.cookie.read().ok().and_then(|v| v.clone())
+impl CookieStorage for NeteaseClient {
+    fn cookie_lock(&self) -> &RwLock<Option<String>> {
+        &self.cookie
     }
 }
 

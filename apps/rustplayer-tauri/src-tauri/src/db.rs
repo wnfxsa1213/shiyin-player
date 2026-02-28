@@ -53,8 +53,9 @@ impl Db {
     }
 
     pub fn purge_expired(&self) -> Result<(), String> {
+        let now = now_epoch();
         let conn = self.pool.get().map_err(|e| e.to_string())?;
-        let cutoff = now_epoch() - CACHE_TTL_SECS;
+        let cutoff = now - CACHE_TTL_SECS;
         conn.execute("DELETE FROM tracks WHERE cached_at <= ?1", rusqlite::params![cutoff])
             .map_err(|e| e.to_string())?;
         conn.execute("DELETE FROM lyrics WHERE cached_at <= ?1", rusqlite::params![cutoff])
@@ -65,7 +66,7 @@ impl Db {
     pub fn cache_tracks(&self, source: MusicSourceId, keyword: &str, tracks: &[Track]) -> Result<(), String> {
         let conn = self.pool.get().map_err(|e| e.to_string())?;
         let now = now_epoch();
-        let src = source_str(source);
+        let src = source.storage_key();
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         for t in tracks {
             tx.execute(
@@ -79,9 +80,10 @@ impl Db {
     }
 
     pub fn get_cached_tracks(&self, source: MusicSourceId, keyword: &str) -> Result<Option<Vec<Track>>, String> {
+        let now = now_epoch();
         let conn = self.pool.get().map_err(|e| e.to_string())?;
-        let cutoff = now_epoch() - CACHE_TTL_SECS;
-        let src = source_str(source);
+        let cutoff = now - CACHE_TTL_SECS;
+        let src = source.storage_key();
         let mut stmt = conn.prepare(
             "SELECT id, name, artist, album, duration_ms, cover_url FROM tracks
              WHERE source = ?1 AND search_keyword = ?2 AND cached_at > ?3
@@ -106,23 +108,25 @@ impl Db {
     }
 
     pub fn cache_lyrics(&self, track_id: &str, source: MusicSourceId, lines: &[LyricsLine]) -> Result<(), String> {
+        let now = now_epoch();
         let conn = self.pool.get().map_err(|e| e.to_string())?;
         let json = serde_json::to_string(lines).map_err(|e| e.to_string())?;
         conn.execute(
             "INSERT OR REPLACE INTO lyrics (track_id, source, lines_json, cached_at) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![track_id, source_str(source), json, now_epoch()],
+            rusqlite::params![track_id, source.storage_key(), json, now],
         ).map_err(|e| e.to_string())?;
         Ok(())
     }
 
     pub fn get_cached_lyrics(&self, track_id: &str, source: MusicSourceId) -> Result<Option<Vec<LyricsLine>>, String> {
+        let now = now_epoch();
         let conn = self.pool.get().map_err(|e| e.to_string())?;
-        let cutoff = now_epoch() - CACHE_TTL_SECS;
+        let cutoff = now - CACHE_TTL_SECS;
         let mut stmt = conn.prepare(
             "SELECT lines_json FROM lyrics WHERE track_id = ?1 AND source = ?2 AND cached_at > ?3"
         ).map_err(|e| e.to_string())?;
         let result: Option<String> = match stmt.query_row(
-            rusqlite::params![track_id, source_str(source), cutoff],
+            rusqlite::params![track_id, source.storage_key(), cutoff],
             |row| row.get(0),
         ) {
             Ok(v) => Some(v),
@@ -144,11 +148,4 @@ fn now_epoch() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
-}
-
-fn source_str(s: MusicSourceId) -> &'static str {
-    match s {
-        MusicSourceId::Netease => "netease",
-        MusicSourceId::Qqmusic => "qqmusic",
-    }
 }

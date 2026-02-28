@@ -15,11 +15,15 @@ const API_CLIENT_VERSION: &str = "1859";
 // 默认歌单名称（当 API 返回空字符串时使用）
 const DEFAULT_PLAYLIST_NAME: &str = "未命名歌单";
 
+/// Search for tracks on QQ Music.
+///
+/// Note: The `guid` parameter is currently unused for search requests but kept
+/// for API consistency with other endpoints (e.g., song_url) that require it.
 pub async fn search(
     http: &reqwest::Client,
     base_url: &str,
     query: SearchQuery,
-    guid: &str,
+    _guid: &str,
     cookie: Option<&str>,
 ) -> Result<Vec<Track>, SourceError> {
     let limit = query.limit.unwrap_or(30);
@@ -46,7 +50,6 @@ pub async fn search(
         return Ok(Vec::new());
     };
 
-    let _ = guid;
     Ok(list.iter().filter_map(parse_song).collect())
 }
 

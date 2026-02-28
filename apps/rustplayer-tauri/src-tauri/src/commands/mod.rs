@@ -19,6 +19,16 @@ const CLIENT_LOG_MAX_LEN: usize = 16 * 1024;
 const CLIENT_LOG_RATE_LIMIT: u64 = 60;
 /// Per-source timeout for concurrent API requests (search, playlists).
 const SOURCE_TIMEOUT: Duration = Duration::from_secs(15);
+/// Login window timeout (5 minutes).
+const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
+/// Login detection polling interval.
+const LOGIN_POLL_INTERVAL: Duration = Duration::from_secs(2);
+/// Initial delay before starting login detection.
+const LOGIN_INITIAL_DELAY: Duration = Duration::from_secs(3);
+/// Cookie extraction timeout.
+const COOKIE_EXTRACT_TIMEOUT: Duration = Duration::from_secs(5);
+/// Event emission timeout.
+const EVENT_EMIT_TIMEOUT: Duration = Duration::from_secs(2);
 
 // --- 登录相关 Cookie 最小集合 ---
 //
@@ -131,12 +141,18 @@ pub async fn search_music(
         // Parallel search across all sources
         let parent_span = tracing::Span::current();
         let mut handles = Vec::new();
+        // Clone shared resources once before the loop
+        let cache_arc = cache.inner().clone();
+        let db_arc = db.inner().clone();
+        let query_str = query.clone();
+        let search_query = sq.clone();
+
         for src in sources {
             let sid = src.id();
-            let cache = cache.inner().clone();
-            let db = db.inner().clone();
-            let kw = query.clone();
-            let sq = sq.clone();
+            let cache = Arc::clone(&cache_arc);
+            let db = Arc::clone(&db_arc);
+            let kw = query_str.clone();
+            let sq = search_query.clone();
             let span = parent_span.clone();
             handles.push(tokio::spawn(async move {
                 match tokio::time::timeout(SOURCE_TIMEOUT, async {
@@ -176,15 +192,15 @@ pub async fn search_music(
                         Ok(tracks)
                     }
                     Err(e) => {
-                        tracing::warn!("search error from {}: {e}", sid_label(sid));
-                        Err((sid_label(sid), e))
+                        tracing::warn!("search error from {}: {e}", sid.display_name());
+                        Err((sid.display_name(), e))
                     }
                 }
                 }).await {
                     Ok(result) => result,
                     Err(_) => {
                         tracing::warn!(source = ?sid, "search timed out");
-                        Err((sid_label(sid), SourceError::Network(format!("{} search timed out", sid_label(sid)))))
+                        Err((sid.display_name(), SourceError::Network(format!("{} search timed out", sid.display_name()))))
                     }
                 }
             }.instrument(span)));
@@ -366,7 +382,7 @@ pub async fn open_login_window(
             ),
         };
 
-        let label = sid_label(source);
+        let label = source.display_name();
 
         // Oneshot channel: signals that login was detected (URL left login page)
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
@@ -430,11 +446,11 @@ pub async fn open_login_window(
             });
 
             // Wait for page to load before polling
-            tokio::time::sleep(Duration::from_secs(3)).await;
+            tokio::time::sleep(LOGIN_INITIAL_DELAY).await;
 
             let start = std::time::Instant::now();
-            let timeout = Duration::from_secs(300); // 5 minutes
-            let mut interval = tokio::time::interval(Duration::from_secs(2));
+            let timeout = LOGIN_TIMEOUT;
+            let mut interval = tokio::time::interval(LOGIN_POLL_INTERVAL);
 
             let mut rx = rx;
             let mut login_detected = false;
@@ -712,13 +728,6 @@ pub async fn get_playlist_detail(
     }).await
 }
 
-fn sid_label(sid: MusicSourceId) -> &'static str {
-    match sid {
-        MusicSourceId::Netease => "网易云音乐",
-        MusicSourceId::Qqmusic => "QQ音乐",
-    }
-}
-
 // --- Platform-specific cookie extraction ---
 
 /// Extract cookies from multiple domains and merge them.
@@ -956,7 +965,7 @@ async fn extract_cookies_webkit(
         return String::new();
     }
 
-    match tokio::time::timeout(Duration::from_secs(5), cookie_rx).await {
+    match tokio::time::timeout(COOKIE_EXTRACT_TIMEOUT, cookie_rx).await {
         Ok(Ok(s)) => s,
         _ => {
             tracing::error!("cookie extraction timed out or failed");
@@ -1117,7 +1126,7 @@ async fn clear_cookies_webkit(
     }
 
     // Wait for completion with timeout
-    let _ = tokio::time::timeout(Duration::from_secs(2), rx).await;
+    let _ = tokio::time::timeout(EVENT_EMIT_TIMEOUT, rx).await;
 }
 
 // --- Cover color extraction (bypasses CORS) ---

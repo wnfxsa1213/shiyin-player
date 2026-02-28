@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::sync::RwLock;
 use thiserror::Error;
 
 pub type TrackId = String;
@@ -9,6 +10,24 @@ pub type TrackId = String;
 pub enum MusicSourceId {
     Netease,
     Qqmusic,
+}
+
+impl MusicSourceId {
+    /// Returns the display name for UI presentation (e.g., "网易云音乐", "QQ音乐")
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            MusicSourceId::Netease => "网易云音乐",
+            MusicSourceId::Qqmusic => "QQ音乐",
+        }
+    }
+
+    /// Returns the storage key for database and configuration (e.g., "netease", "qqmusic")
+    pub fn storage_key(&self) -> &'static str {
+        match self {
+            MusicSourceId::Netease => "netease",
+            MusicSourceId::Qqmusic => "qqmusic",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -156,6 +175,19 @@ pub enum AppError {
 }
 
 // --- MusicSource Trait ---
+
+/// Helper trait for managing cookie storage in music source implementations.
+/// Provides a default implementation for retrieving cookies from RwLock storage.
+pub trait CookieStorage {
+    /// Returns the RwLock containing the optional cookie string.
+    fn cookie_lock(&self) -> &RwLock<Option<String>>;
+
+    /// Retrieves the current cookie value, if available.
+    /// Returns None if the lock is poisoned or no cookie is set.
+    fn cookie(&self) -> Option<String> {
+        self.cookie_lock().read().ok().and_then(|v| v.clone())
+    }
+}
 
 #[async_trait]
 pub trait MusicSource: Send + Sync {
