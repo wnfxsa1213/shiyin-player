@@ -60,9 +60,10 @@ impl MusicSource for NeteaseClient {
                 if cookie.contains('\r') || cookie.contains('\n') || cookie.len() > 4096 {
                     return Err(SourceError::InvalidResponse("invalid cookie".into()));
                 }
-                if let Ok(mut guard) = self.cookie.write() {
-                    *guard = Some(cookie.clone());
-                }
+                // Write lock failure indicates internal state corruption
+                self.cookie.write()
+                    .map_err(|e| SourceError::Internal(format!("failed to acquire cookie lock: {e}")))?
+                    .replace(cookie.clone());
                 Ok(AuthToken { access_token: cookie, expires_at: None })
             }
             Credentials::Password { .. } => Err(SourceError::Unimplemented),

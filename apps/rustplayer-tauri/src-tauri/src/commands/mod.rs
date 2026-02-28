@@ -89,16 +89,21 @@ impl From<PlayerError> for IpcError {
     }
 }
 
-/// Helper function to map SourceError to IpcError with custom summary message
-fn map_source_error_to_ipc(error: &SourceError, summary: String) -> IpcError {
+/// Helper function to map SourceError to IpcError with user-friendly messages.
+/// Sanitizes error messages to avoid exposing internal implementation details.
+/// Detailed errors are logged at debug level for troubleshooting.
+fn map_source_error_to_ipc(error: &SourceError) -> IpcError {
+    // Log detailed error for debugging (not exposed to frontend)
+    tracing::debug!(error = ?error, "source error details");
+
     match error {
-        SourceError::Unauthorized => IpcError::Unauthorized(summary),
-        SourceError::NotFound => IpcError::NotFound(summary),
-        SourceError::RateLimited => IpcError::RateLimited(summary),
-        SourceError::InvalidResponse(_) => IpcError::Internal(summary),
-        SourceError::Unimplemented => IpcError::Internal(summary),
-        SourceError::Internal(_) => IpcError::Internal(summary),
-        SourceError::Network(_) => IpcError::Network(summary),
+        SourceError::Unauthorized => IpcError::Unauthorized("需要登录或登录已过期".into()),
+        SourceError::NotFound => IpcError::NotFound("未找到请求的资源".into()),
+        SourceError::RateLimited => IpcError::RateLimited("请求过于频繁，请稍后再试".into()),
+        SourceError::InvalidResponse(_) => IpcError::Internal("服务响应格式错误".into()),
+        SourceError::Unimplemented => IpcError::Internal("该功能暂未实现".into()),
+        SourceError::Internal(_) => IpcError::Internal("内部错误，请稍后重试".into()),
+        SourceError::Network(_) => IpcError::Network("网络连接失败，请检查网络设置".into()),
     }
 }
 
@@ -219,14 +224,16 @@ pub async fn search_music(
             }
         }
         if results.is_empty() && !errors.is_empty() {
-            // Pick the most representative error type from collected errors
+            // Log detailed error summary for debugging
             let summary = errors.iter()
                 .map(|(label, e)| format!("{label}: {e}"))
                 .collect::<Vec<_>>()
                 .join("; ");
+            tracing::warn!(error_summary = %summary, "all sources failed");
+
             // Use the first error's type to determine the IpcError kind
             let representative = &errors[0].1;
-            return Err(map_source_error_to_ipc(representative, summary));
+            return Err(map_source_error_to_ipc(representative));
         }
         Ok(results)
     }).await
@@ -418,7 +425,7 @@ pub async fn open_login_window(
         // Clear old cookies before login to prevent false positives from expired cookies
         #[cfg(target_os = "linux")]
         {
-            tracing::info!("clearing old cookies for {source:?} before login");
+            tracing::debug!("clearing old cookies for {source:?} before login");
             // 代码审查 Major#1：只清理登录相关的"最小集合"，避免影响同域其它功能。
             let clear_keys: &[&str] = match source {
                 MusicSourceId::Netease => NETEASE_LOGIN_COOKIES,
@@ -524,11 +531,11 @@ pub async fn open_login_window(
                         if probed {
                             // Double-check window wasn't closed before marking login as detected
                             if closed.load(Ordering::SeqCst) {
-                                tracing::info!("cookie probe detected login but window already closed, ignoring");
+                                tracing::debug!("cookie probe detected login but window already closed, ignoring");
                                 let _ = app_clone.emit("login://timeout", source);
                                 break;
                             }
-                            tracing::info!("cookie probe detected login for {source:?}");
+                            tracing::debug!("cookie probe detected login for {source:?}");
                             login_detected = true;
                             break;
                         }
@@ -549,14 +556,14 @@ pub async fn open_login_window(
 
             // Final check: ensure window is still open before extracting cookies
             if closed.load(Ordering::SeqCst) {
-                tracing::info!("window closed before cookie extraction, aborting");
+                tracing::debug!("window closed before cookie extraction, aborting");
                 return;
             }
 
             // Small delay: cookies may still be written by the browser after URL change
             tokio::time::sleep(Duration::from_millis(500)).await;
 
-            tracing::info!("login detected for {source:?}, extracting cookies");
+            tracing::debug!("login detected for {source:?}, extracting cookies");
 
             let cookie_str = extract_cookies_from_domains(
                 &window_handle, &cookie_domains, essential_keys, source,
@@ -569,7 +576,7 @@ pub async fn open_login_window(
                 return;
             }
 
-            tracing::info!("cookie extracted for {source:?}, validating...");
+            tracing::debug!("cookie extracted for {source:?}, validating...");
 
             // Validate cookie by attempting login
             if let Some(src) = registry_clone.get(source) {
@@ -577,11 +584,11 @@ pub async fn open_login_window(
                 let creds = Credentials::Cookie { cookie: cookie_str.clone() };
                 match src.login(creds).await {
                     Ok(_) => {
-                        tracing::info!("login validation succeeded, saving cookie");
+                        tracing::debug!("login validation succeeded, saving cookie");
                         if let Err(e) = store::save_cookie(&app_clone, source, &cookie_str) {
                             tracing::error!("failed to save cookie: {e}");
                         } else {
-                            tracing::info!("cookie saved successfully");
+                            tracing::debug!("cookie saved successfully");
                         }
                         tracing::info!("emitting login://success event");
                         let _ = app_clone.emit("login://success", source);
@@ -700,12 +707,15 @@ pub async fn get_user_playlists(
             }
         }
         if results.is_empty() && !errors.is_empty() {
+            // Log detailed error summary for debugging
             let summary = errors.iter()
                 .map(|(label, e)| format!("{label}: {e}"))
                 .collect::<Vec<_>>()
                 .join("; ");
+            tracing::warn!(error_summary = %summary, "all playlist sources failed");
+
             let representative = &errors[0].1;
-            return Err(map_source_error_to_ipc(representative, summary));
+            return Err(map_source_error_to_ipc(representative));
         }
         Ok(results)
     }).await
@@ -742,11 +752,11 @@ async fn extract_cookies_from_domains(
     let mut all_cookies = std::collections::BTreeMap::new();
 
     for domain in cookie_domains {
-        tracing::info!("extracting cookies from domain: {}", domain);
+        tracing::debug!("extracting cookies from domain: {}", domain);
         let cookies = extract_cookies_platform(window, domain, essential_keys, source).await;
 
         if cookies.is_empty() {
-            tracing::info!("no cookies extracted from domain: {}", domain);
+            tracing::debug!("no cookies extracted from domain: {}", domain);
             continue;
         }
 
@@ -821,7 +831,7 @@ async fn extract_cookies_from_domains(
 }
 
 /// Extract cookies from the webview. On Linux, uses webkit2gtk CookieManager
-/// to read HttpOnly cookies. On other platforms, falls back to JS document.cookie.
+/// to read HttpOnly cookies. On other platforms, returns empty (safe failure).
 async fn extract_cookies_platform(
     window: &tauri::WebviewWindow,
     _cookie_domain: &str,
@@ -834,29 +844,18 @@ async fn extract_cookies_platform(
         if !result.is_empty() {
             return result;
         }
-        tracing::warn!("webkit cookie extraction returned empty, falling back to JS");
+        tracing::warn!("webkit cookie extraction returned empty, login may require manual retry");
+        return String::new();
     }
 
-    // Fallback: JS document.cookie (cannot read HttpOnly cookies)
-    extract_cookies_js(window, essential_keys).await
-}
-
-/// JS-based cookie extraction fallback (non-HttpOnly cookies only).
-async fn extract_cookies_js(
-    window: &tauri::WebviewWindow,
-    essential_keys: &[&str],
-) -> String {
-    let keys_json: Vec<String> = essential_keys.iter().map(|k| format!("'{k}'")).collect();
-    let keys_arr = keys_json.join(",");
-    let js = format!(
-        "(function(){{try{{var keys=[{keys_arr}];var c=document.cookie;var pairs=c.split('; ');var out=[];for(var i=0;i<pairs.length;i++){{var p=pairs[i].split('=');if(keys.indexOf(p[0])!==-1){{out.push(pairs[i]);}}}}window.location.href='http://__shiyin_js_cookie__/?c='+encodeURIComponent(out.join('; '));}}catch(e){{}}}})();"
-    );
-    // We can't easily get the result back from eval, so this is best-effort.
-    // The on_navigation handler would need to be extended for this path.
-    // For now, just try eval and return empty (webkit path is primary on Linux).
-    let _ = window.eval(&js);
-    tracing::debug!("JS cookie extraction attempted (best-effort)");
-    String::new()
+    #[cfg(not(target_os = "linux"))]
+    {
+        tracing::warn!(
+            "Cookie extraction not supported on this platform ({}), please use manual cookie input",
+            std::env::consts::OS
+        );
+        String::new()
+    }
 }
 
 /// Linux-only: extract cookies via webkit2gtk CookieManager (reads HttpOnly).
@@ -884,7 +883,7 @@ async fn extract_cookies_webkit(
                     move |result: Result<Vec<soup::Cookie>, glib::Error>| {
                         let cookie_str = match result {
                             Ok(mut cookies) => {
-                                tracing::info!("webkit found {} total cookies for domain {}", cookies.len(), domain_for_log);
+                                tracing::debug!("webkit found {} total cookies for domain {}", cookies.len(), domain_for_log);
                                 let mut matched_keys = Vec::new();
                                 let mut cookie_name_set: Vec<String> = Vec::new();
 
@@ -917,7 +916,7 @@ async fn extract_cookies_webkit(
                                     domain_for_log,
                                     cookie_name_set
                                 );
-                                tracing::info!("matched {} essential cookies: {:?}", matched_keys.len(), matched_keys);
+                                tracing::debug!("matched {} essential cookies: {:?}", matched_keys.len(), matched_keys);
 
                                 // Filter and deduplicate: only return essential cookies
                                 // This prevents same-name cookie conflicts and reduces auth failures
@@ -940,7 +939,7 @@ async fn extract_cookies_webkit(
                                         .map(|(k, v)| format!("{k}={v}"))
                                         .collect::<Vec<_>>()
                                         .join("; ");
-                                    tracing::info!("returning {} essential cookies (deduplicated)", essential_cookies.len());
+                                    tracing::debug!("returning {} essential cookies (deduplicated)", essential_cookies.len());
                                     result
                                 }
                             }
