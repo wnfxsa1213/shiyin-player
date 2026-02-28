@@ -237,8 +237,12 @@ pub async fn search_music(
             let representative = errors.iter()
                 .find(|(_, e)| matches!(e, SourceError::Unauthorized(_)))
                 .or_else(|| errors.iter().find(|(_, e)| matches!(e, SourceError::RateLimited(_))))
-                .unwrap_or(&errors[0]);
-            return Err(map_source_error_to_ipc(&representative.1));
+                .or_else(|| errors.first());
+
+            match representative {
+                Some((_, err)) => return Err(map_source_error_to_ipc(err)),
+                None => return Err(IpcError::Internal("未知错误：所有音源均无响应".into())),
+            }
         }
         Ok(results)
     }).await
@@ -725,8 +729,12 @@ pub async fn get_user_playlists(
             let representative = errors.iter()
                 .find(|(_, e)| matches!(e, SourceError::Unauthorized(_)))
                 .or_else(|| errors.iter().find(|(_, e)| matches!(e, SourceError::RateLimited(_))))
-                .unwrap_or(&errors[0]);
-            return Err(map_source_error_to_ipc(&representative.1));
+                .or_else(|| errors.first());
+
+            match representative {
+                Some((_, err)) => return Err(map_source_error_to_ipc(err)),
+                None => return Err(IpcError::Internal("未知错误：所有音源均无响应".into())),
+            }
         }
         Ok(results)
     }).await
