@@ -29,6 +29,8 @@ const LOGIN_INITIAL_DELAY: Duration = Duration::from_secs(3);
 const COOKIE_EXTRACT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Event emission timeout.
 const EVENT_EMIT_TIMEOUT: Duration = Duration::from_secs(2);
+/// Timeout for clearing cookies via webkit.
+const COOKIE_CLEAR_TIMEOUT: Duration = Duration::from_secs(2);
 
 // --- 登录相关 Cookie 最小集合 ---
 //
@@ -231,9 +233,12 @@ pub async fn search_music(
                 .join("; ");
             tracing::warn!(error_summary = %summary, "all sources failed");
 
-            // Use the first error's type to determine the IpcError kind
-            let representative = &errors[0].1;
-            return Err(map_source_error_to_ipc(representative));
+            // Prioritize errors by severity: Unauthorized > RateLimited > others
+            let representative = errors.iter()
+                .find(|(_, e)| matches!(e, SourceError::Unauthorized(_)))
+                .or_else(|| errors.iter().find(|(_, e)| matches!(e, SourceError::RateLimited(_))))
+                .unwrap_or(&errors[0]);
+            return Err(map_source_error_to_ipc(&representative.1));
         }
         Ok(results)
     }).await
@@ -334,7 +339,9 @@ pub async fn login(
                 tracing::error!("failed to persist cookie for {source:?}: {e}");
             }
         }
-        let _ = app.emit("login://success", source);
+        if let Err(e) = app.emit("login://success", source) {
+            tracing::warn!("failed to emit login://success event for {source:?}: {e}");
+        }
         Ok(token)
     }).await
 }
@@ -714,8 +721,12 @@ pub async fn get_user_playlists(
                 .join("; ");
             tracing::warn!(error_summary = %summary, "all playlist sources failed");
 
-            let representative = &errors[0].1;
-            return Err(map_source_error_to_ipc(representative));
+            // Prioritize errors by severity: Unauthorized > RateLimited > others
+            let representative = errors.iter()
+                .find(|(_, e)| matches!(e, SourceError::Unauthorized(_)))
+                .or_else(|| errors.iter().find(|(_, e)| matches!(e, SourceError::RateLimited(_))))
+                .unwrap_or(&errors[0]);
+            return Err(map_source_error_to_ipc(&representative.1));
         }
         Ok(results)
     }).await
@@ -1125,7 +1136,7 @@ async fn clear_cookies_webkit(
     }
 
     // Wait for completion with timeout
-    let _ = tokio::time::timeout(EVENT_EMIT_TIMEOUT, rx).await;
+    let _ = tokio::time::timeout(COOKIE_CLEAR_TIMEOUT, rx).await;
 }
 
 // --- Cover color extraction (bypasses CORS) ---

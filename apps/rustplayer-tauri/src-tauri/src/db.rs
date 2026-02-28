@@ -1,9 +1,11 @@
 use std::path::PathBuf;
+use std::time::Duration;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rustplayer_core::{LyricsLine, MusicSourceId, Track};
 
 const CACHE_TTL_SECS: i64 = 24 * 3600; // 1 day
+const DB_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct Db {
     pool: Pool<SqliteConnectionManager>,
@@ -54,7 +56,8 @@ impl Db {
 
     pub fn purge_expired(&self) -> Result<(), String> {
         let now = now_epoch();
-        let conn = self.pool.get().map_err(|e| e.to_string())?;
+        let conn = self.pool.get_timeout(DB_CONNECTION_TIMEOUT)
+            .map_err(|e| format!("database connection timeout: {e}"))?;
         let cutoff = now - CACHE_TTL_SECS;
         conn.execute("DELETE FROM tracks WHERE cached_at <= ?1", rusqlite::params![cutoff])
             .map_err(|e| e.to_string())?;
@@ -64,7 +67,8 @@ impl Db {
     }
 
     pub fn cache_tracks(&self, source: MusicSourceId, keyword: &str, tracks: &[Track]) -> Result<(), String> {
-        let conn = self.pool.get().map_err(|e| e.to_string())?;
+        let conn = self.pool.get_timeout(DB_CONNECTION_TIMEOUT)
+            .map_err(|e| format!("database connection timeout: {e}"))?;
         let now = now_epoch();
         let src = source.storage_key();
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
@@ -81,7 +85,8 @@ impl Db {
 
     pub fn get_cached_tracks(&self, source: MusicSourceId, keyword: &str) -> Result<Option<Vec<Track>>, String> {
         let now = now_epoch();
-        let conn = self.pool.get().map_err(|e| e.to_string())?;
+        let conn = self.pool.get_timeout(DB_CONNECTION_TIMEOUT)
+            .map_err(|e| format!("database connection timeout: {e}"))?;
         let cutoff = now - CACHE_TTL_SECS;
         let src = source.storage_key();
         let mut stmt = conn.prepare(
@@ -109,7 +114,8 @@ impl Db {
 
     pub fn cache_lyrics(&self, track_id: &str, source: MusicSourceId, lines: &[LyricsLine]) -> Result<(), String> {
         let now = now_epoch();
-        let conn = self.pool.get().map_err(|e| e.to_string())?;
+        let conn = self.pool.get_timeout(DB_CONNECTION_TIMEOUT)
+            .map_err(|e| format!("database connection timeout: {e}"))?;
         let json = serde_json::to_string(lines).map_err(|e| e.to_string())?;
         conn.execute(
             "INSERT OR REPLACE INTO lyrics (track_id, source, lines_json, cached_at) VALUES (?1, ?2, ?3, ?4)",
@@ -120,7 +126,8 @@ impl Db {
 
     pub fn get_cached_lyrics(&self, track_id: &str, source: MusicSourceId) -> Result<Option<Vec<LyricsLine>>, String> {
         let now = now_epoch();
-        let conn = self.pool.get().map_err(|e| e.to_string())?;
+        let conn = self.pool.get_timeout(DB_CONNECTION_TIMEOUT)
+            .map_err(|e| format!("database connection timeout: {e}"))?;
         let cutoff = now - CACHE_TTL_SECS;
         let mut stmt = conn.prepare(
             "SELECT lines_json FROM lyrics WHERE track_id = ?1 AND source = ?2 AND cached_at > ?3"

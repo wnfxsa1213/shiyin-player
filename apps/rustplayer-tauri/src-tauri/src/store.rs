@@ -6,10 +6,7 @@ const STORE_PATH: &str = "credentials.json";
 
 /// Helper function to generate cookie storage key for a given music source
 fn cookie_key(source: MusicSourceId) -> String {
-    format!("cookie_{}", match source {
-        MusicSourceId::Netease => "netease",
-        MusicSourceId::Qqmusic => "qqmusic",
-    })
+    format!("cookie_{}", source.storage_key())
 }
 
 pub fn save_cookie(app: &AppHandle, source: MusicSourceId, cookie: &str) -> Result<(), String> {
