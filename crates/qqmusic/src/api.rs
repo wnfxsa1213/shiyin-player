@@ -8,12 +8,19 @@ use serde_json::{json, Value};
 
 use crate::sign::{calculate_g_tk, extract_skey_selection, extract_uin_from_cookie, SkeySource};
 
-// QQ 音乐 API 客户端标识常量
-const API_CLIENT_TYPE: &str = "19";
-const API_CLIENT_VERSION: &str = "1859";
+// QQ 音乐 API 客户端标识常量（模拟 Android 客户端 v13.2.5.8，对流媒体 URL 更宽容）
+const API_CLIENT_TYPE: &str = "11";
+const API_CLIENT_VERSION: &str = "13020508";
 
 // 默认歌单名称（当 API 返回空字符串时使用）
 const DEFAULT_PLAYLIST_NAME: &str = "未命名歌单";
+
+// 音质梯度：按优先级从高到低排列（前缀, 扩展名, 比特率 kbps）
+const QUALITY_TIERS: &[(&str, &str, u32)] = &[
+    ("M800", ".mp3", 320),  // 320kbps MP3
+    ("M500", ".mp3", 128),  // 128kbps MP3
+    ("C400", ".m4a", 96),   // 96kbps AAC
+];
 
 /// Search for tracks on QQ Music.
 ///
@@ -31,7 +38,7 @@ pub async fn search(
     let page_num = if limit == 0 { 1 } else { (offset / limit) + 1 };
 
     let data = json!({
-        "comm": { "ct": "19", "cv": "1859", "uin": "0" },
+        "comm": { "ct": API_CLIENT_TYPE, "cv": API_CLIENT_VERSION, "uin": "0" },
         "req": {
             "module": "music.search.SearchCgiService",
             "method": "DoSearchForQQMusicDesktop",
@@ -60,15 +67,23 @@ pub async fn song_url(
     guid: &str,
     cookie: Option<&str>,
 ) -> Result<StreamInfo, SourceError> {
+    // 构造多码率 filename 列表，单次请求尝试所有音质
+    let filenames: Vec<String> = QUALITY_TIERS.iter()
+        .map(|(prefix, ext, _)| format!("{prefix}{track_id}{ext}"))
+        .collect();
+    let songmids: Vec<&str> = QUALITY_TIERS.iter().map(|_| track_id).collect();
+    let songtypes: Vec<i32> = QUALITY_TIERS.iter().map(|_| 0).collect();
+
     let data = json!({
-        "comm": { "ct": "19", "cv": "1859", "uin": "0" },
+        "comm": { "ct": API_CLIENT_TYPE, "cv": API_CLIENT_VERSION, "uin": "0" },
         "req": {
             "module": "vkey.GetVkeyServer",
             "method": "CgiGetVkey",
             "param": {
                 "guid": guid,
-                "songmid": [track_id],
-                "songtype": [0],
+                "songmid": songmids,
+                "songtype": songtypes,
+                "filename": filenames,
                 "uin": "0",
                 "loginflag": 1,
                 "platform": "20"
@@ -79,23 +94,34 @@ pub async fn song_url(
     let value = musicu_post(http, base_url, &data, cookie).await?;
     let vkey_data = value.pointer("/req/data")
         .ok_or_else(|| SourceError::InvalidResponse("missing vkey data".into()))?;
-    let purl = vkey_data.get("midurlinfo")
-        .and_then(|v| v.as_array())
-        .and_then(|v| v.first())
-        .and_then(|v| v.get("purl"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    if purl.is_empty() {
-        return Err(SourceError::NotFound);
-    }
+
     let sip = vkey_data.get("sip")
         .and_then(|v| v.as_array())
         .and_then(|v| v.first())
         .and_then(|v| v.as_str())
         .unwrap_or("https://dl.stream.qqmusic.qq.com/");
-    let format = purl.rsplit('.').next().unwrap_or("mp3").to_string();
 
-    Ok(StreamInfo { url: format!("{sip}{purl}"), format, bitrate: None })
+    let midurl_list = vkey_data.get("midurlinfo")
+        .and_then(|v| v.as_array());
+
+    // 按音质梯度顺序遍历，返回第一个可用的 URL
+    if let Some(list) = midurl_list {
+        for (i, info) in list.iter().enumerate() {
+            let purl = info.get("purl").and_then(|v| v.as_str()).unwrap_or("");
+            if !purl.is_empty() {
+                let format = purl.rsplit('.').next().unwrap_or("mp3").to_string();
+                let bitrate = QUALITY_TIERS.get(i).map(|(_, _, br)| *br);
+                log::info!(
+                    "qqmusic song_url: selected {}kbps for track {track_id}",
+                    bitrate.unwrap_or(0)
+                );
+                return Ok(StreamInfo { url: format!("{sip}{purl}"), format, bitrate });
+            }
+        }
+    }
+
+    log::warn!("qqmusic song_url: all quality tiers returned empty purl for track {track_id}");
+    Err(SourceError::NotFound)
 }
 
 pub async fn lyrics(
@@ -137,10 +163,14 @@ pub async fn lyrics(
         };
 
         let lrc = value.get("lyric").and_then(|v| v.as_str()).unwrap_or("");
+        let trans = value.get("trans").and_then(|v| v.as_str()).unwrap_or("");
         if lrc.is_empty() {
             log::debug!("qqmusic lyrics: no lyric content for track {track_id}");
         }
-        return Ok(parse_lyrics(lrc, ""));
+        if !trans.is_empty() {
+            log::debug!("qqmusic lyrics: found translation lyrics for track {track_id}");
+        }
+        return Ok(parse_lyrics(lrc, trans));
     }
 
     Err(last_error.unwrap_or_else(|| SourceError::Network("all retry attempts failed".into())))
