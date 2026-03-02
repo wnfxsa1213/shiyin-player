@@ -10,11 +10,19 @@ use rustplayer_core::{
 pub mod api;
 pub mod sign;
 
+/// Stored refresh tokens for credential refresh.
+#[derive(Debug, Clone)]
+pub struct RefreshInfo {
+    pub refresh_key: String,
+    pub refresh_token: String,
+}
+
 pub struct QqMusicClient {
     http: reqwest::Client,
     base_url: String,
     guid: String,
     cookie: RwLock<Option<String>>,
+    refresh_info: RwLock<Option<RefreshInfo>>,
 }
 
 impl QqMusicClient {
@@ -29,7 +37,63 @@ impl QqMusicClient {
             base_url: "https://u.y.qq.com".into(),
             guid: sign::generate_guid(),
             cookie: RwLock::new(None),
+            refresh_info: RwLock::new(None),
         })
+    }
+
+    /// Store refresh tokens for later credential refresh.
+    pub fn set_refresh_info(&self, info: RefreshInfo) {
+        if let Ok(mut guard) = self.refresh_info.write() {
+            *guard = Some(info);
+        }
+    }
+
+    /// Get current refresh info (if available).
+    pub fn get_refresh_info(&self) -> Option<RefreshInfo> {
+        self.refresh_info.read().ok().and_then(|g| g.clone())
+    }
+
+    /// Attempt to refresh expired credentials.
+    /// Returns true if refresh succeeded and cookie was updated.
+    async fn try_refresh(&self) -> bool {
+        let cookie = match self.cookie() {
+            Some(c) => c,
+            None => return false,
+        };
+        let refresh = match self.get_refresh_info() {
+            Some(r) => r,
+            None => {
+                log::debug!("qqmusic try_refresh: no refresh_info available, skipping");
+                return false;
+            }
+        };
+
+        log::info!("qqmusic try_refresh: attempting credential refresh");
+        match api::refresh_credentials(
+            &self.http, &self.base_url, &cookie,
+            &refresh.refresh_key, &refresh.refresh_token,
+        ).await {
+            Ok(new_cred) => {
+                // Rebuild cookie with new musickey
+                let new_cookie = api::rebuild_cookie(&cookie, &new_cred.musickey, &new_cred.musicid);
+
+                // Update stored cookie
+                if let Ok(mut guard) = self.cookie.write() {
+                    *guard = Some(new_cookie);
+                    log::info!("qqmusic try_refresh: cookie updated successfully");
+                }
+                // Update refresh info
+                self.set_refresh_info(RefreshInfo {
+                    refresh_key: new_cred.refresh_key,
+                    refresh_token: new_cred.refresh_token,
+                });
+                true
+            }
+            Err(e) => {
+                log::warn!("qqmusic try_refresh: refresh failed: {e}");
+                false
+            }
+        }
     }
 }
 
@@ -45,10 +109,18 @@ impl MusicSource for QqMusicClient {
     fn name(&self) -> &'static str { "QQ音乐" }
 
     async fn search(&self, query: SearchQuery) -> Result<Vec<Track>, SourceError> {
-        api::search(&self.http, &self.base_url, query, &self.guid, self.cookie().as_deref()).await
+        let result = api::search(&self.http, &self.base_url, query.clone(), &self.guid, self.cookie().as_deref()).await;
+        if matches!(result, Err(SourceError::Unauthorized)) && self.try_refresh().await {
+            return api::search(&self.http, &self.base_url, query, &self.guid, self.cookie().as_deref()).await;
+        }
+        result
     }
     async fn get_stream_url(&self, track_id: &str) -> Result<StreamInfo, SourceError> {
-        api::song_url(&self.http, &self.base_url, track_id, &self.guid, self.cookie().as_deref()).await
+        let result = api::song_url(&self.http, &self.base_url, track_id, &self.guid, self.cookie().as_deref()).await;
+        if matches!(result, Err(SourceError::Unauthorized)) && self.try_refresh().await {
+            return api::song_url(&self.http, &self.base_url, track_id, &self.guid, self.cookie().as_deref()).await;
+        }
+        result
     }
     async fn get_lyrics(&self, track_id: &str) -> Result<Vec<LyricsLine>, SourceError> {
         api::lyrics(&self.http, track_id).await
@@ -64,9 +136,9 @@ impl MusicSource for QqMusicClient {
                 if cookie.contains('\r') || cookie.contains('\n') || cookie.len() > 4096 {
                     return Err(SourceError::InvalidResponse("invalid cookie".into()));
                 }
-                // Validate cookie first before storing it
-                log::info!("qqmusic login: validating cookie by calling user_playlists API (len={})", cookie.len());
-                api::user_playlists(&self.http, &self.base_url, Some(&cookie)).await?;
+                // Use lightweight GetLoginUserInfo for validation instead of heavy user_playlists
+                log::info!("qqmusic login: validating cookie via GetLoginUserInfo (len={})", cookie.len());
+                api::validate_login(&self.http, &self.base_url, &cookie).await?;
                 log::info!("qqmusic login: cookie validation succeeded");
 
                 // Only store cookie after successful validation
@@ -92,13 +164,24 @@ impl MusicSource for QqMusicClient {
         if let Some(ref c) = cookie {
             log::debug!("qqmusic get_user_playlists: cookie length = {}", c.len());
         }
-        api::user_playlists(&self.http, &self.base_url, cookie.as_deref()).await
+        let result = api::user_playlists(&self.http, &self.base_url, cookie.as_deref()).await;
+        if matches!(result, Err(SourceError::Unauthorized)) && self.try_refresh().await {
+            return api::user_playlists(&self.http, &self.base_url, self.cookie().as_deref()).await;
+        }
+        result
     }
     async fn get_playlist_detail(&self, id: &str) -> Result<Playlist, SourceError> {
-        api::playlist_detail(&self.http, &self.base_url, id, self.cookie().as_deref()).await
+        let result = api::playlist_detail(&self.http, &self.base_url, id, self.cookie().as_deref()).await;
+        if matches!(result, Err(SourceError::Unauthorized)) && self.try_refresh().await {
+            return api::playlist_detail(&self.http, &self.base_url, id, self.cookie().as_deref()).await;
+        }
+        result
     }
     fn logout(&self) {
         if let Ok(mut guard) = self.cookie.write() {
+            *guard = None;
+        }
+        if let Ok(mut guard) = self.refresh_info.write() {
             *guard = None;
         }
     }

@@ -56,15 +56,33 @@ fn main() {
                 std::process::exit(1);
             }));
 
+            // Create QqMusicClient first, load refresh info, then register
+            let qqmusic_client = QqMusicClient::new().unwrap_or_else(|e| {
+                tracing::error!("failed to create qqmusic client: {e}");
+                std::process::exit(1);
+            });
+
+            // Load persisted refresh info into QqMusicClient (for auto-refresh on 401)
+            match store::load_refresh_info(&app.handle(), MusicSourceId::Qqmusic) {
+                Ok(Some((rk, rt))) => {
+                    tracing::info!("loaded qqmusic refresh info (refresh_key len={}, refresh_token len={})", rk.len(), rt.len());
+                    qqmusic_client.set_refresh_info(rustplayer_qqmusic::RefreshInfo {
+                        refresh_key: rk,
+                        refresh_token: rt,
+                    });
+                }
+                Ok(None) => {
+                    tracing::debug!("no qqmusic refresh info in store");
+                }
+                Err(e) => tracing::warn!("load refresh info failed: {e}"),
+            }
+
             let mut registry = SourceRegistry::new();
             registry.register(Arc::new(NeteaseClient::new().unwrap_or_else(|e| {
                 tracing::error!("failed to create netease client: {e}");
                 std::process::exit(1);
             })));
-            registry.register(Arc::new(QqMusicClient::new().unwrap_or_else(|e| {
-                tracing::error!("failed to create qqmusic client: {e}");
-                std::process::exit(1);
-            })));
+            registry.register(Arc::new(qqmusic_client));
             let registry = Arc::new(registry);
 
             let cache = Arc::new(SearchCache::new());

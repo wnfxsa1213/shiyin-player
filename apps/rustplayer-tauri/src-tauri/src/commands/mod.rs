@@ -40,13 +40,14 @@ const COOKIE_CLEAR_TIMEOUT: Duration = Duration::from_secs(2);
 //
 // 注意：这里只包含"必要/最小集合"。可选项如需排查问题，只应在内存诊断日志中体现，
 // 不应持久化到本地存储。
-const QQMUSIC_LOGIN_COOKIES: &[&str] = &["qqmusic_key", "p_skey", "skey", "p_uin", "uin"];
+const QQMUSIC_LOGIN_COOKIES: &[&str] = &["qqmusic_key", "p_skey", "skey", "p_uin", "uin", "login_type"];
 const QQMUSIC_ESSENTIAL_COOKIES: &[&str] = &[
     "qqmusic_key",
     "p_skey",
     "skey",
     "p_uin",
     "uin",
+    "login_type",
     "qm_keyst", // 仅用于兼容部分登录态的兜底，不一定对所有接口有效
 ];
 const NETEASE_LOGIN_COOKIES: &[&str] = &["MUSIC_U", "NMTID", "__csrf"];
@@ -235,8 +236,8 @@ pub async fn search_music(
 
             // Prioritize errors by severity: Unauthorized > RateLimited > others
             let representative = errors.iter()
-                .find(|(_, e)| matches!(e, SourceError::Unauthorized(_)))
-                .or_else(|| errors.iter().find(|(_, e)| matches!(e, SourceError::RateLimited(_))))
+                .find(|(_, e)| matches!(e, SourceError::Unauthorized))
+                .or_else(|| errors.iter().find(|(_, e)| matches!(e, SourceError::RateLimited)))
                 .or_else(|| errors.first());
 
             match representative {
@@ -601,6 +602,19 @@ pub async fn open_login_window(
                         } else {
                             tracing::debug!("cookie saved successfully");
                         }
+
+                        // Best-effort: try to extract refresh tokens from webview localStorage
+                        if matches!(source, MusicSourceId::Qqmusic) {
+                            if let Some((rk, rt)) = extract_refresh_from_webview(&window_handle).await {
+                                tracing::info!("extracted refresh tokens from webview (refresh_key len={}, refresh_token len={})", rk.len(), rt.len());
+                                if let Err(e) = store::save_refresh_info(&app_clone, source, &rk, &rt) {
+                                    tracing::warn!("failed to persist refresh info: {e}");
+                                }
+                            } else {
+                                tracing::debug!("no refresh tokens found in webview localStorage (best-effort)");
+                            }
+                        }
+
                         tracing::info!("emitting login://success event");
                         let _ = app_clone.emit("login://success", source);
                     }
@@ -727,8 +741,8 @@ pub async fn get_user_playlists(
 
             // Prioritize errors by severity: Unauthorized > RateLimited > others
             let representative = errors.iter()
-                .find(|(_, e)| matches!(e, SourceError::Unauthorized(_)))
-                .or_else(|| errors.iter().find(|(_, e)| matches!(e, SourceError::RateLimited(_))))
+                .find(|(_, e)| matches!(e, SourceError::Unauthorized))
+                .or_else(|| errors.iter().find(|(_, e)| matches!(e, SourceError::RateLimited)))
                 .or_else(|| errors.first());
 
             match representative {
@@ -1145,6 +1159,50 @@ async fn clear_cookies_webkit(
 
     // Wait for completion with timeout
     let _ = tokio::time::timeout(COOKIE_CLEAR_TIMEOUT, rx).await;
+}
+
+// --- Refresh token extraction (best-effort) ---
+
+/// Best-effort extraction of refresh tokens from webview localStorage.
+/// QQ Music web client sometimes stores refresh_key/refresh_token in localStorage.
+/// Returns None if not found (this is expected for most login flows).
+/// Note: Tauri v2 eval() is fire-and-forget; this uses a callback-based approach.
+async fn extract_refresh_from_webview(
+    window: &tauri::WebviewWindow,
+) -> Option<(String, String)> {
+    // Inject JS that posts refresh tokens back via a custom URL scheme.
+    // Since Tauri v2 eval() doesn't return values, we use a localStorage scan
+    // and navigate to a callback URL with the data.
+    let js = concat!(
+        "(function(){try{",
+        "var rk=localStorage.getItem('refresh_key')||localStorage.getItem('music.login.refresh_key')||'';",
+        "var rt=localStorage.getItem('refresh_token')||localStorage.getItem('music.login.refresh_token')||'';",
+        "if(rk&&rt){document.title='__refresh__'+rk+'__sep__'+rt;}",
+        "}catch(e){}})();"
+    );
+
+    if let Err(e) = window.eval(js) {
+        tracing::debug!("localStorage eval failed (expected on some platforms): {e}");
+        return None;
+    }
+
+    // Small delay for JS execution
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // Try to read the title back
+    match window.title() {
+        Ok(title) if title.starts_with("__refresh__") => {
+            let data = &title["__refresh__".len()..];
+            if let Some((rk, rt)) = data.split_once("__sep__") {
+                if !rk.is_empty() && !rt.is_empty() {
+                    return Some((rk.to_string(), rt.to_string()));
+                }
+            }
+        }
+        _ => {}
+    }
+
+    None
 }
 
 // --- Cover color extraction (bypasses CORS) ---

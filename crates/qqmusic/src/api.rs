@@ -6,11 +6,14 @@ use rustplayer_core::{
 };
 use serde_json::{json, Value};
 
-use crate::sign::{calculate_g_tk, extract_skey_selection, extract_uin_from_cookie, SkeySource};
+use crate::sign::{calculate_g_tk, extract_cookie_value, extract_skey_selection, extract_uin_from_cookie, SkeySource};
 
 // QQ 音乐 API 客户端标识常量（模拟 Android 客户端 v13.2.5.8，对流媒体 URL 更宽容）
 const API_CLIENT_TYPE: &str = "11";
 const API_CLIENT_VERSION: &str = "13020508";
+
+// 设备指纹占位符（36 字符，QQ 音乐 API 期望的 QIMEI36 字段）
+const QIMEI36: &str = "000000000000000000000000000000000000";
 
 // 默认歌单名称（当 API 返回空字符串时使用）
 const DEFAULT_PLAYLIST_NAME: &str = "未命名歌单";
@@ -210,6 +213,15 @@ pub async fn user_playlists_with_pagination(
     });
 
     log::debug!("qqmusic user_playlists: calling API with cookie = {}, uin = {}", cookie.is_some(), uin);
+
+    // Debug: log cookie keys (not values) for diagnosis
+    if let Some(c) = cookie {
+        let keys: Vec<&str> = c.split(';').filter_map(|pair| {
+            pair.trim().split('=').next()
+        }).collect();
+        log::debug!("qqmusic user_playlists: cookie keys = {:?}", keys);
+    }
+
     let value = musicu_post(http, base_url, &data, cookie).await?;
     let code = value.pointer("/req/code").and_then(|v| v.as_i64()).unwrap_or(-1);
     log::info!("qqmusic user_playlists: API returned code = {}", code);
@@ -313,6 +325,159 @@ pub async fn playlist_detail(
     })
 }
 
+// --- Login validation & refresh ---
+
+/// Lightweight login validation using GetLoginUserInfo.
+/// Much lighter than user_playlists — only checks if the credential is valid.
+pub async fn validate_login(
+    http: &reqwest::Client,
+    base_url: &str,
+    cookie: &str,
+) -> Result<(), SourceError> {
+    let uin = extract_uin_from_cookie(cookie).unwrap_or_else(|| "0".to_string());
+    let data = json!({
+        "comm": { "ct": API_CLIENT_TYPE, "cv": API_CLIENT_VERSION, "uin": uin },
+        "req": {
+            "module": "music.UserInfo.userInfoServer",
+            "method": "GetLoginUserInfo",
+            "param": {}
+        }
+    });
+    let value = musicu_post(http, base_url, &data, Some(cookie)).await?;
+    let code = value.pointer("/req/code").and_then(|v| v.as_i64()).unwrap_or(-1);
+    match code {
+        0 => {
+            log::info!("qqmusic validate_login: success");
+            Ok(())
+        }
+        -100 | -200 | 40000 => {
+            log::warn!("qqmusic validate_login: unauthorized (code {})", code);
+            Err(SourceError::Unauthorized)
+        }
+        _ => {
+            log::warn!("qqmusic validate_login: unexpected code {}", code);
+            Err(SourceError::Internal(format!("login validation code {}", code)))
+        }
+    }
+}
+
+/// Credential refresh result.
+pub struct RefreshedCredential {
+    pub musickey: String,
+    pub musicid: String,
+    pub refresh_key: String,
+    pub refresh_token: String,
+    pub login_type: i64,
+}
+
+/// Refresh expired credentials via music.login.LoginServer::Login.
+/// Requires refresh_key and refresh_token obtained during initial login.
+/// Reference: L-1124/QQMusicApi credential refresh flow.
+pub async fn refresh_credentials(
+    http: &reqwest::Client,
+    base_url: &str,
+    cookie: &str,
+    refresh_key: &str,
+    refresh_token: &str,
+) -> Result<RefreshedCredential, SourceError> {
+    let musicid = extract_uin_from_cookie(cookie).unwrap_or_else(|| "0".to_string());
+    let musickey = extract_cookie_value(cookie, "qqmusic_key").unwrap_or_default();
+    let login_type = extract_cookie_value(cookie, "login_type")
+        .unwrap_or_else(|| detect_login_type(&musickey).to_string());
+
+    let data = json!({
+        "comm": {
+            "ct": API_CLIENT_TYPE,
+            "cv": API_CLIENT_VERSION,
+            "uin": musicid,
+            "tmeLoginType": login_type,
+        },
+        "req": {
+            "module": "music.login.LoginServer",
+            "method": "Login",
+            "param": {
+                "refresh_key": refresh_key,
+                "refresh_token": refresh_token,
+                "musickey": musickey,
+                "musicid": musicid.parse::<i64>().unwrap_or(0),
+            }
+        }
+    });
+
+    log::info!("qqmusic refresh_credentials: attempting refresh for uin={}", musicid);
+    let value = musicu_post(http, base_url, &data, Some(cookie)).await?;
+    let code = value.pointer("/req/code").and_then(|v| v.as_i64()).unwrap_or(-1);
+    if code != 0 {
+        log::warn!("qqmusic refresh_credentials: failed with code {}", code);
+        return Err(SourceError::Unauthorized);
+    }
+
+    let resp = value.pointer("/req/data")
+        .ok_or(SourceError::InvalidResponse("missing refresh data".into()))?;
+
+    let new_musickey = resp.get("musickey")
+        .and_then(|v| v.as_str())
+        .ok_or(SourceError::InvalidResponse("missing musickey in refresh response".into()))?
+        .to_string();
+    let new_musicid = resp.get("musicid")
+        .and_then(|v| v.as_i64())
+        .map(|v| v.to_string())
+        .unwrap_or(musicid);
+    let new_refresh_key = resp.get("refresh_key")
+        .and_then(|v| v.as_str())
+        .unwrap_or(refresh_key)
+        .to_string();
+    let new_refresh_token = resp.get("refresh_token")
+        .and_then(|v| v.as_str())
+        .unwrap_or(refresh_token)
+        .to_string();
+    let new_login_type = resp.get("login_type")
+        .and_then(|v| v.as_i64())
+        .unwrap_or_else(|| login_type.parse().unwrap_or(2));
+
+    log::info!("qqmusic refresh_credentials: success, new musickey len={}", new_musickey.len());
+
+    Ok(RefreshedCredential {
+        musickey: new_musickey,
+        musicid: new_musicid,
+        refresh_key: new_refresh_key,
+        refresh_token: new_refresh_token,
+        login_type: new_login_type,
+    })
+}
+
+/// Rebuild cookie string with refreshed musickey and musicid.
+pub fn rebuild_cookie(old_cookie: &str, new_musickey: &str, new_musicid: &str) -> String {
+    let mut pairs: Vec<(String, String)> = old_cookie.split(';')
+        .filter_map(|pair| {
+            let pair = pair.trim();
+            pair.split_once('=').map(|(k, v)| (k.to_string(), v.to_string()))
+        })
+        .collect();
+
+    // Update qqmusic_key
+    if let Some(entry) = pairs.iter_mut().find(|(k, _)| k == "qqmusic_key") {
+        entry.1 = new_musickey.to_string();
+    }
+    // Update qm_keyst (mirrors qqmusic_key in modern API)
+    if let Some(entry) = pairs.iter_mut().find(|(k, _)| k == "qm_keyst") {
+        entry.1 = new_musickey.to_string();
+    }
+    // Update uin
+    if let Some(entry) = pairs.iter_mut().find(|(k, _)| k == "uin") {
+        entry.1 = format!("o{new_musicid}");
+    }
+
+    pairs.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("; ")
+}
+
+/// Auto-detect login type from musickey prefix.
+/// W_X prefix = WeChat (1), otherwise QQ (2).
+/// Reference: L-1124/QQMusicApi Credential.__post_init__
+fn detect_login_type(musickey: &str) -> &'static str {
+    if musickey.starts_with("W_X") { "1" } else { "2" }
+}
+
 // --- Internal helpers ---
 
 async fn musicu_post(
@@ -323,30 +488,38 @@ async fn musicu_post(
 ) -> Result<Value, SourceError> {
     let url = format!("{base_url}/cgi-bin/musicu.fcg");
 
-    // 任务 B.2：记录 g_tk 来源（p_skey/skey/qm_keyst/none）与 key 长度（严禁打印 value）。
-    // 同时避免"cookie 存在但缺少 skey/p_skey"时悄悄回落到 5381，导致后续出现 40000 unauthorized 难以定位。
-    let (skey_opt, source) = cookie
+    // Inject QIMEI36 device fingerprint and modern QQ Music API auth fields into comm object.
+    // Reference: L-1124/QQMusicApi - modern API requires authst=qqmusic_key for authentication,
+    // plus tmeLoginType, tmeAppID, and QIMEI36 in the comm object.
+    let data = {
+        let mut d = data.clone();
+        if let Some(comm) = d.get_mut("comm").and_then(|v| v.as_object_mut()) {
+            // QIMEI36 设备指纹（所有请求都注入）
+            comm.insert("QIMEI36".to_string(), json!(QIMEI36));
+
+            // 登录态相关字段（仅在有 cookie 时注入）
+            if let Some(c) = cookie {
+                if let Some(musickey) = extract_cookie_value(c, "qqmusic_key") {
+                    comm.insert("authst".to_string(), json!(musickey));
+                    // tmeLoginType: 优先从 cookie 读取，缺失时从 musickey 前缀自动检测
+                    let login_type = extract_cookie_value(c, "login_type")
+                        .unwrap_or_else(|| detect_login_type(&musickey).to_string());
+                    comm.insert("tmeLoginType".to_string(), json!(login_type));
+                    log::debug!("qqmusic musicu_post: injected authst (len={}), tmeLoginType={}", musickey.len(), login_type);
+                }
+                comm.insert("tmeAppID".to_string(), json!("qqmusic"));
+            }
+        }
+        d
+    };
+
+    // Calculate g_tk from p_skey/skey (or default 5381 when not available).
+    let (skey_opt, _source) = cookie
         .map(extract_skey_selection)
         .unwrap_or((None, SkeySource::None));
-    let key_len = skey_opt.as_ref().map(|s| s.len()).unwrap_or(0);
-
-    if cookie.is_some() {
-        let source_label = match source {
-            SkeySource::PSkey => "p_skey",
-            SkeySource::Skey => "skey",
-            SkeySource::QmKeyst => "qm_keyst",
-            SkeySource::None => "none",
-        };
-        // 正常路径（p_skey/skey）用 debug，异常/兜底（qm_keyst/none）用 info，便于线上定位。
-        if matches!(source, SkeySource::QmKeyst | SkeySource::None) {
-            log::info!("qqmusic musicu_post: g_tk source = {source_label}, key_len = {key_len}");
-        } else {
-            log::debug!("qqmusic musicu_post: g_tk source = {source_label}, key_len = {key_len}");
-        }
-    }
-
-    // Calculate g_tk from selected key (or default when not available).
     let g_tk = skey_opt.map(|s| calculate_g_tk(&s)).unwrap_or(5381);
+
+    log::debug!("qqmusic musicu_post: sending request with g_tk={}, cookie_present={}", g_tk, cookie.is_some());
 
     let mut req = http.post(url)
         .query(&[
@@ -356,7 +529,7 @@ async fn musicu_post(
             ("needNewCode", "0"),
         ])
         .header("Referer", "https://y.qq.com/")
-        .json(data);
+        .json(&data);
     if let Some(c) = cookie {
         req = req.header(COOKIE, c);
     }

@@ -44,15 +44,31 @@ pub fn extract_uin_from_cookie(cookie: &str) -> Option<String> {
     None
 }
 
+/// Extract a specific cookie value by key name from a cookie string.
+/// Cookie format: "key1=value1; key2=value2; ..."
+pub fn extract_cookie_value(cookie: &str, key: &str) -> Option<String> {
+    let prefix = format!("{key}=");
+    for pair in cookie.split(';') {
+        let pair = pair.trim();
+        if let Some(stripped) = pair.strip_prefix(&prefix) {
+            let v = stripped.trim();
+            if !v.is_empty() {
+                return Some(v.to_string());
+            }
+        }
+    }
+    None
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkeySource {
     /// 来自 `p_skey`（优先）
     PSkey,
     /// 来自 `skey`
     Skey,
-    /// 来自 `qm_keyst`（仅用于部分 QQ 客户端快捷登录的兜底，可能不被部分接口接受）
+    /// 已废弃：qm_keyst 不再用于 g_tk 计算
     QmKeyst,
-    /// 未找到任何可用 key
+    /// 未找到任何可用 key（现代 QQ 音乐 API 使用 qqmusic_key cookie 认证，不依赖 g_tk）
     None,
 }
 
@@ -61,14 +77,14 @@ pub enum SkeySource {
 /// 设计原因（任务 D.1 + 诊断需求）：
 /// - QQ 音乐/腾讯系接口通常更偏向使用 `p_skey` 计算 g_tk
 /// - 若缺失再回退到 `skey`
-/// - 最后才尝试 `qm_keyst`（历史兜底，但在本问题中已观察到可能导致 40000 unauthorized）
+/// - **不再使用 `qm_keyst`**：现代 QQ 音乐 API 不依赖 g_tk 认证，而是直接验证 `qqmusic_key` cookie
+/// - 如果没有 p_skey/skey，返回 None，让调用方使用默认 g_tk=5381
 ///
 /// 安全约束：
 /// - 本函数不打印任何 cookie value；调用方只能记录来源与长度。
 pub fn extract_skey_selection(cookie: &str) -> (Option<String>, SkeySource) {
     let mut p_skey: Option<String> = None;
     let mut skey: Option<String> = None;
-    let mut qm_keyst: Option<String> = None;
 
     for pair in cookie.split(';') {
         let pair = pair.trim();
@@ -92,16 +108,6 @@ pub fn extract_skey_selection(cookie: &str) -> (Option<String>, SkeySource) {
                 }
             }
         }
-
-        if qm_keyst.is_none() {
-            if let Some(stripped) = pair.strip_prefix("qm_keyst=") {
-                let v = stripped.trim();
-                if !v.is_empty() {
-                    qm_keyst = Some(v.to_string());
-                    continue;
-                }
-            }
-        }
     }
 
     if let Some(v) = p_skey {
@@ -110,22 +116,25 @@ pub fn extract_skey_selection(cookie: &str) -> (Option<String>, SkeySource) {
     if let Some(v) = skey {
         return (Some(v), SkeySource::Skey);
     }
-    if let Some(v) = qm_keyst {
-        return (Some(v), SkeySource::QmKeyst);
-    }
+    // 不再使用 qm_keyst 作为 g_tk 计算来源
+    // 现代 QQ 音乐 API 直接验证 qqmusic_key cookie，不依赖 g_tk
     (None, SkeySource::None)
 }
 
 /// Extract skey or p_skey from cookie string for g_tk calculation
-/// Fallback to qm_keyst for QQ client quick login
+/// Returns None if neither p_skey nor skey is present (modern QQ Music API doesn't need g_tk)
 pub fn extract_skey_from_cookie(cookie: &str) -> Option<String> {
-    // 任务 D.1：优先级调整为 `p_skey → skey → qm_keyst`，并记录选择来源（不打印 value）。
     let (value, source) = extract_skey_selection(cookie);
     match source {
         SkeySource::PSkey => log::debug!("using p_skey for g_tk calculation"),
         SkeySource::Skey => log::debug!("using skey for g_tk calculation"),
-        SkeySource::QmKeyst => log::info!("using qm_keyst as skey fallback for g_tk calculation"),
-        SkeySource::None => {}
+        SkeySource::QmKeyst => {
+            // This should never happen now as we removed qm_keyst from extract_skey_selection
+            log::warn!("qm_keyst should not be used for g_tk calculation");
+        }
+        SkeySource::None => {
+            log::debug!("no p_skey/skey found, using default g_tk=5381 (modern QQ Music API uses qqmusic_key cookie for auth)");
+        }
     }
     value
 }
@@ -151,11 +160,11 @@ mod tests {
     }
 
     #[test]
-    fn extract_skey_falls_back_to_qm_keyst() {
-        let cookie = "uin=o123; qm_keyst=CCC";
+    fn extract_skey_returns_none_without_p_skey_or_skey() {
+        let cookie = "uin=o123; qm_keyst=CCC; qqmusic_key=DDD";
         let (v, src) = extract_skey_selection(cookie);
-        assert_eq!(src, SkeySource::QmKeyst);
-        assert_eq!(v.as_deref(), Some("CCC"));
+        assert_eq!(src, SkeySource::None);
+        assert_eq!(v, None);
     }
 
     #[test]
