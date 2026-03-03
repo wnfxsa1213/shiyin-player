@@ -23,6 +23,7 @@ pub struct QqMusicClient {
     guid: String,
     cookie: RwLock<Option<String>>,
     refresh_info: RwLock<Option<RefreshInfo>>,
+    on_refresh: RwLock<Option<Box<dyn Fn(RefreshInfo, String) + Send + Sync>>>,
 }
 
 impl QqMusicClient {
@@ -38,6 +39,7 @@ impl QqMusicClient {
             guid: sign::generate_guid(),
             cookie: RwLock::new(None),
             refresh_info: RwLock::new(None),
+            on_refresh: RwLock::new(None),
         })
     }
 
@@ -51,6 +53,15 @@ impl QqMusicClient {
     /// Get current refresh info (if available).
     pub fn get_refresh_info(&self) -> Option<RefreshInfo> {
         self.refresh_info.read().ok().and_then(|g| g.clone())
+    }
+
+    /// Set a callback invoked after successful credential refresh.
+    /// The callback receives the new RefreshInfo and the updated cookie string,
+    /// allowing the application layer to persist them to durable storage.
+    pub fn set_on_refresh<F: Fn(RefreshInfo, String) + Send + Sync + 'static>(&self, f: F) {
+        if let Ok(mut guard) = self.on_refresh.write() {
+            *guard = Some(Box::new(f));
+        }
     }
 
     /// Attempt to refresh expired credentials.
@@ -76,17 +87,26 @@ impl QqMusicClient {
             Ok(new_cred) => {
                 // Rebuild cookie with new musickey
                 let new_cookie = api::rebuild_cookie(&cookie, &new_cred.musickey, &new_cred.musicid);
+                let new_refresh = RefreshInfo {
+                    refresh_key: new_cred.refresh_key,
+                    refresh_token: new_cred.refresh_token,
+                };
 
                 // Update stored cookie
                 if let Ok(mut guard) = self.cookie.write() {
-                    *guard = Some(new_cookie);
+                    *guard = Some(new_cookie.clone());
                     log::info!("qqmusic try_refresh: cookie updated successfully");
                 }
-                // Update refresh info
-                self.set_refresh_info(RefreshInfo {
-                    refresh_key: new_cred.refresh_key,
-                    refresh_token: new_cred.refresh_token,
-                });
+
+                // Notify application layer to persist refreshed credentials
+                if let Ok(guard) = self.on_refresh.read() {
+                    if let Some(cb) = guard.as_ref() {
+                        cb(new_refresh.clone(), new_cookie);
+                    }
+                }
+
+                // Update refresh info in memory
+                self.set_refresh_info(new_refresh);
                 true
             }
             Err(e) => {

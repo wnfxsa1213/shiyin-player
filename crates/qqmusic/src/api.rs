@@ -382,15 +382,16 @@ pub async fn refresh_credentials(
 ) -> Result<RefreshedCredential, SourceError> {
     let musicid = extract_uin_from_cookie(cookie).unwrap_or_else(|| "0".to_string());
     let musickey = extract_cookie_value(cookie, "qqmusic_key").unwrap_or_default();
-    let login_type = extract_cookie_value(cookie, "login_type")
+    let login_type_str = extract_cookie_value(cookie, "login_type")
         .unwrap_or_else(|| detect_login_type(&musickey).to_string());
+    let login_type_num: i64 = login_type_str.parse().unwrap_or(2);
 
     let data = json!({
         "comm": {
             "ct": API_CLIENT_TYPE,
             "cv": API_CLIENT_VERSION,
             "uin": musicid,
-            "tmeLoginType": login_type,
+            "tmeLoginType": login_type_num,
         },
         "req": {
             "module": "music.login.LoginServer",
@@ -433,7 +434,7 @@ pub async fn refresh_credentials(
         .to_string();
     let new_login_type = resp.get("login_type")
         .and_then(|v| v.as_i64())
-        .unwrap_or_else(|| login_type.parse().unwrap_or(2));
+        .unwrap_or(login_type_num);
 
     log::info!("qqmusic refresh_credentials: success, new musickey len={}", new_musickey.len());
 
@@ -504,8 +505,9 @@ async fn musicu_post(
                     // tmeLoginType: 优先从 cookie 读取，缺失时从 musickey 前缀自动检测
                     let login_type = extract_cookie_value(c, "login_type")
                         .unwrap_or_else(|| detect_login_type(&musickey).to_string());
-                    comm.insert("tmeLoginType".to_string(), json!(login_type));
-                    log::debug!("qqmusic musicu_post: injected authst (len={}), tmeLoginType={}", musickey.len(), login_type);
+                    let login_type_num: i64 = login_type.parse().unwrap_or(2);
+                    comm.insert("tmeLoginType".to_string(), json!(login_type_num));
+                    log::debug!("qqmusic musicu_post: injected authst (len={}), tmeLoginType={}", musickey.len(), login_type_num);
                 }
                 comm.insert("tmeAppID".to_string(), json!("qqmusic"));
             }

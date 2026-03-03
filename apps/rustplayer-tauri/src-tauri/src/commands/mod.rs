@@ -821,16 +821,17 @@ async fn extract_cookies_from_domains(
     }
 
     // 任务 C.3：必需 cookie 校验（避免进入后续验证后才以 40000 失败）。
-    // QQ 音乐的最小鉴权集合（当前实现要求）：
-    // - p_skey|skey：用于计算 g_tk
+    // QQ 音乐的最小鉴权集合（现代 API）：
+    // - qqmusic_key：强鉴权 cookie，直接验证登录态（authst 字段）
     // - p_uin|uin：用于请求体 uin
-    // - qqmusic_key：强鉴权 cookie（也用于登录态探测）
+    // 注意：p_skey/skey 仅用于计算 g_tk，现代 QQ 音乐 API 不依赖 g_tk 认证，
+    // 缺少时使用默认值 5381，不影响鉴权。
     if matches!(source, MusicSourceId::Qqmusic) {
         let has_skey = all_cookies.contains_key("p_skey") || all_cookies.contains_key("skey");
         let has_uin = all_cookies.contains_key("p_uin") || all_cookies.contains_key("uin");
         let has_qqmusic_key = all_cookies.contains_key("qqmusic_key");
 
-        if !(has_skey && has_uin && has_qqmusic_key) {
+        if !(has_uin && has_qqmusic_key) {
             let mut present_keys: Vec<String> = all_cookies.keys().cloned().collect();
             present_keys.sort();
             tracing::warn!(
@@ -841,6 +842,9 @@ async fn extract_cookies_from_domains(
                 present_keys
             );
             return String::new();
+        }
+        if !has_skey {
+            tracing::debug!("qqmusic cookie: no p_skey/skey found, g_tk will use default 5381 (modern API uses qqmusic_key for auth)");
         }
     }
 

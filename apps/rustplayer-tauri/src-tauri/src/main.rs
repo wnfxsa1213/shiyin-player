@@ -77,6 +77,24 @@ fn main() {
                 Err(e) => tracing::warn!("load refresh info failed: {e}"),
             }
 
+            // Persist refreshed credentials to store when auto-refresh succeeds
+            let app_handle_for_refresh = app.handle().clone();
+            qqmusic_client.set_on_refresh(move |info, cookie| {
+                tracing::info!(
+                    "auto-refresh succeeded, persisting credentials (refresh_key len={}, refresh_token len={})",
+                    info.refresh_key.len(), info.refresh_token.len()
+                );
+                if let Err(e) = store::save_refresh_info(
+                    &app_handle_for_refresh, MusicSourceId::Qqmusic,
+                    &info.refresh_key, &info.refresh_token,
+                ) {
+                    tracing::warn!("failed to persist refresh info after auto-refresh: {e}");
+                }
+                if let Err(e) = store::save_cookie(&app_handle_for_refresh, MusicSourceId::Qqmusic, &cookie) {
+                    tracing::warn!("failed to persist cookie after auto-refresh: {e}");
+                }
+            });
+
             let mut registry = SourceRegistry::new();
             registry.register(Arc::new(NeteaseClient::new().unwrap_or_else(|e| {
                 tracing::error!("failed to create netease client: {e}");
