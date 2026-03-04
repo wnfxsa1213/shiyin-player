@@ -184,72 +184,51 @@ pub async fn user_playlists(
     base_url: &str,
     cookie: Option<&str>,
 ) -> Result<Vec<PlaylistBrief>, SourceError> {
-    user_playlists_with_pagination(http, base_url, cookie, 0, 100).await
-}
-
-pub async fn user_playlists_with_pagination(
-    http: &reqwest::Client,
-    base_url: &str,
-    cookie: Option<&str>,
-    offset: u32,
-    limit: u32,
-) -> Result<Vec<PlaylistBrief>, SourceError> {
     // Extract real uin from cookie, fallback to "0" if not found
     let uin = cookie
         .and_then(extract_uin_from_cookie)
         .unwrap_or_else(|| "0".to_string());
 
+    // Web API: music.musicasset.PlaylistBaseRead.GetPlaylistByUin
+    // 参数 uin 必须是字符串，bWithoutStatus=false 表示包含状态信息
     let data = json!({
         "comm": { "ct": API_CLIENT_TYPE, "cv": API_CLIENT_VERSION, "uin": uin },
         "req": {
-            "module": "music.playlist.PlaylistSquare",
-            "method": "GetMyPlaylist",
+            "module": "music.musicasset.PlaylistBaseRead",
+            "method": "GetPlaylistByUin",
             "param": {
-                "uin": uin.parse::<i64>().unwrap_or(0),
-                "sin": offset,
-                "size": limit
+                "uin": uin,
+                "bWithoutStatus": false
             }
         }
     });
 
-    log::debug!("qqmusic user_playlists: calling API with cookie = {}, uin = {}", cookie.is_some(), uin);
-
-    // Debug: log cookie keys (not values) for diagnosis
-    if let Some(c) = cookie {
-        let keys: Vec<&str> = c.split(';').filter_map(|pair| {
-            pair.trim().split('=').next()
-        }).collect();
-        log::debug!("qqmusic user_playlists: cookie keys = {:?}", keys);
-    }
+    log::debug!("qqmusic user_playlists: GetPlaylistByUin, cookie={}, uin={}", cookie.is_some(), uin);
 
     let value = musicu_post(http, base_url, &data, cookie).await?;
     let code = value.pointer("/req/code").and_then(|v| v.as_i64()).unwrap_or(-1);
     log::info!("qqmusic user_playlists: API returned code = {}", code);
 
-    // 细化错误码映射
     match code {
-        0 => {}, // 成功
+        0 => {},
         -100 | -200 | 40000 => {
-            // Enhanced logging for 40000 error - log full response for diagnosis
-            let msg = value.pointer("/req/msg").and_then(|v| v.as_str()).unwrap_or("");
-            let subcode = value.pointer("/req/subcode").and_then(|v| v.as_i64()).unwrap_or(0);
             log::warn!(
-                "qqmusic user_playlists: unauthorized (code {}), cookie present = {}, msg = '{}', subcode = {}",
-                code, cookie.is_some(), msg, subcode
+                "qqmusic user_playlists: unauthorized (code {}), cookie present = {}",
+                code, cookie.is_some()
             );
-            if code == 40000 {
-                log::info!("qqmusic user_playlists: full response for 40000 (diagnosis): {}", serde_json::to_string(&value).unwrap_or_default());
-            }
+            log::info!("qqmusic user_playlists: full response: {}", serde_json::to_string(&value).unwrap_or_default());
             return Err(SourceError::Unauthorized);
         }
-        -1001 | -1002 => return Err(SourceError::RateLimited), // 限流
+        -1001 | -1002 => return Err(SourceError::RateLimited),
         _ => {
             log::warn!("qqmusic user_playlists: unexpected code {}", code);
+            log::info!("qqmusic user_playlists: full response: {}", serde_json::to_string(&value).unwrap_or_default());
             return Err(SourceError::Internal(format!("api error code {}", code)));
         }
     }
 
-    let Some(list) = value.pointer("/req/data/list").and_then(|v| v.as_array()) else {
+    let Some(list) = value.pointer("/req/data/v_playlist").and_then(|v| v.as_array()) else {
+        log::info!("qqmusic user_playlists: v_playlist absent, full resp: {}", serde_json::to_string(&value).unwrap_or_default());
         return Ok(Vec::new());
     };
 
@@ -592,43 +571,40 @@ fn parse_song(song: &Value) -> Option<Track> {
 }
 
 fn parse_playlist_brief(item: &Value) -> Option<PlaylistBrief> {
-    // dissid/tid 可能是字符串或数字
-    let id = item.get("dissid")
-        .or_else(|| item.get("tid"))
+    // ID: GetPlaylistByUin 返回 tid；旧接口用 dissid
+    let id = item.get("tid")
+        .or_else(|| item.get("dissid"))
         .and_then(|v| {
-            if let Some(s) = v.as_str() {
-                Some(s.to_string())
-            } else {
-                v.as_i64().map(|n| n.to_string())
-            }
+            if let Some(s) = v.as_str() { Some(s.to_string()) }
+            else { v.as_i64().map(|n| n.to_string()) }
         })?;
 
-    // 使用默认值处理空字符串
-    let name = item.get("dissname")
-        .or_else(|| item.get("diss_name"))
+    // 名称：GetPlaylistByUin 返回 diss_name；旧接口用 dissname
+    let name = item.get("diss_name")
+        .or_else(|| item.get("dissname"))
+        .or_else(|| item.get("title"))
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .unwrap_or(DEFAULT_PLAYLIST_NAME)
         .to_string();
 
-    let cover_url = item
-        .get("logo")
+    // 封面：GetPlaylistByUin 返回 imgurl；旧接口用 logo
+    let cover_url = item.get("imgurl")
+        .or_else(|| item.get("logo"))
+        .or_else(|| item.get("diss_cover"))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    // song_cnt 兼容字符串和数字类型，使用 saturating_cast 防止溢出
+    // 曲目数：GetPlaylistByUin 返回 song_cnt 或 songnum
     let track_count = item.get("song_cnt")
+        .or_else(|| item.get("songnum"))
         .and_then(|v| {
-            if let Some(n) = v.as_u64() {
-                Some(n)
-            } else if let Some(s) = v.as_str() {
-                s.parse::<u64>().ok()
-            } else {
-                None
-            }
+            if let Some(n) = v.as_u64() { Some(n) }
+            else if let Some(s) = v.as_str() { s.parse::<u64>().ok() }
+            else { None }
         })
         .unwrap_or(0)
-        .min(u32::MAX as u64) as u32; // 防止 u64 -> u32 溢出
+        .min(u32::MAX as u64) as u32;
 
     Some(PlaylistBrief {
         id,
