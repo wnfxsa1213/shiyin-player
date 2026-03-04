@@ -212,6 +212,7 @@ pub async fn lyrics(
         let res = match http
             .get("https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg")
             .query(&[("songmid", track_id), ("format", "json"), ("nobase64", "1")])
+            .header("Referer", "https://y.qq.com/")
             .send()
             .await
         {
@@ -235,8 +236,37 @@ pub async fn lyrics(
             }
         };
 
+        // Validate business code (QQ Music API returns code field for errors)
+        let code = value.get("code").and_then(|v| v.as_i64()).unwrap_or(0);
+        let retcode = value.get("retcode").and_then(|v| v.as_i64()).unwrap_or(0);
+        let subcode = value.get("subcode").and_then(|v| v.as_i64()).unwrap_or(0);
+
+        if code != 0 || retcode != 0 || subcode != 0 {
+            log::warn!(
+                "qqmusic lyrics: API error for track {track_id}: code={code}, retcode={retcode}, subcode={subcode}"
+            );
+            // Common error codes: -1310 (missing referer/auth), -1 (general error)
+            match code {
+                -1310 | -100 | -200 => {
+                    last_error = Some(SourceError::Unauthorized);
+                }
+                _ => {
+                    last_error = Some(SourceError::InvalidResponse(
+                        format!("API error code={code}, retcode={retcode}, subcode={subcode}")
+                    ));
+                }
+            }
+            continue;
+        }
+
         let lrc = value.get("lyric").and_then(|v| v.as_str()).unwrap_or("");
         let trans = value.get("trans").and_then(|v| v.as_str()).unwrap_or("");
+
+        log::info!(
+            "qqmusic lyrics: track {track_id} - lyric_len={}, trans_len={}, code={code}",
+            lrc.len(), trans.len()
+        );
+
         if lrc.is_empty() {
             log::debug!("qqmusic lyrics: no lyric content for track {track_id}");
         }
