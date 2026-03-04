@@ -56,7 +56,7 @@ impl Db {
                 "SELECT COUNT(*) FROM pragma_table_info('tracks') WHERE name='media_mid'",
                 [],
                 |r| r.get(0),
-            ).unwrap_or(0i64) > 0;
+            ).map_err(|e| format!("Failed to check schema: {}", e))?;
             if !has_media_mid {
                 conn.execute_batch("ALTER TABLE tracks ADD COLUMN media_mid TEXT;")
                     .map_err(|e| e.to_string())?;

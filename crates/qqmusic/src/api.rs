@@ -192,8 +192,14 @@ pub async fn song_url(
         );
         return Err(SourceError::Unauthorized);
     }
+    if first_unknown_result != 0 {
+        log::warn!(
+            "qqmusic song_url: unknown midurlinfo error code {first_unknown_result} for track {track_id} (file_id={file_id})"
+        );
+        return Err(SourceError::Internal(format!("midurlinfo result={first_unknown_result}")));
+    }
 
-    log::warn!("qqmusic song_url: all quality tiers returned empty purl for track {track_id} (file_id={file_id}, req_code={req_code}, first_unknown_result={first_unknown_result})");
+    log::warn!("qqmusic song_url: all quality tiers returned empty purl for track {track_id} (file_id={file_id}, req_code={req_code})");
     Err(SourceError::NotFound)
 }
 
@@ -246,17 +252,15 @@ pub async fn lyrics(
                 "qqmusic lyrics: API error for track {track_id}: code={code}, retcode={retcode}, subcode={subcode}"
             );
             // Common error codes: -1310 (missing referer/auth), -1 (general error)
-            match code {
-                -1310 | -100 | -200 => {
-                    last_error = Some(SourceError::Unauthorized);
-                }
-                _ => {
-                    last_error = Some(SourceError::InvalidResponse(
-                        format!("API error code={code}, retcode={retcode}, subcode={subcode}")
-                    ));
-                }
-            }
-            continue;
+            // For deterministic business errors (auth, invalid params), return immediately
+            // instead of retrying, as retry won't help and adds ~500ms delay
+            let error = match code {
+                -1310 | -100 | -200 => SourceError::Unauthorized,
+                _ => SourceError::InvalidResponse(
+                    format!("API error code={code}, retcode={retcode}, subcode={subcode}")
+                ),
+            };
+            return Err(error);
         }
 
         let lrc = value.get("lyric").and_then(|v| v.as_str()).unwrap_or("");
