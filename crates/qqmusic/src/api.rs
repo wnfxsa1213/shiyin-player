@@ -6,11 +6,11 @@ use rustplayer_core::{
 };
 use serde_json::{json, Value};
 
-use crate::sign::{calculate_g_tk, extract_cookie_value, extract_skey_selection, extract_uin_from_cookie, SkeySource};
+use crate::sign::{calculate_g_tk, extract_cookie_value, extract_uin_from_cookie};
 
-// QQ 音乐 API 客户端标识常量（模拟 Android 客户端 v13.2.5.8，对流媒体 URL 更宽容）
-const API_CLIENT_TYPE: &str = "11";
-const API_CLIENT_VERSION: &str = "13020508";
+// QQ 音乐 Web 客户端标识常量（与 y.qq.com 保持一致，通过鉴权校验）
+const API_CLIENT_TYPE: i64 = 24;
+const API_CLIENT_VERSION: i64 = 4747474;
 
 // 设备指纹占位符（36 字符，QQ 音乐 API 期望的 QIMEI36 字段）
 const QIMEI36: &str = "000000000000000000000000000000000000";
@@ -238,7 +238,7 @@ pub async fn user_playlists_with_pagination(
                 code, cookie.is_some(), msg, subcode
             );
             if code == 40000 {
-                log::debug!("qqmusic user_playlists: full response for 40000 error: {}", serde_json::to_string(&value).unwrap_or_default());
+                log::info!("qqmusic user_playlists: full response for 40000 (diagnosis): {}", serde_json::to_string(&value).unwrap_or_default());
             }
             return Err(SourceError::Unauthorized);
         }
@@ -489,20 +489,32 @@ async fn musicu_post(
 ) -> Result<Value, SourceError> {
     let url = format!("{base_url}/cgi-bin/musicu.fcg");
 
-    // Inject QIMEI36 device fingerprint and modern QQ Music API auth fields into comm object.
-    // Reference: L-1124/QQMusicApi - modern API requires authst=qqmusic_key for authentication,
-    // plus tmeLoginType, tmeAppID, and QIMEI36 in the comm object.
+    // g_tk: 匹配 web 端 O() — skey（老式登录）|| qqmusic_key（现代登录）
+    let g_tk = cookie.and_then(|c| {
+        extract_cookie_value(c, "skey")
+            .or_else(|| extract_cookie_value(c, "qqmusic_key"))
+    }).map(|k| calculate_g_tk(&k)).unwrap_or(5381);
+
+    // g_tk_new_20200303: 匹配 web 端 O(true) — qqmusic_key || p_skey || skey || p_lskey || lskey
+    let g_tk_new = cookie.and_then(|c| {
+        extract_cookie_value(c, "qqmusic_key")
+            .or_else(|| extract_cookie_value(c, "p_skey"))
+            .or_else(|| extract_cookie_value(c, "skey"))
+            .or_else(|| extract_cookie_value(c, "p_lskey"))
+            .or_else(|| extract_cookie_value(c, "lskey"))
+    }).map(|k| calculate_g_tk(&k)).unwrap_or(5381);
+
+    log::debug!("qqmusic musicu_post: g_tk={}, g_tk_new={}, cookie_present={}", g_tk, g_tk_new, cookie.is_some());
+
+    // Inject QIMEI36 + auth fields into comm, then inject top-level uin/g_tk/g_tk_new_20200303.
+    // Reference: vendor.chunk.js — web app adds uin, g_tk, g_tk_new_20200303 to the top-level body.
     let data = {
         let mut d = data.clone();
         if let Some(comm) = d.get_mut("comm").and_then(|v| v.as_object_mut()) {
-            // QIMEI36 设备指纹（所有请求都注入）
             comm.insert("QIMEI36".to_string(), json!(QIMEI36));
-
-            // 登录态相关字段（仅在有 cookie 时注入）
             if let Some(c) = cookie {
                 if let Some(musickey) = extract_cookie_value(c, "qqmusic_key") {
                     comm.insert("authst".to_string(), json!(musickey));
-                    // tmeLoginType: 优先从 cookie 读取，缺失时从 musickey 前缀自动检测
                     let login_type = extract_cookie_value(c, "login_type")
                         .unwrap_or_else(|| detect_login_type(&musickey).to_string());
                     let login_type_num: i64 = login_type.parse().unwrap_or(2);
@@ -512,23 +524,25 @@ async fn musicu_post(
                 comm.insert("tmeAppID".to_string(), json!("qqmusic"));
             }
         }
+        // top-level fields（匹配 web 端 t.data.uin / t.data.g_tk / t.data.g_tk_new_20200303）
+        if let Some(obj) = d.as_object_mut() {
+            let uin_val: i64 = cookie
+                .and_then(extract_uin_from_cookie)
+                .and_then(|u| u.parse().ok())
+                .unwrap_or(0);
+            obj.insert("uin".to_string(), json!(uin_val));
+            obj.insert("g_tk".to_string(), json!(g_tk));
+            obj.insert("g_tk_new_20200303".to_string(), json!(g_tk_new));
+        }
         d
     };
-
-    // Calculate g_tk from p_skey/skey (or default 5381 when not available).
-    let (skey_opt, _source) = cookie
-        .map(extract_skey_selection)
-        .unwrap_or((None, SkeySource::None));
-    let g_tk = skey_opt.map(|s| calculate_g_tk(&s)).unwrap_or(5381);
-
-    log::debug!("qqmusic musicu_post: sending request with g_tk={}, cookie_present={}", g_tk, cookie.is_some());
 
     let mut req = http.post(url)
         .query(&[
             ("format", "json"),
             ("g_tk", &g_tk.to_string()),
-            ("platform", "yqq"),
-            ("needNewCode", "0"),
+            ("platform", "yqq.json"),
+            ("needNewCode", "1"),
         ])
         .header("Referer", "https://y.qq.com/")
         .json(&data);

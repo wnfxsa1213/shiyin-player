@@ -66,22 +66,19 @@ pub enum SkeySource {
     PSkey,
     /// 来自 `skey`
     Skey,
-    /// 已废弃：qm_keyst 不再用于 g_tk 计算
-    QmKeyst,
-    /// 未找到任何可用 key（现代 QQ 音乐 API 使用 qqmusic_key cookie 认证，不依赖 g_tk）
+    /// 未找到任何可用 key（现代登录使用 qqmusic_key，由 musicu_post 直接提取）
     None,
 }
 
-/// 从 cookie 中选择用于计算 g_tk 的 key，并返回来源。
+/// 从 cookie 中选择用于计算传统 g_tk 的 key，并返回来源。
 ///
-/// 设计原因（任务 D.1 + 诊断需求）：
-/// - QQ 音乐/腾讯系接口通常更偏向使用 `p_skey` 计算 g_tk
-/// - 若缺失再回退到 `skey`
-/// - **不再使用 `qm_keyst`**：现代 QQ 音乐 API 不依赖 g_tk 认证，而是直接验证 `qqmusic_key` cookie
-/// - 如果没有 p_skey/skey，返回 None，让调用方使用默认 g_tk=5381
+/// 优先级：p_skey > skey > None
 ///
-/// 安全约束：
-/// - 本函数不打印任何 cookie value；调用方只能记录来源与长度。
+/// 背景：老式登录（PC 客户端、浏览器）会下发 p_skey/skey 用于 CSRF 计算。
+/// 现代 WebView 登录不下发这两者，而是提供 qqmusic_key；
+/// musicu_post 会直接读取 qqmusic_key 计算 g_tk 和 g_tk_new_20200303。
+///
+/// 安全约束：本函数不打印任何 cookie value，调用方只能记录来源与长度。
 pub fn extract_skey_selection(cookie: &str) -> (Option<String>, SkeySource) {
     let mut p_skey: Option<String> = None;
     let mut skey: Option<String> = None;
@@ -116,24 +113,19 @@ pub fn extract_skey_selection(cookie: &str) -> (Option<String>, SkeySource) {
     if let Some(v) = skey {
         return (Some(v), SkeySource::Skey);
     }
-    // 不再使用 qm_keyst 作为 g_tk 计算来源
-    // 现代 QQ 音乐 API 直接验证 qqmusic_key cookie，不依赖 g_tk
     (None, SkeySource::None)
 }
 
-/// Extract skey or p_skey from cookie string for g_tk calculation
-/// Returns None if neither p_skey nor skey is present (modern QQ Music API doesn't need g_tk)
+/// Extract skey or p_skey from cookie string for g_tk calculation.
+/// Returns None for modern WebView logins that only provide qqmusic_key.
+/// In that case, musicu_post uses qqmusic_key directly.
 pub fn extract_skey_from_cookie(cookie: &str) -> Option<String> {
     let (value, source) = extract_skey_selection(cookie);
     match source {
         SkeySource::PSkey => log::debug!("using p_skey for g_tk calculation"),
         SkeySource::Skey => log::debug!("using skey for g_tk calculation"),
-        SkeySource::QmKeyst => {
-            // This should never happen now as we removed qm_keyst from extract_skey_selection
-            log::warn!("qm_keyst should not be used for g_tk calculation");
-        }
         SkeySource::None => {
-            log::debug!("no p_skey/skey found, using default g_tk=5381 (modern QQ Music API uses qqmusic_key cookie for auth)");
+            log::debug!("no p_skey/skey found; musicu_post will use qqmusic_key for g_tk");
         }
     }
     value
