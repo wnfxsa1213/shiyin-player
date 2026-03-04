@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { LayoutGroup } from 'framer-motion';
 import { useUiStore } from '@/store/uiStore';
@@ -27,6 +27,9 @@ export default function App() {
   const { play, pause, updateProgress, setVolume } = usePlayerStore();
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
+  // Tracks whether the most recent player stop was caused by an error.
+  // Used to prevent the stopped-event handler from retrying a failing track.
+  const playerErrorRef = useRef(false);
 
   // 挂载全局动态主题萃取钩子
   useDynamicTheme();
@@ -99,6 +102,12 @@ export default function App() {
         if (state === 'playing') play();
         else if (state === 'paused') pause();
         else if (state === 'stopped') {
+          if (playerErrorRef.current) {
+            // Stop was caused by a playback error — don't auto-advance to avoid
+            // infinite retry loops (e.g. CDN 404 → stopped → playNext → same track).
+            playerErrorRef.current = false;
+            return;
+          }
           usePlayerStore.getState().playNext();
         }
       }),
@@ -107,6 +116,7 @@ export default function App() {
       }),
       onPlayerError((err) => {
         addToast('error', sanitizeError(err));
+        playerErrorRef.current = true;
       }),
       onPlayerSpectrum(({ magnitudes }) => {
         useVisualizerStore.getState().updateMagnitudes(magnitudes);
