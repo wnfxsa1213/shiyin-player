@@ -94,23 +94,12 @@ impl From<PlayerError> for IpcError {
     }
 }
 
-/// Helper function to map SourceError to IpcError with user-friendly messages.
-/// Sanitizes error messages to avoid exposing internal implementation details.
-/// Detailed errors are logged at debug level for troubleshooting.
+/// Helper function to map SourceError to IpcError.
+/// Delegates to From<SourceError> so new SourceError variants only need one mapping point.
+/// Frontend uses the `kind` field for user-facing messages, not the `message` string.
 fn map_source_error_to_ipc(error: &SourceError) -> IpcError {
-    // Log detailed error for debugging (not exposed to frontend)
     tracing::debug!(error = ?error, "source error details");
-
-    match error {
-        SourceError::Unauthorized => IpcError::Unauthorized("需要登录或登录已过期".into()),
-        SourceError::PaymentRequired => IpcError::PaymentRequired("需要VIP会员权益".into()),
-        SourceError::NotFound => IpcError::NotFound("未找到请求的资源".into()),
-        SourceError::RateLimited => IpcError::RateLimited("请求过于频繁，请稍后再试".into()),
-        SourceError::InvalidResponse(_) => IpcError::Internal("服务响应格式错误".into()),
-        SourceError::Unimplemented => IpcError::Internal("该功能暂未实现".into()),
-        SourceError::Internal(_) => IpcError::Internal("内部错误，请稍后重试".into()),
-        SourceError::Network(_) => IpcError::Network("网络连接失败，请检查网络设置".into()),
-    }
+    IpcError::from(error.clone())
 }
 
 async fn run_with_trace<T, F>(cmd: &'static str, trace_id: Option<String>, fut: F) -> Result<T, IpcError>

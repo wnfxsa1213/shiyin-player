@@ -108,14 +108,17 @@ pub async fn song_url(
 
     let value = musicu_post(http, base_url, &data, cookie).await?;
 
-    // Check vkey API response code to distinguish auth failures from missing tracks
+    // Check vkey API response code to distinguish auth failures from missing tracks.
+    // Only req_code=0 means the request was accepted; any other value is a hard failure.
     let req_code = value.pointer("/req/code").and_then(|v| v.as_i64()).unwrap_or(-1);
     if req_code != 0 {
         log::warn!("qqmusic song_url: vkey req.code={req_code} for track {track_id} (file_id={file_id})");
-        match req_code {
-            -100 | -200 | 40000 => return Err(SourceError::Unauthorized),
-            _ => {}
-        }
+        return match req_code {
+            -100 | -200 | 40000 => Err(SourceError::Unauthorized),
+            // Unknown non-zero codes are still fatal: continuing would leave purl empty
+            // and silently return NotFound, masking the real backend error.
+            _ => Err(SourceError::Internal(format!("vkey req.code={req_code}"))),
+        };
     }
 
     let vkey_data = value.pointer("/req/data")
@@ -141,15 +144,23 @@ pub async fn song_url(
         "qqmusic song_url: requesting track={track_id} file_id={file_id} (media_mid={})",
         media_mid.unwrap_or("none")
     );
-    // Track the last non-zero midurlinfo result code across all quality tiers.
-    // result=0 means success; result=104003 means VIP/membership required.
-    let mut last_midurl_result: i64 = 0;
+    // Scan midurlinfo with priority-based error aggregation:
+    // PaymentRequired (104001/104002/104003) > Unauthorized > any other non-zero code.
+    // Using priority aggregation rather than "last value wins" ensures that a PaymentRequired
+    // result in any tier is never overwritten by a later, less-specific error code.
+    let mut payment_blocked = false;
+    let mut any_unauthorized = false;
+    let mut first_unknown_result: i64 = 0;
     if let Some(list) = midurl_list {
         for (i, info) in list.iter().enumerate() {
             let purl = info.get("purl").and_then(|v| v.as_str()).unwrap_or("");
             let midurl_result = info.get("result").and_then(|v| v.as_i64()).unwrap_or(0);
-            if midurl_result != 0 {
-                last_midurl_result = midurl_result;
+            match midurl_result {
+                104001 | 104002 | 104003 => payment_blocked = true,
+                -100 | -200 | 40000 => any_unauthorized = true,
+                0 => {}
+                code if first_unknown_result == 0 => first_unknown_result = code,
+                _ => {}
             }
             if !purl.is_empty() {
                 let format = purl.rsplit('.').next().unwrap_or("mp3").to_string();
@@ -168,20 +179,21 @@ pub async fn song_url(
         }
     }
 
-    // Map known rights-restriction result codes to Unauthorized so the UI can
-    // show "VIP required" instead of "track not found".
-    // 104003 = 需要会员权益（VIP专享曲目）
-    match last_midurl_result {
-        104003 | 104001 | 104002 => {
-            log::warn!(
-                "qqmusic song_url: rights restricted (midurl_result={last_midurl_result}) for track {track_id} (file_id={file_id})"
-            );
-            return Err(SourceError::PaymentRequired);
-        }
-        _ => {}
+    // Apply priority: PaymentRequired > Unauthorized > unknown error > NotFound
+    if payment_blocked {
+        log::warn!(
+            "qqmusic song_url: rights restricted (VIP required) for track {track_id} (file_id={file_id})"
+        );
+        return Err(SourceError::PaymentRequired);
+    }
+    if any_unauthorized {
+        log::warn!(
+            "qqmusic song_url: midurlinfo auth error for track {track_id} (file_id={file_id})"
+        );
+        return Err(SourceError::Unauthorized);
     }
 
-    log::warn!("qqmusic song_url: all quality tiers returned empty purl for track {track_id} (file_id={file_id}, req_code={req_code}, last_midurl_result={last_midurl_result})");
+    log::warn!("qqmusic song_url: all quality tiers returned empty purl for track {track_id} (file_id={file_id}, req_code={req_code}, first_unknown_result={first_unknown_result})");
     Err(SourceError::NotFound)
 }
 

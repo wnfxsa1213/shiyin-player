@@ -49,11 +49,17 @@ impl Db {
                 );
                 CREATE INDEX IF NOT EXISTS idx_lyrics_cached_at ON lyrics(cached_at);",
             ).map_err(|e| e.to_string())?;
-            // Schema migration: add media_mid column if not yet present (QQ Music vkey fix)
-            match conn.execute_batch("ALTER TABLE tracks ADD COLUMN media_mid TEXT;") {
-                Ok(_) => {}
-                Err(e) if e.to_string().contains("duplicate column") => {}
-                Err(e) => return Err(e.to_string()),
+            // Schema migration: add media_mid column if not yet present (QQ Music vkey fix).
+            // Uses PRAGMA table_info to detect existing column instead of error string matching
+            // (which would be fragile across SQLite/rusqlite versions).
+            let has_media_mid: bool = conn.query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('tracks') WHERE name='media_mid'",
+                [],
+                |r| r.get(0),
+            ).unwrap_or(0i64) > 0;
+            if !has_media_mid {
+                conn.execute_batch("ALTER TABLE tracks ADD COLUMN media_mid TEXT;")
+                    .map_err(|e| e.to_string())?;
             }
         }
 
