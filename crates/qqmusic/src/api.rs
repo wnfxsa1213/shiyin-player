@@ -232,10 +232,17 @@ pub async fn user_playlists(
         return Ok(Vec::new());
     };
 
-    // Log encrypt_uin for first item to help diagnose playlist_detail enc_host_uin
+    // Log first item field names to help diagnose field name mismatches
     if let Some(first) = list.first() {
-        let enc_uin = first.get("encrypt_uin").and_then(|v| v.as_str()).unwrap_or("(absent)");
-        log::debug!("qqmusic user_playlists: first item encrypt_uin={}", enc_uin);
+        let keys: Vec<&str> = first.as_object()
+            .map(|m| m.keys().map(|k| k.as_str()).collect())
+            .unwrap_or_default();
+        let name_val = first.get("dirName").or_else(|| first.get("dissname"))
+            .or_else(|| first.get("diss_name")).and_then(|v| v.as_str()).unwrap_or("(absent)");
+        let cover_val = first.get("picUrl").or_else(|| first.get("imgurl"))
+            .and_then(|v| v.as_str()).map(|s| &s[..s.len().min(40)]).unwrap_or("(absent)");
+        log::debug!("qqmusic user_playlists: first item keys={:?}, name={:?}, cover_prefix={:?}",
+            keys, name_val, cover_val);
     }
 
     Ok(list.iter().filter_map(parse_playlist_brief).collect())
@@ -587,33 +594,41 @@ fn parse_song(song: &Value) -> Option<Track> {
 }
 
 fn parse_playlist_brief(item: &Value) -> Option<PlaylistBrief> {
-    // ID: GetPlaylistByUin 返回 tid；旧接口用 dissid
+    // ID: tid（GetPlaylistByUin camelCase）> dissid（旧接口）> dirId
     let id = item.get("tid")
         .or_else(|| item.get("dissid"))
+        .or_else(|| item.get("dirId"))
         .and_then(|v| {
             if let Some(s) = v.as_str() { Some(s.to_string()) }
             else { v.as_i64().map(|n| n.to_string()) }
         })?;
 
-    // 名称：GetPlaylistByUin 返回 diss_name；旧接口用 dissname
-    let name = item.get("diss_name")
+    // 名称：dirName（GetPlaylistByUin 实际主字段）> dissname > diss_name > title > name
+    // 来源：Codex 实测 + y.qq.com common.chunk.js 归一化函数
+    let name = item.get("dirName")
         .or_else(|| item.get("dissname"))
+        .or_else(|| item.get("diss_name"))
         .or_else(|| item.get("title"))
+        .or_else(|| item.get("name"))
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .unwrap_or(DEFAULT_PLAYLIST_NAME)
         .to_string();
 
-    // 封面：GetPlaylistByUin 返回 imgurl；旧接口用 logo
-    let cover_url = item.get("imgurl")
+    // 封面：picUrl（GetPlaylistByUin 实际主字段）> imgurl > logo > pic > diss_cover > albumPic
+    let cover_url = item.get("picUrl")
+        .or_else(|| item.get("imgurl"))
         .or_else(|| item.get("logo"))
+        .or_else(|| item.get("pic"))
         .or_else(|| item.get("diss_cover"))
+        .or_else(|| item.get("albumPic"))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    // 曲目数：GetPlaylistByUin 返回 song_cnt 或 songnum
-    let track_count = item.get("song_cnt")
+    // 曲目数：songNum（GetPlaylistByUin camelCase）> songnum > song_cnt
+    let track_count = item.get("songNum")
         .or_else(|| item.get("songnum"))
+        .or_else(|| item.get("song_cnt"))
         .and_then(|v| {
             if let Some(n) = v.as_u64() { Some(n) }
             else if let Some(s) = v.as_str() { s.parse::<u64>().ok() }
