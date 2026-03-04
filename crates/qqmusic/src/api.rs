@@ -70,6 +70,11 @@ pub async fn song_url(
     guid: &str,
     cookie: Option<&str>,
 ) -> Result<StreamInfo, SourceError> {
+    // Extract real uin from cookie for vkey generation (required for authenticated playback)
+    let uin = cookie
+        .and_then(extract_uin_from_cookie)
+        .unwrap_or_else(|| "0".to_string());
+
     // 构造多码率 filename 列表，单次请求尝试所有音质
     let filenames: Vec<String> = QUALITY_TIERS.iter()
         .map(|(prefix, ext, _)| format!("{prefix}{track_id}{ext}"))
@@ -78,7 +83,7 @@ pub async fn song_url(
     let songtypes: Vec<i32> = QUALITY_TIERS.iter().map(|_| 0).collect();
 
     let data = json!({
-        "comm": { "ct": API_CLIENT_TYPE, "cv": API_CLIENT_VERSION, "uin": "0" },
+        "comm": { "ct": API_CLIENT_TYPE, "cv": API_CLIENT_VERSION, "uin": uin },
         "req": {
             "module": "vkey.GetVkeyServer",
             "method": "CgiGetVkey",
@@ -87,7 +92,7 @@ pub async fn song_url(
                 "songmid": songmids,
                 "songtype": songtypes,
                 "filename": filenames,
-                "uin": "0",
+                "uin": uin,
                 "loginflag": 1,
                 "platform": "20"
             }
@@ -98,11 +103,17 @@ pub async fn song_url(
     let vkey_data = value.pointer("/req/data")
         .ok_or_else(|| SourceError::InvalidResponse("missing vkey data".into()))?;
 
-    let sip = vkey_data.get("sip")
+    let sip_raw = vkey_data.get("sip")
         .and_then(|v| v.as_array())
         .and_then(|v| v.first())
         .and_then(|v| v.as_str())
         .unwrap_or("https://dl.stream.qqmusic.qq.com/");
+    // Force HTTPS: QQ Music CDN rejects plain HTTP connections with 404
+    let sip = if sip_raw.starts_with("http://") {
+        format!("https://{}", &sip_raw[7..])
+    } else {
+        sip_raw.to_string()
+    };
 
     let midurl_list = vkey_data.get("midurlinfo")
         .and_then(|v| v.as_array());
