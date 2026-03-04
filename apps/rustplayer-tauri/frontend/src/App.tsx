@@ -10,6 +10,7 @@ import { loadSetting } from '@/lib/settings';
 import { ipc, onPlayerState, onPlayerProgress, onPlayerError, onPlayerSpectrum, onLoginSuccess, onLoginTimeout } from '@/lib/ipc';
 import { sanitizeError } from '@/lib/errorMessages';
 import { useDynamicTheme } from '@/hooks/useDynamicTheme';
+import { usePlaylistAutoRefresh } from '@/hooks/usePlaylistAutoRefresh';
 import Sidebar from '@/components/layout/Sidebar';
 import PlayerBar from '@/components/layout/PlayerBar';
 import HomeView from '@/views/HomeView';
@@ -29,6 +30,8 @@ export default function App() {
 
   // 挂载全局动态主题萃取钩子
   useDynamicTheme();
+  // 歌单自动刷新（启动 + 30 分钟定时 + 页面恢复可见）
+  usePlaylistAutoRefresh();
 
   // 将前端运行时错误落盘到后端日志（release 下也能排查）
   useEffect(() => {
@@ -79,7 +82,7 @@ export default function App() {
       } catch (err) {
         console.error('Failed to load settings:', err);
       }
-      usePlaylistStore.getState().fetchPlaylists();
+      // 歌单初始拉取由 usePlaylistAutoRefresh 在挂载时统一处理
     })();
   }, []);
 
@@ -111,7 +114,7 @@ export default function App() {
       onLoginSuccess((source) => {
         const name = source === 'netease' ? '网易云' : 'QQ音乐';
         addToast('success', `${name}登录成功`);
-        usePlaylistStore.getState().fetchPlaylists(source).catch(() => {
+        usePlaylistStore.getState().fetchPlaylists(source, true).catch(() => {
           addToast('error', `${name}歌单获取失败，请稍后重试`);
         });
       }),
