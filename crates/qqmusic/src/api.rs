@@ -232,6 +232,12 @@ pub async fn user_playlists(
         return Ok(Vec::new());
     };
 
+    // Log encrypt_uin for first item to help diagnose playlist_detail enc_host_uin
+    if let Some(first) = list.first() {
+        let enc_uin = first.get("encrypt_uin").and_then(|v| v.as_str()).unwrap_or("(absent)");
+        log::debug!("qqmusic user_playlists: first item encrypt_uin={}", enc_uin);
+    }
+
     Ok(list.iter().filter_map(parse_playlist_brief).collect())
 }
 
@@ -241,21 +247,25 @@ pub async fn playlist_detail(
     playlist_id: &str,
     cookie: Option<&str>,
 ) -> Result<Playlist, SourceError> {
-    // 输入验证：检查 playlist_id 长度和字符集
-    if playlist_id.is_empty() || playlist_id.len() > 64 {
+    // 输入验证：playlist_id 必须是纯数字（QQ 音乐歌单 ID 格式）
+    if playlist_id.is_empty() || playlist_id.len() > 20 {
         return Err(SourceError::InvalidResponse("invalid playlist_id length".into()));
     }
-    if !playlist_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
-        return Err(SourceError::InvalidResponse("invalid playlist_id format".into()));
-    }
+    let disstid: u64 = playlist_id.parse().map_err(|_| {
+        SourceError::InvalidResponse(format!("playlist_id must be numeric, got: {playlist_id}"))
+    })?;
+
+    let uin = cookie
+        .and_then(extract_uin_from_cookie)
+        .unwrap_or_else(|| "0".to_string());
 
     let data = json!({
-        "comm": { "ct": API_CLIENT_TYPE, "cv": API_CLIENT_VERSION, "uin": "0" },
+        "comm": { "ct": API_CLIENT_TYPE, "cv": API_CLIENT_VERSION, "uin": uin },
         "req": {
             "module": "music.srfDissInfo.aiDissInfo",
             "method": "uniform_get_Dissinfo",
             "param": {
-                "disstid": playlist_id,
+                "disstid": disstid,
                 "userinfo": 1,
                 "tag": 1,
                 "orderlist": 1,
@@ -267,6 +277,7 @@ pub async fn playlist_detail(
         }
     });
 
+    log::debug!("qqmusic playlist_detail: disstid={} (integer), uin={}", disstid, uin);
     let value = musicu_post(http, base_url, &data, cookie).await?;
     let code = value.pointer("/req/code").and_then(|v| v.as_i64()).unwrap_or(-1);
 
