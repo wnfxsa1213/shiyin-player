@@ -111,7 +111,9 @@ export default function App() {
       onLoginSuccess((source) => {
         const name = source === 'netease' ? '网易云' : 'QQ音乐';
         addToast('success', `${name}登录成功`);
-        usePlaylistStore.getState().fetchPlaylists();
+        usePlaylistStore.getState().fetchPlaylists(source).catch(() => {
+          addToast('error', `${name}歌单获取失败，请稍后重试`);
+        });
       }),
       onLoginTimeout((source) => {
         const name = source === 'netease' ? '网易云' : 'QQ音乐';
