@@ -252,12 +252,17 @@ pub async fn playlist_detail(
     let data = json!({
         "comm": { "ct": API_CLIENT_TYPE, "cv": API_CLIENT_VERSION, "uin": "0" },
         "req": {
-            "module": "music.srfDissInfo.airia",
+            "module": "music.srfDissInfo.aiDissInfo",
             "method": "uniform_get_Dissinfo",
             "param": {
                 "disstid": playlist_id,
                 "userinfo": 1,
-                "tag": 1
+                "tag": 1,
+                "orderlist": 1,
+                "song_begin": 0,
+                "song_num": 200,
+                "onlysonglist": 0,
+                "enc_host_uin": ""
             }
         }
     });
@@ -265,14 +270,14 @@ pub async fn playlist_detail(
     let value = musicu_post(http, base_url, &data, cookie).await?;
     let code = value.pointer("/req/code").and_then(|v| v.as_i64()).unwrap_or(-1);
 
-    // 细化错误码映射
     match code {
-        0 => {}, // 成功
-        -100 | -200 | 40000 => return Err(SourceError::Unauthorized), // 鉴权失败/需要登录
-        -404 | 404 => return Err(SourceError::NotFound), // 歌单不存在
-        -1001 | -1002 => return Err(SourceError::RateLimited), // 限流
+        0 => {},
+        -100 | -200 | 40000 => return Err(SourceError::Unauthorized),
+        -404 | 404 | 500003 => return Err(SourceError::NotFound),
+        -1001 | -1002 => return Err(SourceError::RateLimited),
         _ => {
             log::warn!("qqmusic playlist_detail: unexpected code {} for playlist {}", code, playlist_id);
+            log::info!("qqmusic playlist_detail: full response: {}", serde_json::to_string(&value).unwrap_or_default());
             return Err(SourceError::Internal(format!("api error code {}", code)));
         }
     }
