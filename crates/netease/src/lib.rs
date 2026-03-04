@@ -45,8 +45,8 @@ impl MusicSource for NeteaseClient {
     async fn search(&self, query: SearchQuery) -> Result<Vec<Track>, SourceError> {
         api::search(&self.http, &self.base_url, query, self.cookie().as_deref()).await
     }
-    async fn get_stream_url(&self, track_id: &str) -> Result<StreamInfo, SourceError> {
-        api::song_url(&self.http, &self.base_url, track_id, self.cookie().as_deref()).await
+    async fn get_stream_url(&self, track: &Track) -> Result<StreamInfo, SourceError> {
+        api::song_url(&self.http, &self.base_url, &track.id, self.cookie().as_deref()).await
     }
     async fn get_lyrics(&self, track_id: &str) -> Result<Vec<LyricsLine>, SourceError> {
         api::lyrics(&self.http, &self.base_url, track_id, self.cookie().as_deref()).await

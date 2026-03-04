@@ -276,6 +276,7 @@ fn parse_song(song: &Value) -> Option<Track> {
         duration_ms,
         source: MusicSourceId::Netease,
         cover_url,
+        media_mid: None,
     })
 }
 

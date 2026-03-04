@@ -12,6 +12,7 @@ export interface Track {
   durationMs: number;
   source: 'netease' | 'qqmusic';
   coverUrl?: string;
+  mediaMid?: string;
 }
 
 type PlayerState = 'idle' | 'loading' | 'playing' | 'paused' | 'stopped';

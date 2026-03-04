@@ -49,6 +49,12 @@ impl Db {
                 );
                 CREATE INDEX IF NOT EXISTS idx_lyrics_cached_at ON lyrics(cached_at);",
             ).map_err(|e| e.to_string())?;
+            // Schema migration: add media_mid column if not yet present (QQ Music vkey fix)
+            match conn.execute_batch("ALTER TABLE tracks ADD COLUMN media_mid TEXT;") {
+                Ok(_) => {}
+                Err(e) if e.to_string().contains("duplicate column") => {}
+                Err(e) => return Err(e.to_string()),
+            }
         }
 
         Ok(Self { pool })
@@ -74,9 +80,9 @@ impl Db {
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         for t in tracks {
             tx.execute(
-                "INSERT OR REPLACE INTO tracks (id, source, name, artist, album, duration_ms, cover_url, search_keyword, cached_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                rusqlite::params![t.id, src, t.name, t.artist, t.album, t.duration_ms, t.cover_url, keyword, now],
+                "INSERT OR REPLACE INTO tracks (id, source, name, artist, album, duration_ms, cover_url, search_keyword, cached_at, media_mid)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                rusqlite::params![t.id, src, t.name, t.artist, t.album, t.duration_ms, t.cover_url, keyword, now, t.media_mid],
             ).map_err(|e| e.to_string())?;
         }
         tx.commit().map_err(|e| e.to_string())?;
@@ -90,7 +96,7 @@ impl Db {
         let cutoff = now - CACHE_TTL_SECS;
         let src = source.storage_key();
         let mut stmt = conn.prepare(
-            "SELECT id, name, artist, album, duration_ms, cover_url FROM tracks
+            "SELECT id, name, artist, album, duration_ms, cover_url, media_mid FROM tracks
              WHERE source = ?1 AND search_keyword = ?2 AND cached_at > ?3
              ORDER BY rowid"
         ).map_err(|e| e.to_string())?;
@@ -103,6 +109,7 @@ impl Db {
                 duration_ms: row.get(4)?,
                 source,
                 cover_url: row.get(5)?,
+                media_mid: row.get(6)?,
             })
         }).map_err(|e| e.to_string())?;
         let tracks: Vec<Track> = rows.filter_map(|r| match r {

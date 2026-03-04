@@ -135,10 +135,10 @@ impl MusicSource for QqMusicClient {
         }
         result
     }
-    async fn get_stream_url(&self, track_id: &str) -> Result<StreamInfo, SourceError> {
-        let result = api::song_url(&self.http, &self.base_url, track_id, &self.guid, self.cookie().as_deref()).await;
+    async fn get_stream_url(&self, track: &Track) -> Result<StreamInfo, SourceError> {
+        let result = api::song_url(&self.http, &self.base_url, &track.id, track.media_mid.as_deref(), &self.guid, self.cookie().as_deref()).await;
         if matches!(result, Err(SourceError::Unauthorized)) && self.try_refresh().await {
-            return api::song_url(&self.http, &self.base_url, track_id, &self.guid, self.cookie().as_deref()).await;
+            return api::song_url(&self.http, &self.base_url, &track.id, track.media_mid.as_deref(), &self.guid, self.cookie().as_deref()).await;
         }
         result
     }

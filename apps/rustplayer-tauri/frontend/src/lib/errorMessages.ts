@@ -23,6 +23,8 @@ export function sanitizeError(error: unknown): string {
           return withTraceId('QQ音乐登录信息不完整或已过期，请重新登录', traceId);
         }
         return withTraceId('请先登录', traceId);
+      case 'payment_required':
+        return withTraceId('该曲目需要VIP会员', traceId);
       case 'not_found':
         return withTraceId('未找到相关内容', traceId);
       case 'rate_limited':

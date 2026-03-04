@@ -40,6 +40,10 @@ pub struct Track {
     pub duration_ms: u64,
     pub source: MusicSourceId,
     pub cover_url: Option<String>,
+    /// QQ Music only: the media file ID used for vkey filename construction.
+    /// Differs from `id` (songmid) for many tracks. Falls back to `id` when absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_mid: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,6 +146,8 @@ pub enum SourceError {
     RateLimited,
     #[error("invalid response: {0}")]
     InvalidResponse(String),
+    #[error("payment required")]
+    PaymentRequired,
     #[error("unimplemented")]
     Unimplemented,
     #[error("{0}")]
@@ -194,7 +200,7 @@ pub trait MusicSource: Send + Sync {
     fn id(&self) -> MusicSourceId;
     fn name(&self) -> &'static str;
     async fn search(&self, query: SearchQuery) -> Result<Vec<Track>, SourceError>;
-    async fn get_stream_url(&self, track_id: &str) -> Result<StreamInfo, SourceError>;
+    async fn get_stream_url(&self, track: &Track) -> Result<StreamInfo, SourceError>;
     async fn get_lyrics(&self, track_id: &str) -> Result<Vec<LyricsLine>, SourceError>;
     async fn get_album_art(&self, track_id: &str) -> Result<Option<String>, SourceError>;
     async fn login(&self, credentials: Credentials) -> Result<AuthToken, SourceError>;

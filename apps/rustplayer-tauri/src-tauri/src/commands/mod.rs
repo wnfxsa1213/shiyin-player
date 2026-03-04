@@ -62,6 +62,7 @@ static CLIENT_LOG_WINDOW: AtomicU64 = AtomicU64::new(0);
 pub enum IpcError {
     Network(String),
     Unauthorized(String),
+    PaymentRequired(String),
     NotFound(String),
     RateLimited(String),
     InvalidInput(String),
@@ -73,6 +74,7 @@ impl From<SourceError> for IpcError {
         match e {
             SourceError::Network(m) => IpcError::Network(m),
             SourceError::Unauthorized => IpcError::Unauthorized("unauthorized".into()),
+            SourceError::PaymentRequired => IpcError::PaymentRequired("payment required".into()),
             SourceError::NotFound => IpcError::NotFound("not found".into()),
             SourceError::RateLimited => IpcError::RateLimited("rate limited".into()),
             SourceError::InvalidResponse(m) => IpcError::Internal(m),
@@ -101,6 +103,7 @@ fn map_source_error_to_ipc(error: &SourceError) -> IpcError {
 
     match error {
         SourceError::Unauthorized => IpcError::Unauthorized("需要登录或登录已过期".into()),
+        SourceError::PaymentRequired => IpcError::PaymentRequired("需要VIP会员权益".into()),
         SourceError::NotFound => IpcError::NotFound("未找到请求的资源".into()),
         SourceError::RateLimited => IpcError::RateLimited("请求过于频繁，请稍后再试".into()),
         SourceError::InvalidResponse(_) => IpcError::Internal("服务响应格式错误".into()),
@@ -258,7 +261,7 @@ pub async fn play_track(
 ) -> Result<(), IpcError> {
     run_with_trace("play_track", trace_id, async {
         let src = registry.get(track.source).ok_or(IpcError::NotFound("source not found".into()))?;
-        let stream = src.get_stream_url(&track.id).await.map_err(IpcError::from)?;
+        let stream = src.get_stream_url(&track).await.map_err(IpcError::from)?;
         player.send(PlayerCommand::Load(track, stream)).await.map_err(IpcError::from)
     }).await
 }

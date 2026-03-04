@@ -67,9 +67,13 @@ pub async fn song_url(
     http: &reqwest::Client,
     base_url: &str,
     track_id: &str,
+    media_mid: Option<&str>,
     guid: &str,
     cookie: Option<&str>,
 ) -> Result<StreamInfo, SourceError> {
+    // Use media_mid for filename if available (differs from songmid for many tracks).
+    // The vkey CgiGetVkey endpoint matches filenames against file.media_mid, not songmid.
+    let file_id = media_mid.unwrap_or(track_id);
     // Extract real uin from cookie for vkey generation (required for authenticated playback).
     // Validate: uin must be non-empty digits; empty/non-numeric values fall back to "0".
     let uin = cookie
@@ -78,8 +82,9 @@ pub async fn song_url(
         .unwrap_or_else(|| "0".to_string());
 
     // 构造多码率 filename 列表，单次请求尝试所有音质
+    // filename uses file_id (media_mid) which may differ from songmid
     let filenames: Vec<String> = QUALITY_TIERS.iter()
-        .map(|(prefix, ext, _)| format!("{prefix}{track_id}{ext}"))
+        .map(|(prefix, ext, _)| format!("{prefix}{file_id}{ext}"))
         .collect();
     let songmids: Vec<&str> = QUALITY_TIERS.iter().map(|_| track_id).collect();
     let songtypes: Vec<i32> = QUALITY_TIERS.iter().map(|_| 0).collect();
@@ -102,6 +107,17 @@ pub async fn song_url(
     });
 
     let value = musicu_post(http, base_url, &data, cookie).await?;
+
+    // Check vkey API response code to distinguish auth failures from missing tracks
+    let req_code = value.pointer("/req/code").and_then(|v| v.as_i64()).unwrap_or(-1);
+    if req_code != 0 {
+        log::warn!("qqmusic song_url: vkey req.code={req_code} for track {track_id} (file_id={file_id})");
+        match req_code {
+            -100 | -200 | 40000 => return Err(SourceError::Unauthorized),
+            _ => {}
+        }
+    }
+
     let vkey_data = value.pointer("/req/data")
         .ok_or_else(|| SourceError::InvalidResponse("missing vkey data".into()))?;
 
@@ -121,9 +137,20 @@ pub async fn song_url(
         .and_then(|v| v.as_array());
 
     // 按音质梯度顺序遍历，返回第一个可用的 URL
+    log::debug!(
+        "qqmusic song_url: requesting track={track_id} file_id={file_id} (media_mid={})",
+        media_mid.unwrap_or("none")
+    );
+    // Track the last non-zero midurlinfo result code across all quality tiers.
+    // result=0 means success; result=104003 means VIP/membership required.
+    let mut last_midurl_result: i64 = 0;
     if let Some(list) = midurl_list {
         for (i, info) in list.iter().enumerate() {
             let purl = info.get("purl").and_then(|v| v.as_str()).unwrap_or("");
+            let midurl_result = info.get("result").and_then(|v| v.as_i64()).unwrap_or(0);
+            if midurl_result != 0 {
+                last_midurl_result = midurl_result;
+            }
             if !purl.is_empty() {
                 let format = purl.rsplit('.').next().unwrap_or("mp3").to_string();
                 let bitrate = QUALITY_TIERS.get(i).map(|(_, _, br)| *br);
@@ -132,11 +159,29 @@ pub async fn song_url(
                     bitrate.unwrap_or(0)
                 );
                 return Ok(StreamInfo { url: format!("{sip}{purl}"), format, bitrate });
+            } else {
+                log::debug!(
+                    "qqmusic song_url: tier {} empty purl for track {track_id} (midurl_result={midurl_result})",
+                    QUALITY_TIERS.get(i).map(|(p, _, _)| *p).unwrap_or("?")
+                );
             }
         }
     }
 
-    log::warn!("qqmusic song_url: all quality tiers returned empty purl for track {track_id}");
+    // Map known rights-restriction result codes to Unauthorized so the UI can
+    // show "VIP required" instead of "track not found".
+    // 104003 = 需要会员权益（VIP专享曲目）
+    match last_midurl_result {
+        104003 | 104001 | 104002 => {
+            log::warn!(
+                "qqmusic song_url: rights restricted (midurl_result={last_midurl_result}) for track {track_id} (file_id={file_id})"
+            );
+            return Err(SourceError::PaymentRequired);
+        }
+        _ => {}
+    }
+
+    log::warn!("qqmusic song_url: all quality tiers returned empty purl for track {track_id} (file_id={file_id}, req_code={req_code}, last_midurl_result={last_midurl_result})");
     Err(SourceError::NotFound)
 }
 
@@ -594,6 +639,13 @@ fn parse_song(song: &Value) -> Option<Track> {
         .or_else(|| song.get("album").and_then(|v| v.get("mid")).and_then(|v| v.as_str()));
     let cover_url = album_mid
         .map(|mid| format!("https://y.qq.com/music/photo_new/T002R300x300M000{mid}.jpg"));
+    // file.media_mid is the actual media file ID used for vkey filename construction.
+    // It often differs from songmid (track.id), especially for VIP/paid tracks.
+    let media_mid = song.get("file")
+        .and_then(|f| f.get("media_mid").or_else(|| f.get("strMediaMid")))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty() && *s != mid)
+        .map(|s| s.to_string());
 
     Some(Track {
         id: mid.to_string(),
@@ -603,6 +655,7 @@ fn parse_song(song: &Value) -> Option<Track> {
         duration_ms,
         source: MusicSourceId::Qqmusic,
         cover_url,
+        media_mid,
     })
 }
 
