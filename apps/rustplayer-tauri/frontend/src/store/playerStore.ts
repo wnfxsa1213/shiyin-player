@@ -123,14 +123,21 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       : [],
   })),
   playFromQueue: (index) => {
-    const { queue } = get();
+    const state = get();
+    const { queue, currentTrack: previousTrack, queueIndex: previousIndex, state: previousState, durationMs: previousDuration } = state;
     if (index >= 0 && index < queue.length) {
       const track = queue[index];
       const seq = ++playSeq;
       ipc.playTrack(track).catch((err) => {
         if (seq !== playSeq) return; // stale request, ignore
         useToastStore.getState().addToast('error', `播放失败: ${sanitizeError(err)}`);
-        set({ state: 'idle' });
+        // Rollback to previous track on failure to maintain UI consistency
+        set({
+          currentTrack: previousTrack,
+          queueIndex: previousIndex,
+          state: previousState,
+          durationMs: previousDuration,
+        });
       });
       set((s) => ({
         queueIndex: index,
