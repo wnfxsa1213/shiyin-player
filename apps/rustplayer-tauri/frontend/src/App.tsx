@@ -103,10 +103,13 @@ export default function App() {
         else if (state === 'paused') pause();
         else if (state === 'stopped') {
           if (playerErrorRef.current) {
-            // Stop was caused by a playback error — don't auto-advance to avoid
-            // infinite retry loops (e.g. CDN 404 → stopped → playNext → same track).
             playerErrorRef.current = false;
-            return;
+            // Playback failed. Only skip auto-advance when playNext() would replay
+            // the same failing track (single-track queue or repeat-one mode).
+            // For multi-track queues, advance normally so the failing track is skipped.
+            const { queue, playMode } = usePlayerStore.getState();
+            const wouldReplaySame = playMode === 'repeat-one' || queue.length <= 1;
+            if (wouldReplaySame) return;
           }
           usePlayerStore.getState().playNext();
         }

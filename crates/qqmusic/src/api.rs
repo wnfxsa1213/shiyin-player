@@ -70,9 +70,11 @@ pub async fn song_url(
     guid: &str,
     cookie: Option<&str>,
 ) -> Result<StreamInfo, SourceError> {
-    // Extract real uin from cookie for vkey generation (required for authenticated playback)
+    // Extract real uin from cookie for vkey generation (required for authenticated playback).
+    // Validate: uin must be non-empty digits; empty/non-numeric values fall back to "0".
     let uin = cookie
         .and_then(extract_uin_from_cookie)
+        .filter(|u| !u.is_empty() && u.chars().all(|c| c.is_ascii_digit()))
         .unwrap_or_else(|| "0".to_string());
 
     // 构造多码率 filename 列表，单次请求尝试所有音质
@@ -243,17 +245,17 @@ pub async fn user_playlists(
         return Ok(Vec::new());
     };
 
-    // Log first item field names to help diagnose field name mismatches
+    // Log field names of first item to diagnose field name mismatches (values omitted for privacy)
     if let Some(first) = list.first() {
-        let keys: Vec<&str> = first.as_object()
+        let mut keys: Vec<&str> = first.as_object()
             .map(|m| m.keys().map(|k| k.as_str()).collect())
             .unwrap_or_default();
-        let name_val = first.get("dirName").or_else(|| first.get("dissname"))
-            .or_else(|| first.get("diss_name")).and_then(|v| v.as_str()).unwrap_or("(absent)");
-        let cover_val = first.get("picUrl").or_else(|| first.get("imgurl"))
-            .and_then(|v| v.as_str()).map(|s| &s[..s.len().min(40)]).unwrap_or("(absent)");
-        log::debug!("qqmusic user_playlists: first item keys={:?}, name={:?}, cover_prefix={:?}",
-            keys, name_val, cover_val);
+        keys.sort_unstable();
+        let has_name = first.get("dirName").or_else(|| first.get("dissname"))
+            .or_else(|| first.get("diss_name")).is_some();
+        let has_cover = first.get("picUrl").or_else(|| first.get("imgurl")).is_some();
+        log::debug!("qqmusic user_playlists: first item keys={:?}, has_name={}, has_cover={}",
+            keys, has_name, has_cover);
     }
 
     Ok(list.iter().filter_map(parse_playlist_brief).collect())
