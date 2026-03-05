@@ -52,12 +52,12 @@ impl Db {
             // Schema migration: add media_mid column if not yet present (QQ Music vkey fix).
             // Uses PRAGMA table_info to detect existing column instead of error string matching
             // (which would be fragile across SQLite/rusqlite versions).
-            let has_media_mid: bool = conn.query_row(
+            let media_mid_count: i64 = conn.query_row(
                 "SELECT COUNT(*) FROM pragma_table_info('tracks') WHERE name='media_mid'",
                 [],
                 |r| r.get(0),
             ).map_err(|e| format!("Failed to check schema: {}", e))?;
-            if !has_media_mid {
+            if media_mid_count == 0 {
                 conn.execute_batch("ALTER TABLE tracks ADD COLUMN media_mid TEXT;")
                     .map_err(|e| e.to_string())?;
             }

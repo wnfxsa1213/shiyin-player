@@ -178,5 +178,5 @@ cargo test --package rustplayer-tauri
 
 ## 参考文件
 
-- 后端测试示例: `crates/qqmusic/src/api_test.rs`
-- 前端测试示例: `apps/rustplayer-tauri/frontend/src/store/playerStore.test.ts`
+- 后端测试位置（计划中）: `crates/qqmusic/tests/api_test.rs`
+- 前端测试位置（计划中）: `apps/rustplayer-tauri/frontend/src/store/__tests__/playerStore.test.ts`

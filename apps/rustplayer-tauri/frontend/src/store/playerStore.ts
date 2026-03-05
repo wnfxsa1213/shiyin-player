@@ -29,7 +29,6 @@ interface PlayerStore {
   playMode: PlayMode;
   shuffleOrder: number[];
   recentTracks: Track[];
-  playSeq: number;
   play: () => void;
   pause: () => void;
   seek: (position: number) => void;
@@ -55,6 +54,10 @@ function generateShuffleOrder(length: number): number[] {
   return order;
 }
 
+// Non-reactive sequence counter for stale play-request detection.
+// Kept outside the store to avoid triggering unnecessary re-renders.
+let playSeq = 0;
+
 export const usePlayerStore = create<PlayerStore>((set, get) => ({
   currentTrack: null,
   state: 'idle',
@@ -66,7 +69,6 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   playMode: 'sequence',
   shuffleOrder: [],
   recentTracks: [],
-  playSeq: 0,
 
   play: () => set({ state: 'playing' }),
   pause: () => set({ state: 'paused' }),
@@ -115,7 +117,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     }
     set({ queue: newQueue, queueIndex: newIndex });
   },
-  clearQueue: () => { set((s) => ({ playSeq: s.playSeq + 1, queue: [], queueIndex: -1, shuffleOrder: [], currentTrack: null, state: 'idle' })); },
+  clearQueue: () => { ++playSeq; set({ queue: [], queueIndex: -1, shuffleOrder: [], currentTrack: null, state: 'idle' }); },
   setPlayMode: (mode) => set((state) => ({
     playMode: mode,
     shuffleOrder: mode === 'shuffle' && state.queue.length > 0
@@ -123,23 +125,23 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       : [],
   })),
   playFromQueue: (index) => {
-    const state = get();
-    const { queue, currentTrack: previousTrack, queueIndex: previousIndex, state: previousPlayerState, durationMs: previousDuration, playSeq } = state;
+    const { queue, currentTrack: previousTrack, queueIndex: previousIndex, state: previousState, durationMs: previousDuration, positionMs: previousPosition, recentTracks: previousRecent } = get();
     if (index >= 0 && index < queue.length) {
       const track = queue[index];
-      const seq = playSeq + 1;
-      set({ playSeq: seq });
+      const seq = ++playSeq;
       ipc.playTrack(track).catch((err) => {
         // Only rollback if this is still the most recent play request
         // This prevents stale failures from overwriting newer successful plays
-        if (seq !== get().playSeq) return;
+        if (seq !== playSeq) return;
         useToastStore.getState().addToast('error', `播放失败: ${sanitizeError(err)}`);
         // Rollback to previous track on failure to maintain UI consistency
         set({
           currentTrack: previousTrack,
           queueIndex: previousIndex,
-          state: previousPlayerState,
+          state: previousState,
           durationMs: previousDuration,
+          positionMs: previousPosition,
+          recentTracks: previousRecent,
         });
       });
       set((s) => ({

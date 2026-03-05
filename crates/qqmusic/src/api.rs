@@ -207,7 +207,7 @@ pub async fn lyrics(
     http: &reqwest::Client,
     track_id: &str,
 ) -> Result<Vec<LyricsLine>, SourceError> {
-    // Retry up to 2 times on network errors
+    // Retry up to 2 times on network errors and transient business errors
     let mut last_error = None;
     for attempt in 0..2 {
         if attempt > 0 {
@@ -243,30 +243,32 @@ pub async fn lyrics(
         };
 
         // Validate business code (QQ Music API returns code field for errors)
-        let code = value.get("code").and_then(|v| v.as_i64()).unwrap_or(0);
-        let retcode = value.get("retcode").and_then(|v| v.as_i64()).unwrap_or(0);
-        let subcode = value.get("subcode").and_then(|v| v.as_i64()).unwrap_or(0);
+        // Use as_i64() with string-to-number fallback since the API may return codes as strings
+        let code = value.get("code").and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).unwrap_or(0);
+        let retcode = value.get("retcode").and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).unwrap_or(0);
+        let subcode = value.get("subcode").and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).unwrap_or(0);
 
         if code != 0 || retcode != 0 || subcode != 0 {
             log::warn!(
                 "qqmusic lyrics: API error for track {track_id}: code={code}, retcode={retcode}, subcode={subcode}"
             );
-            // Common error codes: -1310 (missing referer/auth), -1 (general error)
-            // For deterministic business errors (auth, invalid params), return immediately
-            // instead of retrying, as retry won't help and adds ~500ms delay
-            let error = match code {
-                -1310 | -100 | -200 => SourceError::Unauthorized,
-                _ => SourceError::InvalidResponse(
-                    format!("API error code={code}, retcode={retcode}, subcode={subcode}")
-                ),
-            };
-            return Err(error);
+            // Deterministic auth/param errors: return immediately, retry won't help.
+            // Check all three code fields — any one indicating auth failure is definitive.
+            let is_auth_error = [code, retcode, subcode].iter().any(|c| matches!(c, -1310 | -100 | -200));
+            if is_auth_error {
+                return Err(SourceError::Unauthorized);
+            }
+            // Transient or unknown errors: allow retry loop to continue
+            last_error = Some(SourceError::InvalidResponse(
+                format!("API error code={code}, retcode={retcode}, subcode={subcode}")
+            ));
+            continue;
         }
 
         let lrc = value.get("lyric").and_then(|v| v.as_str()).unwrap_or("");
         let trans = value.get("trans").and_then(|v| v.as_str()).unwrap_or("");
 
-        log::info!(
+        log::debug!(
             "qqmusic lyrics: track {track_id} - lyric_len={}, trans_len={}, code={code}",
             lrc.len(), trans.len()
         );
@@ -320,19 +322,19 @@ pub async fn user_playlists(
                 "qqmusic user_playlists: unauthorized (code {}), cookie present = {}",
                 code, cookie.is_some()
             );
-            log::info!("qqmusic user_playlists: full response: {}", serde_json::to_string(&value).unwrap_or_default());
+            log::debug!("qqmusic user_playlists: full response: {}", serde_json::to_string(&value).unwrap_or_default());
             return Err(SourceError::Unauthorized);
         }
         -1001 | -1002 => return Err(SourceError::RateLimited),
         _ => {
             log::warn!("qqmusic user_playlists: unexpected code {}", code);
-            log::info!("qqmusic user_playlists: full response: {}", serde_json::to_string(&value).unwrap_or_default());
+            log::debug!("qqmusic user_playlists: full response: {}", serde_json::to_string(&value).unwrap_or_default());
             return Err(SourceError::Internal(format!("api error code {}", code)));
         }
     }
 
     let Some(list) = value.pointer("/req/data/v_playlist").and_then(|v| v.as_array()) else {
-        log::info!("qqmusic user_playlists: v_playlist absent, full resp: {}", serde_json::to_string(&value).unwrap_or_default());
+        log::debug!("qqmusic user_playlists: v_playlist absent, full resp: {}", serde_json::to_string(&value).unwrap_or_default());
         return Ok(Vec::new());
     };
 
@@ -399,7 +401,7 @@ pub async fn playlist_detail(
         -1001 | -1002 => return Err(SourceError::RateLimited),
         _ => {
             log::warn!("qqmusic playlist_detail: unexpected code {} for playlist {}", code, playlist_id);
-            log::info!("qqmusic playlist_detail: full response: {}", serde_json::to_string(&value).unwrap_or_default());
+            log::debug!("qqmusic playlist_detail: full response: {}", serde_json::to_string(&value).unwrap_or_default());
             return Err(SourceError::Internal(format!("api error code {}", code)));
         }
     }

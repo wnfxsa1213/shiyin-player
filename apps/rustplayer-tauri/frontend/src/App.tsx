@@ -22,6 +22,22 @@ import QueuePanel from '@/components/player/QueuePanel';
 import ToastContainer from '@/components/common/ToastContainer';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 
+/** Declarative ARIA live region that announces playback state and track changes to screen readers. */
+function PlayerAnnouncer() {
+  const { state: playerState, currentTrack: track } = usePlayerStore((s) => ({ state: s.state, currentTrack: s.currentTrack }));
+  let text = '';
+  if (playerState === 'playing' && track) {
+    text = `正在播放：${track.name} - ${track.artist}`;
+  } else if (playerState === 'paused') {
+    text = '播放已暂停';
+  }
+  return (
+    <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+      {text}
+    </div>
+  );
+}
+
 export default function App() {
   const theme = useUiStore((s) => s.theme);
   const { play, pause, updateProgress, setVolume } = usePlayerStore();
@@ -97,22 +113,10 @@ export default function App() {
 
   useEffect(() => {
     const addToast = useToastStore.getState().addToast;
-    const announcer = document.getElementById('player-status-announcer');
     const unsubs = [
       onPlayerState((state) => {
-        if (state === 'playing') {
-          play();
-          const track = usePlayerStore.getState().currentTrack;
-          if (announcer && track) {
-            announcer.textContent = `正在播放：${track.name} - ${track.artist}`;
-          }
-        }
-        else if (state === 'paused') {
-          pause();
-          if (announcer) {
-            announcer.textContent = '播放已暂停';
-          }
-        }
+        if (state === 'playing') play();
+        else if (state === 'paused') pause();
         else if (state === 'stopped') {
           if (playerErrorRef.current) {
             playerErrorRef.current = false;
@@ -200,8 +204,7 @@ export default function App() {
     <MemoryRouter>
       <LayoutGroup>
         <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[9999] focus:p-4 focus:bg-accent focus:text-white focus:rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent">跳转到主内容</a>
-        {/* ARIA live region for screen reader announcements */}
-        <div role="status" aria-live="polite" aria-atomic="true" className="sr-only" id="player-status-announcer"></div>
+        <PlayerAnnouncer />
         <div className="flex h-screen bg-bg-base text-text-primary overflow-hidden pb-20">
           <Sidebar />
           <main id="main-content" className="relative flex-1 overflow-y-auto bg-bg-base" tabIndex={-1}>
