@@ -24,7 +24,10 @@ import ErrorBoundary from '@/components/common/ErrorBoundary';
 
 /** Declarative ARIA live region that announces playback state and track changes to screen readers. */
 function PlayerAnnouncer() {
-  const { state: playerState, currentTrack: track } = usePlayerStore((s) => ({ state: s.state, currentTrack: s.currentTrack }));
+  // Individual primitive selectors — avoids creating a new object on every selector call,
+  // which would cause infinite re-renders via useSyncExternalStore mismatch detection.
+  const playerState = usePlayerStore((s) => s.state);
+  const track = usePlayerStore((s) => s.currentTrack);
   let text = '';
   if (playerState === 'playing' && track) {
     text = `正在播放：${track.name} - ${track.artist}`;
