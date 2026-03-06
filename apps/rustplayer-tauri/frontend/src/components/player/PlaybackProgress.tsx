@@ -11,27 +11,55 @@ export default function PlaybackProgress() {
   const isDraggingRef = useRef(false);
 
   useEffect(() => {
+    let rafId: number;
+    // Local interpolation state — updated by store subscription, read by RAF loop.
+    let lastServerPos = usePlayerStore.getState().positionMs;
+    let lastServerTime = performance.now();
+    let lastDur = usePlayerStore.getState().durationMs;
+    let isPlaying = usePlayerStore.getState().state === 'playing';
+
+    // Subscribe to store for authoritative position/duration updates (~5Hz from backend).
     const unsubscribe = usePlayerStore.subscribe((state) => {
+      isPlaying = state.state === 'playing';
+      lastServerPos = state.positionMs;
+      lastServerTime = performance.now();
+      lastDur = state.durationMs;
+
+      if (durationSpanRef.current) {
+        durationSpanRef.current.textContent = formatTime(lastDur);
+      }
+      if (inputRef.current) {
+        inputRef.current.max = (lastDur || 100).toString();
+      }
+    });
+
+    // RAF loop for smooth 60fps progress bar interpolation.
+    // Between backend updates, we locally extrapolate position assuming 1x playback rate.
+    const tick = () => {
+      rafId = requestAnimationFrame(tick);
       if (isDraggingRef.current) return;
 
-      const pos = state.positionMs;
-      const dur = state.durationMs;
+      const now = performance.now();
+      const elapsed = isPlaying ? now - lastServerTime : 0;
+      const pos = Math.min(lastServerPos + elapsed, lastDur);
 
       if (timeSpanRef.current) {
         timeSpanRef.current.textContent = formatTime(pos);
       }
-      if (durationSpanRef.current) {
-        durationSpanRef.current.textContent = formatTime(dur);
-      }
       if (inputRef.current) {
-        const max = dur || 100;
-        inputRef.current.max = max.toString();
-        inputRef.current.value = pos.toString();
+        const max = lastDur || 100;
         const pct = max > 0 ? (pos / max) * 100 : 0;
+        inputRef.current.value = pos.toString();
         inputRef.current.style.setProperty('--progress', `${pct}%`);
       }
-    });
-    return unsubscribe;
+    };
+
+    rafId = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {

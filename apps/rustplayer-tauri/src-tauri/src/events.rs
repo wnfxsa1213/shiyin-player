@@ -17,9 +17,14 @@ pub fn spawn_event_forwarder(app: AppHandle, player: &Arc<Player>) {
                             ("player://state", serde_json::Value::String(state_label(state).into()))
                         }
                         PlayerEvent::Progress { position_ms, duration_ms } => {
+                            let emitted_at_ms = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64;
                             ("player://progress", serde_json::json!({
                                 "positionMs": position_ms,
                                 "durationMs": duration_ms,
+                                "emittedAtMs": emitted_at_ms,
                             }))
                         }
                         PlayerEvent::Spectrum { magnitudes } => {

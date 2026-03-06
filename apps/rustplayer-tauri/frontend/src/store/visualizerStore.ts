@@ -16,23 +16,27 @@ export const COLOR_PRESETS: ColorPreset[] = [
   { name: 'mono', primary: '#F1F3F9', secondary: '#A1A8C1', particle: '#6B7280' },
 ];
 
+/**
+ * Shared mutable ref for spectrum magnitude data.
+ * Written by the IPC spectrum event callback, read by SpectrumVisualizer's RAF loop.
+ * Bypasses Zustand entirely to avoid triggering ~15fps store updates and React re-renders.
+ */
+export const spectrumDataRef = { current: new Float32Array(64) };
+
 interface VisualizerStore {
   enabled: boolean;
   showParticles: boolean;
   colors: { primary: string; secondary: string; particle: string };
-  magnitudes: number[];
   setEnabled: (v: boolean) => void;
   setShowParticles: (v: boolean) => void;
   setColors: (c: { primary: string; secondary: string; particle: string }) => void;
   applyPreset: (name: string) => void;
-  updateMagnitudes: (m: number[]) => void;
 }
 
 export const useVisualizerStore = create<VisualizerStore>((set) => ({
   enabled: true,
   showParticles: true,
   colors: COLOR_PRESETS[0],
-  magnitudes: new Array(64).fill(0),
   setEnabled: (enabled) => {
     set({ enabled });
     saveSetting('visualizer.enabled', enabled).catch(console.error);
@@ -53,5 +57,4 @@ export const useVisualizerStore = create<VisualizerStore>((set) => ({
       saveSetting('visualizer.colors', colors).catch(console.error);
     }
   },
-  updateMagnitudes: (magnitudes) => set({ magnitudes }),
 }));

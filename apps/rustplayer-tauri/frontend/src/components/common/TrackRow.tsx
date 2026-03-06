@@ -9,8 +9,12 @@ interface Props {
 }
 
 function TrackRow({ track, index }: Props) {
-  const currentTrack = usePlayerStore((s) => s.currentTrack);
-  const isCurrent = currentTrack?.id === track.id && currentTrack?.source === track.source;
+  // Precise selector: returns a stable boolean, so memo() prevents re-render
+  // unless this specific row's "is current" status actually changes.
+  // Previously subscribed to the full currentTrack object, causing all 100+ rows to re-render.
+  const isCurrent = usePlayerStore(
+    (s) => s.currentTrack?.id === track.id && s.currentTrack?.source === track.source
+  );
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
   const handlePlay = () => {

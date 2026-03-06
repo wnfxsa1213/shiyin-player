@@ -138,24 +138,27 @@ pub async fn search_music(
             None => registry.all().to_vec(),
         };
 
-        // Parallel search across all sources
+        // Parallel search across all sources with soft timeout.
+        // Returns partial results after 500ms once any source responds,
+        // rather than waiting for the slowest source.
         let parent_span = tracing::Span::current();
-        let mut handles = Vec::new();
+        let mut join_set = tokio::task::JoinSet::new();
         // Clone shared resources once before the loop
         let cache_arc = cache.inner().clone();
         let db_arc = db.inner().clone();
         let query_str = query.clone();
         let search_query = sq.clone();
 
-        for src in sources {
+        for (source_idx, src) in sources.iter().enumerate() {
             let sid = src.id();
+            let src = Arc::clone(src);
             let cache = Arc::clone(&cache_arc);
             let db = Arc::clone(&db_arc);
             let kw = query_str.clone();
             let sq = search_query.clone();
             let span = parent_span.clone();
-            handles.push(tokio::spawn(async move {
-                match tokio::time::timeout(SOURCE_TIMEOUT, async {
+            join_set.spawn(async move {
+                let tracks_result: Result<Vec<Track>, (&str, SourceError)> = match tokio::time::timeout(SOURCE_TIMEOUT, async {
                 // L1: memory LRU
                 if let Some(cached) = cache.get(sid, &kw) {
                     return Ok(cached);
@@ -202,22 +205,58 @@ pub async fn search_music(
                         tracing::warn!(source = ?sid, "search timed out");
                         Err((sid.display_name(), SourceError::Network(format!("{} search timed out", sid.display_name()))))
                     }
-                }
-            }.instrument(span)));
+                };
+                (source_idx, tracks_result)
+            }.instrument(span));
         }
 
-        let mut results = Vec::new();
+        // Collect results tagged with source_idx for stable ordering
+        let mut indexed_results: Vec<(usize, Vec<Track>)> = Vec::new();
         let mut errors: Vec<(&str, SourceError)> = Vec::new();
-        for handle in handles {
-            match handle.await {
-                Ok(Ok(tracks)) => results.extend(tracks),
-                Ok(Err((label, e))) => errors.push((label, e)),
-                Err(e) => {
+        // Soft deadline: once we have non-empty results from any source,
+        // allow up to 500ms for remaining sources before returning partial results.
+        let mut soft_deadline: Option<tokio::time::Instant> = None;
+
+        loop {
+            if join_set.is_empty() { break; }
+
+            let next_result = if let Some(deadline) = soft_deadline {
+                match tokio::time::timeout_at(deadline, join_set.join_next()).await {
+                    Ok(r) => r,
+                    Err(_) => {
+                        tracing::debug!(
+                            result_count = indexed_results.len(),
+                            remaining = join_set.len(),
+                            "search soft timeout reached, returning partial results"
+                        );
+                        join_set.abort_all();
+                        break;
+                    }
+                }
+            } else {
+                join_set.join_next().await
+            };
+
+            match next_result {
+                Some(Ok((idx, Ok(tracks)))) => {
+                    if !tracks.is_empty() && soft_deadline.is_none() {
+                        soft_deadline = Some(tokio::time::Instant::now() + Duration::from_millis(500));
+                    }
+                    indexed_results.push((idx, tracks));
+                }
+                Some(Ok((_, Err((label, e))))) => errors.push((label, e)),
+                Some(Err(e)) => {
                     tracing::error!(error = ?e, "search task join error");
                     errors.push(("task", SourceError::Internal(format!("join: {e}"))));
                 }
+                None => break,
             }
         }
+
+        // Flatten results in registration order (stable across runs)
+        indexed_results.sort_by_key(|(idx, _)| *idx);
+        let results: Vec<Track> = indexed_results.into_iter().flat_map(|(_, tracks)| tracks).collect();
+
         if results.is_empty() && !errors.is_empty() {
             // Log detailed error summary for debugging
             let summary = errors.iter()

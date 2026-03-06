@@ -6,6 +6,7 @@ use rand::distributions::Alphanumeric;
 use rand::Rng;
 use rsa::BigUint;
 use rustplayer_core::SourceError;
+use std::sync::OnceLock;
 
 const PRESET_KEY: &str = "0CoJUm6Qyw8W8jud";
 const IV: &str = "0102030405060708";
@@ -33,18 +34,23 @@ fn random_key() -> String {
         .collect()
 }
 
+static RSA_EXP: OnceLock<BigUint> = OnceLock::new();
+static RSA_MODULUS: OnceLock<BigUint> = OnceLock::new();
+
 fn rsa_encrypt(sec_key: &str) -> Result<String, SourceError> {
     let reversed: String = sec_key.chars().rev().collect();
     let hex: String = reversed.as_bytes().iter().map(|b| format!("{b:02x}")).collect();
 
     let text = BigUint::parse_bytes(hex.as_bytes(), 16)
         .ok_or_else(|| SourceError::Internal("rsa text parse failed".into()))?;
-    let exp = BigUint::parse_bytes(PUB_KEY.as_bytes(), 16)
-        .ok_or_else(|| SourceError::Internal("rsa exp parse failed".into()))?;
-    let modulus = BigUint::parse_bytes(MODULUS.as_bytes(), 16)
-        .ok_or_else(|| SourceError::Internal("rsa modulus parse failed".into()))?;
+    let exp = RSA_EXP.get_or_init(|| {
+        BigUint::parse_bytes(PUB_KEY.as_bytes(), 16).expect("invalid RSA PUB_KEY constant")
+    });
+    let modulus = RSA_MODULUS.get_or_init(|| {
+        BigUint::parse_bytes(MODULUS.as_bytes(), 16).expect("invalid RSA MODULUS constant")
+    });
 
-    let enc = text.modpow(&exp, &modulus);
+    let enc = text.modpow(exp, modulus);
     let mut enc_hex = enc.to_str_radix(16);
     if enc_hex.len() < 256 {
         enc_hex = format!("{:0>256}", enc_hex);

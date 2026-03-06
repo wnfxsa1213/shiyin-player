@@ -3,7 +3,7 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { LayoutGroup } from 'framer-motion';
 import { useUiStore } from '@/store/uiStore';
 import { usePlayerStore } from '@/store/playerStore';
-import { useVisualizerStore } from '@/store/visualizerStore';
+import { useVisualizerStore, spectrumDataRef } from '@/store/visualizerStore';
 import { useToastStore } from '@/store/toastStore';
 import { usePlaylistStore } from '@/store/playlistStore';
 import { loadSetting } from '@/lib/settings';
@@ -40,7 +40,12 @@ function PlayerAnnouncer() {
 
 export default function App() {
   const theme = useUiStore((s) => s.theme);
-  const { play, pause, updateProgress, setVolume } = usePlayerStore();
+  // Use individual selectors for stable action references — avoids full-store subscription
+  // that would cause App to re-render on every positionMs/durationMs update (~5Hz).
+  const play = usePlayerStore((s) => s.play);
+  const pause = usePlayerStore((s) => s.pause);
+  const updateProgress = usePlayerStore((s) => s.updateProgress);
+  const setVolume = usePlayerStore((s) => s.setVolume);
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
   // Tracks whether the most recent player stop was caused by an error.
@@ -138,7 +143,15 @@ export default function App() {
         playerErrorRef.current = true;
       }),
       onPlayerSpectrum(({ magnitudes }) => {
-        useVisualizerStore.getState().updateMagnitudes(magnitudes);
+        // Write directly to shared ref — bypasses Zustand store to avoid ~15fps re-renders.
+        // SpectrumVisualizer reads from this ref in its RAF loop.
+        const arr = spectrumDataRef.current;
+        // Float32Array.set() is a native optimized memcpy, faster than manual loop
+        if (magnitudes.length <= arr.length) {
+          arr.set(magnitudes);
+        } else {
+          arr.set(magnitudes.slice(0, arr.length));
+        }
       }),
       onLoginSuccess((source) => {
         const name = source === 'netease' ? '网易云' : 'QQ音乐';

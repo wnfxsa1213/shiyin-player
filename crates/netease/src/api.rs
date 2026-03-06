@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::crypto::weapi_encrypt;
 use reqwest::header::COOKIE;
@@ -12,6 +13,7 @@ pub async fn search(
     base_url: &str,
     query: SearchQuery,
     cookie: Option<&str>,
+    cloudsearch_available: &AtomicBool,
 ) -> Result<Vec<Track>, SourceError> {
     let payload = json!({
         "s": query.keyword,
@@ -19,23 +21,36 @@ pub async fn search(
         "limit": query.limit.unwrap_or(30),
         "offset": query.offset.unwrap_or(0),
     });
-    // Try /weapi/cloudsearch/get/web first (richer metadata), fall back to /weapi/search/get
-    let (value, need_covers) = match weapi_post(http, base_url, "/weapi/cloudsearch/get/web", payload.clone(), cookie).await {
-        Ok(v) => (v, false),
-        Err(SourceError::Unauthorized) => {
-            log::info!("cloudsearch requires login, falling back to /weapi/search/get");
-            let v = weapi_post(http, base_url, "/weapi/search/get", payload, cookie).await?;
-            (v, true) // old endpoint lacks cover URLs
+
+    // Skip cloudsearch when no cookie or when previously rejected (Unauthorized).
+    // This avoids a wasted RTT for unauthenticated users.
+    let use_cloudsearch = cookie.is_some() && cloudsearch_available.load(Ordering::Relaxed);
+
+    let (value, need_covers) = if use_cloudsearch {
+        match weapi_post(http, base_url, "/weapi/cloudsearch/get/web", payload.clone(), cookie).await {
+            Ok(v) => (v, false),
+            Err(SourceError::Unauthorized) => {
+                cloudsearch_available.store(false, Ordering::Relaxed);
+                log::info!("cloudsearch requires login, falling back to /weapi/search/get");
+                let v = weapi_post(http, base_url, "/weapi/search/get", payload, cookie).await?;
+                (v, true) // old endpoint lacks cover URLs
+            }
+            Err(e) => return Err(e),
         }
-        Err(e) => return Err(e),
+    } else {
+        let v = weapi_post(http, base_url, "/weapi/search/get", payload, cookie).await?;
+        (v, true) // old endpoint lacks cover URLs
     };
+
     let Some(list) = value.pointer("/result/songs").and_then(|v| v.as_array()) else {
         return Ok(Vec::new());
     };
     let mut tracks: Vec<Track> = list.iter().filter_map(parse_song).collect();
-    // Old search endpoint doesn't return cover URLs; batch-fetch via song detail API
+    // Old search endpoint doesn't return cover URLs; batch-fetch via song detail API.
+    // Limit to first 5 tracks to reduce latency on the critical search path.
     if need_covers && !tracks.is_empty() {
-        match song_detail_covers(http, base_url, &tracks, cookie).await {
+        let cover_limit = tracks.len().min(5);
+        match song_detail_covers(http, base_url, &tracks[..cover_limit], cookie).await {
             Ok(covers) => {
                 log::info!("fetched {} cover URLs via song detail API", covers.len());
                 for track in &mut tracks {

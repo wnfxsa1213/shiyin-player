@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import { useVisualizerStore } from '@/store/visualizerStore';
+import { useVisualizerStore, spectrumDataRef } from '@/store/visualizerStore';
 
 interface Props {
   width: number;
@@ -38,7 +38,8 @@ export default function ParticleSystem({ width, height, className }: Props) {
     ctx.scale(dpr, dpr);
 
     const draw = () => {
-      const { enabled, showParticles, colors, magnitudes } = useVisualizerStore.getState();
+      const { enabled, showParticles, colors } = useVisualizerStore.getState();
+      const magnitudes = spectrumDataRef.current;
       ctx.clearRect(0, 0, width, height);
 
       if (!enabled || !showParticles) {
@@ -46,8 +47,11 @@ export default function ParticleSystem({ width, height, className }: Props) {
         return;
       }
 
-      // Low frequency energy (first 8 bands)
-      const lowEnergy = magnitudes.slice(0, 8).reduce((a, b) => a + b, 0) / 8;
+      // Low frequency energy (first 8 bands) — subarray is a zero-copy view
+      let lowSum = 0;
+      const bandCount = Math.min(8, magnitudes.length);
+      for (let i = 0; i < bandCount; i++) lowSum += magnitudes[i];
+      const lowEnergy = bandCount > 0 ? lowSum / bandCount : 0;
 
       // Spawn particles based on low frequency energy
       const spawnRate = Math.floor(lowEnergy * 4);

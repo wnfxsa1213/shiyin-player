@@ -1,4 +1,5 @@
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -14,6 +15,9 @@ pub struct NeteaseClient {
     http: reqwest::Client,
     base_url: String,
     cookie: RwLock<Option<String>>,
+    /// Tracks whether cloudsearch endpoint is available (set false on Unauthorized).
+    /// Reset to true on login. When false or no cookie, search falls back to /weapi/search/get directly.
+    cloudsearch_available: AtomicBool,
 }
 
 impl NeteaseClient {
@@ -27,6 +31,7 @@ impl NeteaseClient {
             http,
             base_url: "https://music.163.com".into(),
             cookie: RwLock::new(None),
+            cloudsearch_available: AtomicBool::new(true),
         })
     }
 }
@@ -43,7 +48,7 @@ impl MusicSource for NeteaseClient {
     fn name(&self) -> &'static str { "网易云音乐" }
 
     async fn search(&self, query: SearchQuery) -> Result<Vec<Track>, SourceError> {
-        api::search(&self.http, &self.base_url, query, self.cookie().as_deref()).await
+        api::search(&self.http, &self.base_url, query, self.cookie().as_deref(), &self.cloudsearch_available).await
     }
     async fn get_stream_url(&self, track: &Track) -> Result<StreamInfo, SourceError> {
         api::song_url(&self.http, &self.base_url, &track.id, self.cookie().as_deref()).await
@@ -64,6 +69,8 @@ impl MusicSource for NeteaseClient {
                 self.cookie.write()
                     .map_err(|e| SourceError::Internal(format!("failed to acquire cookie lock: {e}")))?
                     .replace(cookie.clone());
+                // Reset cloudsearch availability on login (cookie may now be valid)
+                self.cloudsearch_available.store(true, Ordering::Relaxed);
                 Ok(AuthToken { access_token: cookie, expires_at: None })
             }
             Credentials::Password { .. } => Err(SourceError::Unimplemented),

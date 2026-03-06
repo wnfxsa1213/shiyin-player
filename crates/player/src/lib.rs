@@ -69,8 +69,10 @@ struct Engine {
     volume_elem: Option<gst::Element>,
     state: PlayerState,
     current_track: Option<Track>,
-    progress_counter: u32,
-    state_mismatch_count: u32,
+    /// Time-based progress emission (replaces tick-count based approach).
+    last_progress_emit: Option<std::time::Instant>,
+    /// Time-based state mismatch detection (replaces tick-count based approach).
+    state_mismatch_since: Option<std::time::Instant>,
 }
 
 fn engine_loop(
@@ -90,8 +92,8 @@ fn engine_loop(
             volume_elem: None,
             state: PlayerState::Idle,
             current_track: None,
-            progress_counter: 0,
-            state_mismatch_count: 0,
+            last_progress_emit: None,
+            state_mismatch_since: None,
         };
         let mut ticker = tokio::time::interval(Duration::from_millis(33));
 
@@ -261,11 +263,12 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
             return;
         }
 
-        // Check for state mismatch with counter-based debouncing
+        // Time-based state mismatch detection (replaces tick-count approach).
+        // Fires after mismatch persists for >100ms, independent of tick interval.
         if current_state != gst::State::Playing && current_state != gst::State::Paused {
-            eng.state_mismatch_count += 1;
-            if eng.state_mismatch_count >= 3 {
-                log::error!("pipeline state mismatch (3 consecutive): expected Playing, got {:?}", current_state);
+            let mismatch_start = eng.state_mismatch_since.get_or_insert_with(std::time::Instant::now);
+            if mismatch_start.elapsed() >= Duration::from_millis(100) {
+                log::error!("pipeline state mismatch persisted >100ms: expected Playing, got {:?}", current_state);
                 emit(tx, PlayerEvent::Error {
                     error: PlayerError::Pipeline(format!("unexpected state: {:?}", current_state))
                 });
@@ -274,14 +277,17 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
                 return;
             }
         } else {
-            // Reset counter when state is correct
-            eng.state_mismatch_count = 0;
+            eng.state_mismatch_since = None;
         }
 
-        // Emit Progress at ~2Hz (every ~15 ticks at 33ms interval)
-        eng.progress_counter += 1;
-        if eng.progress_counter >= 15 {
-            eng.progress_counter = 0;
+        // Time-based progress emission at ~5Hz (every 200ms).
+        // Decoupled from tick interval so changing tick rate won't affect progress frequency.
+        let now = std::time::Instant::now();
+        let should_emit_progress = eng.last_progress_emit
+            .map(|last| now.duration_since(last) >= Duration::from_millis(200))
+            .unwrap_or(true);
+        if should_emit_progress {
+            eng.last_progress_emit = Some(now);
             if let Some(pipeline) = &eng.pipeline {
                 let position = pos_ms(pipeline);
                 let duration = dur_ms(pipeline);
@@ -371,6 +377,9 @@ fn teardown(eng: &mut Engine) {
     }
     eng.volume_elem = None;
     eng.current_track = None;
+    // Reset time-based tracking to avoid stale state leaking to next track
+    eng.last_progress_emit = None;
+    eng.state_mismatch_since = None;
 }
 
 fn set_state(eng: &mut Engine, state: PlayerState, tx: &broadcast::Sender<PlayerEvent>) {

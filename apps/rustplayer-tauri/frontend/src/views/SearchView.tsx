@@ -10,27 +10,33 @@ let searchSeq = 0;
 
 export default function SearchView() {
   const [query, setQuery] = useState('');
-  const [debounced, setDebounced] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [source, setSource] = useState<'all' | 'netease' | 'qqmusic'>('all');
+  const [debouncedSource, setDebouncedSource] = useState(source);
   const [results, setResults] = useState<Track[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(query), 300);
+    const t = setTimeout(() => setDebouncedQuery(query), 450);
     return () => clearTimeout(t);
   }, [query]);
 
   useEffect(() => {
+    const t = setTimeout(() => setDebouncedSource(source), 200);
+    return () => clearTimeout(t);
+  }, [source]);
+
+  useEffect(() => {
     const seq = ++searchSeq;
-    if (!debounced.trim()) { setResults([]); setLoading(false); return; }
+    if (!debouncedQuery.trim()) { setResults([]); setLoading(false); return; }
     setLoading(true);
-    ipc.searchMusic(debounced, source === 'all' ? undefined : source)
+    ipc.searchMusic(debouncedQuery, debouncedSource === 'all' ? undefined : debouncedSource)
       .then((r) => { if (seq === searchSeq) setResults(r); })
       .catch((err) => {
         if (seq === searchSeq) useToastStore.getState().addToast('error', `搜索失败: ${sanitizeError(err)}`);
       })
       .finally(() => { if (seq === searchSeq) setLoading(false); });
-  }, [debounced, source]);
+  }, [debouncedQuery, debouncedSource]);
 
   const tabs = ['all', 'netease', 'qqmusic'] as const;
 
@@ -84,14 +90,14 @@ export default function SearchView() {
             ))}
           </div>
         )}
-        {!loading && debounced && results.length === 0 && (
+        {!loading && debouncedQuery && results.length === 0 && (
           <div className="text-center py-16">
             <SearchX size={64} strokeWidth={1} className="text-text-tertiary mx-auto mb-4 opacity-50" aria-hidden="true" />
             <p className="text-text-tertiary">没有找到相关结果</p>
             <p className="text-text-tertiary text-sm mt-1">试试其他关键词或切换音乐源</p>
           </div>
         )}
-        {!loading && !debounced && results.length === 0 && (
+        {!loading && !debouncedQuery && results.length === 0 && (
           <div className="text-center py-16">
             <Music size={64} strokeWidth={1} className="text-text-tertiary mx-auto mb-4 opacity-50" aria-hidden="true" />
             <p className="text-text-tertiary">搜索你喜欢的音乐</p>

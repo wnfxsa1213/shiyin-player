@@ -103,8 +103,8 @@ export function onPlayerState(cb: (state: string) => void): Promise<UnlistenFn> 
   return listen<string>('player://state', (e) => cb(e.payload));
 }
 
-export function onPlayerProgress(cb: (p: { positionMs: number; durationMs: number }) => void): Promise<UnlistenFn> {
-  return listen<{ positionMs: number; durationMs: number }>('player://progress', (e) => cb(e.payload));
+export function onPlayerProgress(cb: (p: { positionMs: number; durationMs: number; emittedAtMs?: number }) => void): Promise<UnlistenFn> {
+  return listen<{ positionMs: number; durationMs: number; emittedAtMs?: number }>('player://progress', (e) => cb(e.payload));
 }
 
 export function onPlayerError(cb: (error: string) => void): Promise<UnlistenFn> {

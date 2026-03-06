@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useVisualizerStore } from '@/store/visualizerStore';
+import { useVisualizerStore, spectrumDataRef } from '@/store/visualizerStore';
 
 export default function SpectrumVisualizer({ width, height }: { width: number; height: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -22,7 +22,8 @@ export default function SpectrumVisualizer({ width, height }: { width: number; h
     let frameCount = 0;
 
     const renderLoop = () => {
-      const { magnitudes, enabled } = useVisualizerStore.getState();
+      const { enabled } = useVisualizerStore.getState();
+      const magnitudes = spectrumDataRef.current;
 
       // Keep rAF alive but skip drawing when disabled (matches ParticleSystem pattern)
       if (!enabled) {
