@@ -131,6 +131,50 @@ pub fn extract_skey_from_cookie(cookie: &str) -> Option<String> {
     value
 }
 
+/// Single-pass cookie parser for QQ Music API fields.
+/// Avoids repeated O(n) traversals of the cookie string in hot paths like `musicu_post`.
+pub struct CookieView<'a> {
+    pub uin: Option<&'a str>,
+    pub skey: Option<&'a str>,
+    pub p_skey: Option<&'a str>,
+    pub qqmusic_key: Option<&'a str>,
+    pub login_type: Option<&'a str>,
+    pub p_lskey: Option<&'a str>,
+    pub lskey: Option<&'a str>,
+}
+
+impl<'a> CookieView<'a> {
+    pub fn parse(cookie: &'a str) -> Self {
+        let mut view = Self {
+            uin: None, skey: None, p_skey: None,
+            qqmusic_key: None, login_type: None,
+            p_lskey: None, lskey: None,
+        };
+        for pair in cookie.split(';') {
+            let pair = pair.trim();
+            let Some((key, value)) = pair.split_once('=') else { continue };
+            let value = value.trim();
+            if value.is_empty() { continue; }
+            match key.trim() {
+                "uin" | "p_uin" => if view.uin.is_none() { view.uin = Some(value) },
+                "skey" => if view.skey.is_none() { view.skey = Some(value) },
+                "p_skey" => if view.p_skey.is_none() { view.p_skey = Some(value) },
+                "qqmusic_key" => if view.qqmusic_key.is_none() { view.qqmusic_key = Some(value) },
+                "login_type" => if view.login_type.is_none() { view.login_type = Some(value) },
+                "p_lskey" => if view.p_lskey.is_none() { view.p_lskey = Some(value) },
+                "lskey" => if view.lskey.is_none() { view.lskey = Some(value) },
+                _ => {}
+            }
+        }
+        view
+    }
+
+    /// Get uin with 'o' prefix stripped (numeric form).
+    pub fn uin_numeric(&self) -> Option<&'a str> {
+        self.uin.map(|u| u.strip_prefix('o').unwrap_or(u))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

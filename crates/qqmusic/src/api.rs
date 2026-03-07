@@ -6,7 +6,7 @@ use rustplayer_core::{
 };
 use serde_json::{json, Value};
 
-use crate::sign::{calculate_g_tk, extract_cookie_value, extract_uin_from_cookie};
+use crate::sign::{calculate_g_tk, extract_cookie_value, extract_uin_from_cookie, CookieView};
 
 // QQ 音乐 Web 客户端标识常量（与 y.qq.com 保持一致，通过鉴权校验）
 const API_CLIENT_TYPE: i64 = 24;
@@ -55,7 +55,7 @@ pub async fn search(
         }
     });
 
-    let value = musicu_post(http, base_url, &data, cookie).await?;
+    let value = musicu_post(http, base_url, data, cookie).await?;
     let Some(list) = value.pointer("/req/data/body/song/list").and_then(|v| v.as_array()) else {
         return Ok(Vec::new());
     };
@@ -106,7 +106,7 @@ pub async fn song_url(
         }
     });
 
-    let value = musicu_post(http, base_url, &data, cookie).await?;
+    let value = musicu_post(http, base_url, data, cookie).await?;
 
     // Check vkey API response code to distinguish auth failures from missing tracks.
     // Only req_code=0 means the request was accepted; any other value is a hard failure.
@@ -212,7 +212,8 @@ pub async fn lyrics(
     for attempt in 0..2 {
         if attempt > 0 {
             log::debug!("qqmusic lyrics: retry attempt {attempt} for track {track_id}");
-            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            let jitter = rand::random::<u64>() % 150;
+            tokio::time::sleep(tokio::time::Duration::from_millis(150 + jitter)).await;
         }
 
         let res = match http
@@ -311,7 +312,7 @@ pub async fn user_playlists(
 
     log::debug!("qqmusic user_playlists: GetPlaylistByUin, cookie={}, uin={}", cookie.is_some(), uin);
 
-    let value = musicu_post(http, base_url, &data, cookie).await?;
+    let value = musicu_post(http, base_url, data, cookie).await?;
     let code = value.pointer("/req/code").and_then(|v| v.as_i64()).unwrap_or(-1);
     log::info!("qqmusic user_playlists: API returned code = {}", code);
 
@@ -391,7 +392,7 @@ pub async fn playlist_detail(
     });
 
     log::debug!("qqmusic playlist_detail: disstid={} (integer), uin={}", disstid, uin);
-    let value = musicu_post(http, base_url, &data, cookie).await?;
+    let value = musicu_post(http, base_url, data, cookie).await?;
     let code = value.pointer("/req/code").and_then(|v| v.as_i64()).unwrap_or(-1);
 
     match code {
@@ -451,7 +452,7 @@ pub async fn validate_login(
             "param": {}
         }
     });
-    let value = musicu_post(http, base_url, &data, Some(cookie)).await?;
+    let value = musicu_post(http, base_url, data, Some(cookie)).await?;
     let code = value.pointer("/req/code").and_then(|v| v.as_i64()).unwrap_or(-1);
     match code {
         0 => {
@@ -514,7 +515,7 @@ pub async fn refresh_credentials(
     });
 
     log::info!("qqmusic refresh_credentials: attempting refresh for uin={}", musicid);
-    let value = musicu_post(http, base_url, &data, Some(cookie)).await?;
+    let value = musicu_post(http, base_url, data, Some(cookie)).await?;
     let code = value.pointer("/req/code").and_then(|v| v.as_i64()).unwrap_or(-1);
     if code != 0 {
         log::warn!("qqmusic refresh_credentials: failed with code {}", code);
@@ -592,58 +593,53 @@ fn detect_login_type(musickey: &str) -> &'static str {
 async fn musicu_post(
     http: &reqwest::Client,
     base_url: &str,
-    data: &Value,
+    mut data: Value,
     cookie: Option<&str>,
 ) -> Result<Value, SourceError> {
     let url = format!("{base_url}/cgi-bin/musicu.fcg");
 
+    // Single-pass cookie parsing for all needed fields
+    let cv = cookie.map(CookieView::parse);
+
     // g_tk: 匹配 web 端 O() — skey（老式登录）|| qqmusic_key（现代登录）
-    let g_tk = cookie.and_then(|c| {
-        extract_cookie_value(c, "skey")
-            .or_else(|| extract_cookie_value(c, "qqmusic_key"))
-    }).map(|k| calculate_g_tk(&k)).unwrap_or(5381);
+    let g_tk = cv.as_ref()
+        .and_then(|c| c.skey.or(c.qqmusic_key))
+        .map(|k| calculate_g_tk(k))
+        .unwrap_or(5381);
 
     // g_tk_new_20200303: 匹配 web 端 O(true) — qqmusic_key || p_skey || skey || p_lskey || lskey
-    let g_tk_new = cookie.and_then(|c| {
-        extract_cookie_value(c, "qqmusic_key")
-            .or_else(|| extract_cookie_value(c, "p_skey"))
-            .or_else(|| extract_cookie_value(c, "skey"))
-            .or_else(|| extract_cookie_value(c, "p_lskey"))
-            .or_else(|| extract_cookie_value(c, "lskey"))
-    }).map(|k| calculate_g_tk(&k)).unwrap_or(5381);
+    let g_tk_new = cv.as_ref()
+        .and_then(|c| c.qqmusic_key.or(c.p_skey).or(c.skey).or(c.p_lskey).or(c.lskey))
+        .map(|k| calculate_g_tk(k))
+        .unwrap_or(5381);
 
     log::debug!("qqmusic musicu_post: g_tk={}, g_tk_new={}, cookie_present={}", g_tk, g_tk_new, cookie.is_some());
 
-    // Inject QIMEI36 + auth fields into comm, then inject top-level uin/g_tk/g_tk_new_20200303.
-    // Reference: vendor.chunk.js — web app adds uin, g_tk, g_tk_new_20200303 to the top-level body.
-    let data = {
-        let mut d = data.clone();
-        if let Some(comm) = d.get_mut("comm").and_then(|v| v.as_object_mut()) {
-            comm.insert("QIMEI36".to_string(), json!(QIMEI36));
-            if let Some(c) = cookie {
-                if let Some(musickey) = extract_cookie_value(c, "qqmusic_key") {
-                    comm.insert("authst".to_string(), json!(musickey));
-                    let login_type = extract_cookie_value(c, "login_type")
-                        .unwrap_or_else(|| detect_login_type(&musickey).to_string());
-                    let login_type_num: i64 = login_type.parse().unwrap_or(2);
-                    comm.insert("tmeLoginType".to_string(), json!(login_type_num));
-                    log::debug!("qqmusic musicu_post: injected authst (len={}), tmeLoginType={}", musickey.len(), login_type_num);
-                }
-                comm.insert("tmeAppID".to_string(), json!("qqmusic"));
+    // Inject QIMEI36 + auth fields directly into owned data (no clone needed)
+    if let Some(comm) = data.get_mut("comm").and_then(|v| v.as_object_mut()) {
+        comm.insert("QIMEI36".to_string(), json!(QIMEI36));
+        if let Some(cv) = &cv {
+            if let Some(musickey) = cv.qqmusic_key {
+                comm.insert("authst".to_string(), json!(musickey));
+                let login_type = cv.login_type
+                    .unwrap_or_else(|| detect_login_type(musickey));
+                let login_type_num: i64 = login_type.parse().unwrap_or(2);
+                comm.insert("tmeLoginType".to_string(), json!(login_type_num));
+                log::debug!("qqmusic musicu_post: injected authst (len={}), tmeLoginType={}", musickey.len(), login_type_num);
             }
+            comm.insert("tmeAppID".to_string(), json!("qqmusic"));
         }
-        // top-level fields（匹配 web 端 t.data.uin / t.data.g_tk / t.data.g_tk_new_20200303）
-        if let Some(obj) = d.as_object_mut() {
-            let uin_val: i64 = cookie
-                .and_then(extract_uin_from_cookie)
-                .and_then(|u| u.parse().ok())
-                .unwrap_or(0);
-            obj.insert("uin".to_string(), json!(uin_val));
-            obj.insert("g_tk".to_string(), json!(g_tk));
-            obj.insert("g_tk_new_20200303".to_string(), json!(g_tk_new));
-        }
-        d
-    };
+    }
+    // top-level fields（匹配 web 端 t.data.uin / t.data.g_tk / t.data.g_tk_new_20200303）
+    if let Some(obj) = data.as_object_mut() {
+        let uin_val: i64 = cv.as_ref()
+            .and_then(|c| c.uin_numeric())
+            .and_then(|u| u.parse().ok())
+            .unwrap_or(0);
+        obj.insert("uin".to_string(), json!(uin_val));
+        obj.insert("g_tk".to_string(), json!(g_tk));
+        obj.insert("g_tk_new_20200303".to_string(), json!(g_tk_new));
+    }
 
     let mut req = http.post(url)
         .query(&[

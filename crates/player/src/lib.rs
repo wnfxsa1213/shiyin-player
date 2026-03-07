@@ -73,6 +73,8 @@ struct Engine {
     last_progress_emit: Option<std::time::Instant>,
     /// Time-based state mismatch detection (replaces tick-count based approach).
     state_mismatch_since: Option<std::time::Instant>,
+    /// Pre-allocated spectrum buffer — avoids ~15 heap allocations per second.
+    spectrum_buf: Vec<f32>,
 }
 
 fn engine_loop(
@@ -94,6 +96,7 @@ fn engine_loop(
             current_track: None,
             last_progress_emit: None,
             state_mismatch_since: None,
+            spectrum_buf: Vec::with_capacity(64),
         };
         let mut ticker = tokio::time::interval(Duration::from_millis(33));
 
@@ -105,6 +108,15 @@ fn engine_loop(
                             if let Err(e) = handle_cmd(&mut engine, c, &event_tx) {
                                 emit(&event_tx, PlayerEvent::Error { error: e });
                             }
+                            // Adapt tick rate: fast when playing (33ms), slow when idle/paused (200ms)
+                            let new_period = if matches!(engine.state, PlayerState::Playing { .. }) {
+                                Duration::from_millis(33)
+                            } else {
+                                Duration::from_millis(200)
+                            };
+                            if ticker.period() != new_period {
+                                ticker = tokio::time::interval(new_period);
+                            }
                         }
                         None => {
                             teardown(&mut engine);
@@ -114,6 +126,16 @@ fn engine_loop(
                 }
                 _ = ticker.tick() => {
                     tick_progress(&mut engine, &event_tx);
+                    // Also adapt tick rate after progress tick — state may change
+                    // via GStreamer bus messages (e.g. Loading→Playing, Error→Stopped)
+                    let new_period = if matches!(engine.state, PlayerState::Playing { .. }) {
+                        Duration::from_millis(33)
+                    } else {
+                        Duration::from_millis(200)
+                    };
+                    if ticker.period() != new_period {
+                        ticker = tokio::time::interval(new_period);
+                    }
                 }
             }
         }
@@ -232,8 +254,11 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
                 gst::MessageView::Element(elem) => {
                     if let Some(s) = elem.structure() {
                         if s.name() == "spectrum" {
-                            if let Some(magnitudes) = extract_spectrum(s) {
-                                emit(tx, PlayerEvent::Spectrum { magnitudes });
+                            extract_spectrum_into(s, &mut eng.spectrum_buf);
+                            if !eng.spectrum_buf.is_empty() {
+                                // Note: clone() still allocates per-frame, but of known size (64 * 4 bytes).
+                                // Eliminating this requires changing broadcast channel to Arc<[f32]>.
+                                emit(tx, PlayerEvent::Spectrum { magnitudes: eng.spectrum_buf.clone() });
                             }
                         }
                     }
@@ -297,17 +322,15 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
     }
 }
 
-fn extract_spectrum(structure: &gst::StructureRef) -> Option<Vec<f32>> {
-    let magnitudes = structure.get::<gst::List>("magnitude").ok()?;
-    let result: Vec<f32> = magnitudes
-        .iter()
-        .map(|v| {
+/// Extract spectrum magnitudes into a pre-allocated buffer, avoiding per-frame heap allocation.
+fn extract_spectrum_into(structure: &gst::StructureRef, buf: &mut Vec<f32>) {
+    buf.clear();
+    if let Ok(magnitudes) = structure.get::<gst::List>("magnitude") {
+        buf.extend(magnitudes.iter().map(|v| {
             let db = v.get::<f32>().unwrap_or(-80.0);
-            // Map dB range [-80, 0] to [0.0, 1.0]
             ((db + 80.0) / 80.0).clamp(0.0, 1.0)
-        })
-        .collect();
-    Some(result)
+        }));
+    }
 }
 
 // --- Pipeline construction ---
@@ -330,7 +353,7 @@ fn build_pipeline(stream: &StreamInfo) -> Result<(gst::Pipeline, gst::Element), 
     let spectrum = make("spectrum", "spectrum")?;
     spectrum.set_property("bands", 64u32);
     spectrum.set_property("threshold", -80i32);
-    spectrum.set_property("interval", 33_333_333u64); // ~30fps
+    spectrum.set_property("interval", 66_666_667u64); // ~15fps, aligned with event layer
     spectrum.set_property("message-magnitude", true);
     spectrum.set_property("post-messages", true);
     let volume = make("volume", "volume")?;

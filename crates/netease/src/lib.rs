@@ -24,7 +24,8 @@ impl NeteaseClient {
     pub fn new() -> Result<Self, SourceError> {
         let http = reqwest::Client::builder()
             .cookie_store(true)
-            .timeout(Duration::from_secs(5))
+            .connect_timeout(Duration::from_secs(3))
+            .timeout(Duration::from_secs(10))
             .build()
             .map_err(|e| SourceError::Internal(format!("failed to build http client: {e}")))?;
         Ok(Self {

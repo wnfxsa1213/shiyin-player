@@ -114,7 +114,8 @@ pub async fn lyrics(
     for attempt in 0..2 {
         if attempt > 0 {
             log::debug!("netease lyrics: retry attempt {attempt} for track {track_id}");
-            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            let jitter = rand::random::<u64>() % 150;
+            tokio::time::sleep(tokio::time::Duration::from_millis(150 + jitter)).await;
         }
 
         let url = format!("{base_url}/api/song/lyric");

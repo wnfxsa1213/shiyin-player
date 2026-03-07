@@ -104,109 +104,105 @@
 
 ---
 
-## P1 批次：流畅度与性能
+## P1 批次：流畅度与性能 ✅ 已完成 (2026-03-07)
+
+> **实施摘要**：11 个文件修改，+151 / -86 行。Codex 审查通过（72→修复后），Gemini 审查因 API 503 跳过。
+>
+> **编译验证**：`cargo check` 通过，`npx tsc --noEmit` 通过，`cargo test -p rustplayer-qqmusic` 5/5 通过。
 
 ### P1-1. 频谱/播放引擎优化（#12 #13 #14 #15）
 
-**#12 频谱"白算"**
+**#12 频谱"白算"** ✅
 - 根因：后端 30fps 产出，事件层节流到 15fps，一半被丢弃
 - 修改文件：`crates/player/src/lib.rs:327`, `events.rs:28`
-- 策略：GStreamer spectrum `interval` 直接对齐到 66ms（≈15fps），删除事件层二次节流
-- 预期：频谱链路 CPU 接近减半
-- 风险：视觉丝滑度下降，需确认前端真实目标帧率
+- 实际方案：GStreamer spectrum `interval` 改为 66_666_667 (~15fps)；删除事件层 66ms 固定节流（last_spectrum_emit），改为直接转发
 
-**#13 暂停时仍 33ms tick**
+**#13 暂停时仍 33ms tick** ✅
 - 根因：`player/lib.rs:96-113` 无论状态都固定 33ms tick
 - 修改文件：`crates/player/src/lib.rs`
-- 策略：状态感知调度：播放 33-50ms、暂停 200-500ms、停止几乎不轮询
-- 预期：暂停/空闲时 CPU 明显下降
-- 风险：异常/缓冲事件在非播放态发现稍晚（几十到几百毫秒）
+- 实际方案：命令处理后 + tick_progress 后均检查状态自适应 ticker（播放 33ms，其余 200ms）；Codex 审查修复：增加 tick_progress 后的 ticker 更新，覆盖 GStreamer bus 异步状态转换（Loading→Playing, Error→Stopped）
 
-**#14 频谱 Vec 每帧分配**
+**#14 频谱 Vec 每帧分配** ✅（部分）
 - 根因：`player/lib.rs:294-305` 每帧新建 Vec<f32>
 - 修改文件：`crates/player/src/lib.rs`
-- 策略：改为固定 64 槽栈上结构或 `SmallVec`
-- 预期：减少 ~30 次/秒堆分配
-- 风险：低
+- 实际方案：Engine 增加 `spectrum_buf: Vec<f32>` 预分配 buffer (capacity=64)；`extract_spectrum_into()` 写入预分配 buffer 避免 collect 开销。clone() 发送仍有 1 次已知大小分配（消除需改 broadcast channel 为 Arc<[f32]>，推迟到 P2）
 
-**#15 PlayerState clone overhead**
-- 根因：`player/lib.rs:134-165` PlayerState 持有 owned Track，每次状态转换都 clone
-- 修改文件：`crates/core/src/lib.rs:65`, `crates/player/src/lib.rs`
-- 策略：内部状态改轻量 phase + `current_track` 引用，IPC 发送时再映射 DTO；或用 `Arc<Track>`（需 serde rc feature）
-- 预期：状态切换更轻
-- 风险：如改公共 PlayerState，前端有兼容成本
+**#15 PlayerState clone overhead** → 推迟到 P2
+- 推迟原因：需修改公共 PlayerState 类型，影响前后端契约，风险过高
 
 ### P1-2. SQLite 缓存（#7 #8 #9 #10）
 
-**#7 缺复合索引**
-- 根因：`db.rs:42` 只有 cached_at 单列索引，查询按 source+keyword+cached_at
+**#7 缺复合索引** ✅
 - 修改文件：`apps/rustplayer-tauri/src-tauri/src/db.rs:42`
-- 策略：新增复合索引 `(source, search_keyword, cached_at)`
-- 预期：L2 缓存读从扫表变成索引过滤
-- 风险：写入略增成本，但读多写少整体收益更高
+- 实际方案：新增复合索引 `idx_tracks_source_keyword ON tracks(source, search_keyword, cached_at)`
 
-**#8 连接池过小**
-- 根因：`db.rs:20-21` max_size=8
+**#8 连接池过小** ✅
 - 修改文件：`apps/rustplayer-tauri/src-tauri/src/db.rs`
-- 策略：温和提高到 12-16，拆成"多读少写"策略
-- 预期：尾延迟更稳
-- 风险：不要只改 pool size，WAL writer contention 可能更明显
+- 实际方案：Pool max_size 8→12
 
-**#9 blocking pool 排队**（Codex 纠偏）
-- 根因：不是占用 tokio worker，是 blocking pool 排队 + DB pool 排队 + join/切换成本
-- 修改文件：`commands/mod.rs:166-188`
-- 策略：写回改成有界队列/批量写，Db 包成异步 facade
-- 预期：减少 burst 时堆积
+**#9 blocking pool 排队** → 推迟到 P2
+- 推迟原因：需要架构改造（异步 DB facade），P1 阶段过于复杂
 
-**#10 N+1 INSERT**
-- 根因：`db.rs:87-93` 事务内 N 次独立 INSERT
+**#10 N+1 INSERT** ✅
 - 修改文件：`apps/rustplayer-tauri/src-tauri/src/db.rs`
-- 策略：用 `prepare_cached` 或单条 prepared statement 循环执行
-- 预期：写锁持有时间下降
+- 实际方案：事务内使用 `prepare_cached()` + scoped statement 循环执行
 
 ### P1-3. 前端动画/GPU（#18 #19 #20 #21 #22）
 
-**#18 SpectrumVisualizer 60fps + drop-shadow**
+**#18 SpectrumVisualizer 60fps + drop-shadow** ✅
 - 修改文件：`SpectrumVisualizer.tsx`
-- 策略：移除 Canvas 内 drop-shadow，改用 CSS filter 作用于容器（利用合成层）
+- 实际方案：`filter: drop-shadow()` 替换为 Tailwind `shadow-[0_0_8px_var(--accent)]`（box-shadow，不依赖像素内容，无需每帧重计算）
 
-**#19 Canvas 64 次 beginPath**
+**#19 Canvas 64 次 beginPath** ✅
 - 修改文件：`SpectrumVisualizer.tsx:47-58`
-- 策略：单次 beginPath → 多次 roundRect → 单次 fill
+- 实际方案：单次 beginPath + for 循环 roundRect + 单次 fill（从 64 次绘制调用减少到 1 次）
 
-**#20 歌词页三重动画**
-- 修改文件：`LyricsPanel.tsx`, `ParticleSystem.tsx`
-- 策略：检测帧率，低于 45fps 自动关闭粒子或降低模糊度
+**#20 歌词页三重动画** → 推迟到三档帧率模式
+- 推迟原因：需要完整的帧率检测和降级机制，与计划中的"三档帧率模式"功能合并实施
 
-**#21 LyricsPanel 100+ 行 blur**
+**#21 LyricsPanel 100+ 行 blur** ✅
 - 修改文件：`LyricsPanel.tsx:148-175`
-- 策略：只对当前行附近 3-5 行施加滤镜，其余用 opacity 模拟
+- 实际方案：blur 仅应用于活跃行±3行范围，其余行只使用 opacity（从 100+ 个 CSS blur 滤镜减少到最多 7 个）
 
-**#22 ParticleSystem 120 粒子**
+**#22 ParticleSystem 120 粒子** ✅
 - 修改文件：`ParticleSystem.tsx:22`
-- 策略：降到 50-60 个，或提供低配降级
+- 实际方案：MAX_PARTICLES 120→60
 
 ### P1-4. 网络客户端优化（#28 #29 #30 #31 #32）
 
-**#28 HTTP 超时 5s 太短**
+**#28 HTTP 超时 5s 太短** ✅
 - 修改文件：`netease/lib.rs:21`, `qqmusic/lib.rs:31`
-- 策略：拆 connect_timeout + 端点级 timeout（搜索/歌词短，播放 URL/歌单长）
+- 实际方案：connect_timeout(3s) + timeout(10s)（TCP 快速失败，整体请求更宽容）
 
-**#29 歌词重试固定 500ms**（Codex 纠偏：不阻塞线程）
-- 修改文件：`netease/api.rs:99`
-- 策略：退避改 150ms→300ms+jitter，受总 deadline 约束；只对 connect/timeout/5xx 重试
+**#29 歌词重试固定 500ms** ✅
+- 修改文件：`netease/api.rs:117`, `qqmusic/api.rs:215`
+- 实际方案：固定 500ms 改为 150ms + rand jitter(0..150ms)，范围 150-300ms
 
-**#30 QQ 音乐 JSON 克隆 + 双次 g_tk**
+**#30 QQ 音乐 JSON 克隆 + 双次 g_tk** ✅
 - 修改文件：`qqmusic/api.rs:592-646`
-- 策略：按值接收 Value 原地补字段，g_tk 预计算
+- 实际方案：musicu_post 改为 `mut data: Value` 按值接收，直接原地修改，消除 `data.clone()`；6 个调用点同步更新
 
-**#31 cookie 提取多次遍历**
-- 修改文件：`qqmusic/sign.rs:29-61`
-- 策略：一次解析成 CookieView struct 复用
+**#31 cookie 提取多次遍历** ✅
+- 修改文件：`qqmusic/sign.rs` + `qqmusic/api.rs`
+- 实际方案：新增 `CookieView<'a>` 结构体，单次遍历 cookie 解析 7 个字段（uin, skey, p_skey, qqmusic_key, login_type, p_lskey, lskey）；musicu_post 从 10+ 次 `extract_cookie_value` 调用改为 1 次 `CookieView::parse`
 
-**#32 RwLock cookie 每次 clone**
-- 修改文件：`netease/lib.rs:16`, `qqmusic/lib.rs:24`
-- 策略：cookie 改为 `Arc<str>` + `ArcSwap` 或"锁内拿 Arc、锁外使用"
+**#32 RwLock cookie 每次 clone** → 推迟到 P2
+- 推迟原因：需修改 CookieStorage trait，影响 core crate + 两个音源 crate，跨模块改造推迟
+
+### P1 审查结果汇总
+
+| 审查方 | 评分 | 发现 | 处理 |
+|--------|------|------|------|
+| **Codex** | 72/100 | 2 Major + 2 Minor | Major#1（tick 异步状态切换）✅ 已修复；Major#2（spectrum clone 仍分配）已标注限制，推迟到 P2 |
+| **Gemini** | N/A | API 503 | 跳过，前端改动由 Claude 自审 |
+
+### P1→P2 推迟项
+
+- **#15**: PlayerState clone overhead → 需改公共类型
+- **#9**: Blocking pool 异步 facade → 架构改造
+- **#32**: RwLock cookie → Arc → 需改跨 crate trait
+- **#14 完善**: spectrum clone 消除 → 需改 broadcast channel 为 Arc<[f32]>
+- **#20**: 三重动画帧率检测 → 合并到三档帧率模式
 
 ---
 

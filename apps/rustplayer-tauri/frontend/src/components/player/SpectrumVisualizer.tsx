@@ -44,19 +44,19 @@ export default function SpectrumVisualizer({ width, height }: { width: number; h
         const barWidth = width / magnitudes.length;
 
         ctx.fillStyle = cachedAccent;
+        ctx.beginPath();
 
-        magnitudes.forEach((val, i) => {
+        for (let i = 0; i < magnitudes.length; i++) {
+          const val = magnitudes[i];
           // 频域数据通常是 0~255
           const normalizedVal = val > 1 ? val / 255 : val;
           const barHeight = normalizedVal * height;
           const x = i * barWidth;
           const y = height - barHeight;
-
-          ctx.beginPath();
           // 圆角柱状图
           ctx.roundRect(x + 1, y, Math.max(1, barWidth - 2), barHeight, [2, 2, 0, 0]);
-          ctx.fill();
-        });
+        }
+        ctx.fill();
       }
 
       animationRef.current = requestAnimationFrame(renderLoop);
@@ -74,8 +74,7 @@ export default function SpectrumVisualizer({ width, height }: { width: number; h
       ref={canvasRef}
       width={width}
       height={height}
-      className="w-full h-full"
-      style={{ filter: 'drop-shadow(0 0 8px var(--accent))' }}
+      className="w-full h-full shadow-[0_0_8px_var(--accent)]"
       aria-hidden="true"
     />
   );

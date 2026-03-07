@@ -19,7 +19,7 @@ interface Particle {
   color: string;
 }
 
-const MAX_PARTICLES = 120;
+const MAX_PARTICLES = 60;
 
 export default function ParticleSystem({ width, height, className }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);

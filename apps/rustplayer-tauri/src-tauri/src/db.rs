@@ -18,7 +18,7 @@ impl Db {
         let manager = SqliteConnectionManager::file(db_path)
             .with_init(|c| c.execute_batch("PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL;"));
         let pool = Pool::builder()
-            .max_size(8)
+            .max_size(12)
             .build(manager)
             .map_err(|e| e.to_string())?;
 
@@ -40,6 +40,7 @@ impl Db {
                     PRIMARY KEY (id, source, search_keyword)
                 );
                 CREATE INDEX IF NOT EXISTS idx_tracks_cached_at ON tracks(cached_at);
+                CREATE INDEX IF NOT EXISTS idx_tracks_source_keyword ON tracks(source, search_keyword, cached_at);
                 CREATE TABLE IF NOT EXISTS lyrics (
                     track_id TEXT NOT NULL,
                     source TEXT NOT NULL,
@@ -84,12 +85,16 @@ impl Db {
         let now = now_epoch();
         let src = source.storage_key();
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-        for t in tracks {
-            tx.execute(
+        {
+            let mut stmt = tx.prepare_cached(
                 "INSERT OR REPLACE INTO tracks (id, source, name, artist, album, duration_ms, cover_url, search_keyword, cached_at, media_mid)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                rusqlite::params![t.id, src, t.name, t.artist, t.album, t.duration_ms, t.cover_url, keyword, now, t.media_mid],
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
             ).map_err(|e| e.to_string())?;
+            for t in tracks {
+                stmt.execute(
+                    rusqlite::params![t.id, src, t.name, t.artist, t.album, t.duration_ms, t.cover_url, keyword, now, t.media_mid],
+                ).map_err(|e| e.to_string())?;
+            }
         }
         tx.commit().map_err(|e| e.to_string())?;
         Ok(())

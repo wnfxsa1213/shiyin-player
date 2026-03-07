@@ -149,7 +149,9 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
                     <div
                       key={i}
                       className={`transition-[transform,opacity,filter] duration-500 origin-left ${
-                        i === activeIndex ? 'scale-105' : 'opacity-30 blur-[1px]'
+                        i === activeIndex ? 'scale-105'
+                          : Math.abs(i - activeIndex) <= 3 ? 'opacity-30 blur-[1px]'
+                          : 'opacity-30'
                       }`}
                     >
                       <p
