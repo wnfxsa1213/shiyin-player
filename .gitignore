@@ -49,3 +49,6 @@ skills-lock.json
 
 # Development artifacts
 diff.txt
+
+# Local-only docs
+ROADMAP.md

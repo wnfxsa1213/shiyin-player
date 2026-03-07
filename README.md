@@ -104,10 +104,6 @@ cargo tauri build
 | `←` / `→` | 快退 / 快进 5 秒 |
 | `Ctrl+B` | 切换侧边栏 |
 
-## 路线图
-
-详见 [ROADMAP.md](./ROADMAP.md)。
-
 ## License
 
 [MIT](./LICENSE)
