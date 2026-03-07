@@ -1,6 +1,8 @@
-# 拾音 (RustPlayer) 🎵
+# ShiYin Player (拾音)
 
-基于 Rust + Tauri v2 的跨平台桌面音乐播放器，支持网易云音乐和 QQ 音乐双音源聚合搜索与播放。
+A modern desktop music player built with **Rust + Tauri v2**, featuring dual music source support (NetEase Cloud Music & QQ Music), real-time spectrum visualization, synchronized lyrics, and dynamic theme colors extracted from album artwork. Designed for Linux with a Spotify-inspired UI.
+
+> 基于 Rust + Tauri v2 的 Linux 桌面音乐播放器，支持网易云音乐和 QQ 音乐双音源聚合搜索与播放。
 
 ## 功能特性
 
@@ -25,7 +27,6 @@
 | 前端 | React 18 + TypeScript + Tailwind CSS + Zustand |
 | 后端 | Rust (Cargo Workspace, 6 crates) |
 | 音频 | GStreamer (gstreamer-rs) |
-| 动画 | Framer Motion（共享布局动画） |
 | 虚拟滚动 | @tanstack/react-virtual |
 | 持久化 | tauri-plugin-store + SQLite (rusqlite + r2d2) |
 | 加密 | AES-128-CBC + RSA (网易 weapi) / MD5 签名 (QQ) |
@@ -94,17 +95,6 @@ cargo tauri dev
 cargo tauri build
 ```
 
-## 日志与调试
-
-- 后端日志落盘到 `~/.local/share/com.shiyin.music/logs/`，按天滚动，JSON Lines 格式
-- 前端错误通过 ErrorBoundary + `client_log` IPC 转存到后端日志
-- 每次 IPC 调用携带 `traceId`，可在日志中按 traceId 搜索完整链路
-- 详细度控制：
-
-```bash
-RUST_LOG=debug cargo tauri dev
-```
-
 ## 快捷键
 
 | 按键 | 功能 |
@@ -114,6 +104,10 @@ RUST_LOG=debug cargo tauri dev
 | `←` / `→` | 快退 / 快进 5 秒 |
 | `Ctrl+B` | 切换侧边栏 |
 
-## 许可证
+## 路线图
 
-MIT
+详见 [ROADMAP.md](./ROADMAP.md)。
+
+## License
+
+[MIT](./LICENSE)
