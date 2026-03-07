@@ -196,6 +196,50 @@
 | **Codex** | 72/100 | 2 Major + 2 Minor | Major#1（tick 异步状态切换）✅ 已修复；Major#2（spectrum clone 仍分配）已标注限制，推迟到 P2 |
 | **Gemini** | N/A | API 503 | 跳过，前端改动由 Claude 自审 |
 
+### P0+P1 综合审查修复 ✅ 已完成 (2026-03-07)
+
+> **审查范围**：P0+P1 全部 3 次提交（20 文件，+752/-164 行）
+> **审查方**：Codex 后端审查 + Gemini 前端审查（双模型并行）
+> **修复摘要**：5 个文件修改，+34/-14 行。两轮 Codex 复查通过。
+> **编译验证**：`cargo check` 通过，`npx tsc --noEmit` 通过。
+
+#### 修复项
+
+**审查修复 #1：PlaybackProgress 精确订阅** ✅
+- 问题：`PlaybackProgress.tsx` 的 `usePlayerStore.subscribe()` 订阅整个 store，音量/队列等无关字段变化也会重置 RAF 插值锚点
+- 修改文件：`PlaybackProgress.tsx`
+- 实际方案：subscribe 改为 `(state, prevState)` 签名，仅当 `state/positionMs/durationMs/emittedAtMs` 四字段变化时才更新锚点
+
+**审查修复 #2：emittedAtMs 漂移补偿闭环** ✅
+- 问题：后端 `events.rs` 已附加 `emittedAtMs` 时间戳，但前端未消费，进度平滑链路不完整
+- 修改文件：`playerStore.ts`, `App.tsx`, `PlaybackProgress.tsx`
+- 实际方案：playerStore 新增 `emittedAtMs` 字段；App.tsx 透传；PlaybackProgress 仅当 `emittedAtMs` 实际变化时（即真实 progress 事件）才做 `Date.now() - emittedAtMs` 延迟补偿，本地状态变更（play/pause/seek）回退到 `performance.now()`
+- 复查修正：首轮实现在暂停恢复/seek 后会误用旧时间戳导致瞬跳，二轮加入 `emittedAtMs !== prevState.emittedAtMs` 判断后修复
+
+**审查修复 #3：spectrum 回调消除 slice 分配** ✅
+- 问题：`App.tsx` 的 `onPlayerSpectrum` 中 `magnitudes.slice(0, arr.length)` 在高频回调产生 GC 压力
+- 修改文件：`App.tsx`
+- 实际方案：改为 for 循环逐元素写入 Float32Array + 零填充尾部，零中间分配
+
+**审查修复 #4：移除 EVENT_EMIT_TIMEOUT 死代码** ✅
+- 问题：`commands/mod.rs` 中 `EVENT_EMIT_TIMEOUT` 常量已无使用，产生 unused warning
+- 修改文件：`commands/mod.rs`
+- 实际方案：直接删除
+
+**审查修复 #5：tokio interval MissedTickBehavior::Skip** ✅
+- 问题：播放引擎 `tokio::time::interval` 使用默认 Burst 行为，极端卡顿后会补发大量 tick
+- 修改文件：`crates/player/src/lib.rs`（3 处）
+- 实际方案：初始化和 2 处 tick rate 自适应重建处均显式设 `MissedTickBehavior::Skip`
+
+#### 综合审查修复结果
+
+| 审查方 | 轮次 | 评分 | 状态 |
+|--------|------|------|------|
+| **Codex** | 首轮 | 75/100 | 发现 2 Major + 3 Minor |
+| **Gemini** | 首轮 | 92/100 | PASS |
+| **Codex** | 复查 R1 | 55/100 | emittedAtMs 实现有副作用 |
+| **Codex** | 复查 R2 | 64/100 | emittedAtMs 修正通过，剩余建议推迟到 P2 |
+
 ### P1→P2 推迟项
 
 - **#15**: PlayerState clone overhead → 需改公共类型
@@ -203,6 +247,30 @@
 - **#32**: RwLock cookie → Arc → 需改跨 crate trait
 - **#14 完善**: spectrum clone 消除 → 需改 broadcast channel 为 Arc<[f32]>
 - **#20**: 三重动画帧率检测 → 合并到三档帧率模式
+
+### P1 审查→P2 推迟项（审查发现，推迟到 P2 处理）
+
+#### P2-0a. progress 事件加 playSeq 防乱序（来自 Codex 复查 R2）
+
+- 问题：seek/切歌后旧 progress 包可能迟到覆盖本地乐观状态，导致进度条瞬跳
+- 修改文件：`crates/player/src/lib.rs`（发送端加 seq）、`events.rs`（透传）、`ipc.ts`（类型更新）、`playerStore.ts`（比较 seq 丢弃旧包）
+- 策略：Engine 维护单调递增 `play_seq: u64`，每次 Load 时 +1；progress 事件携带 `play_seq`；前端 `updateProgress` 仅接受 `seq >= currentSeq` 的包
+- 推迟原因：同机 Tauri IPC 延迟 <5ms，实际发生概率极低；需改后端事件类型 + 前端 store，影响面偏大
+- 优先级：低（防御性增强）
+
+#### P2-0b. CLAUDE.md 文档同步（来自 Codex 复查）
+
+- 问题：`src-tauri/CLAUDE.md` 中 progress 事件仍写 `{ positionMs, durationMs }` 和 `~2Hz`
+- 修改文件：`apps/rustplayer-tauri/src-tauri/CLAUDE.md`、`apps/rustplayer-tauri/frontend/CLAUDE.md`
+- 策略：更新 progress 事件为 `{ positionMs, durationMs, emittedAtMs }`、频率为 `~5Hz`；更新 playerStore 字段列表
+- 推迟原因：不影响运行，下次 `/ccg:init` 增量更新时一并处理
+
+#### P2-0c. 进度插值/延迟补偿自动化测试（来自 Codex 复查）
+
+- 问题：PlaybackProgress 的 RAF 插值、emittedAtMs 补偿、精确订阅逻辑无自动化测试
+- 修改文件：新增 `frontend/src/components/player/__tests__/PlaybackProgress.test.ts`
+- 策略：Vitest + fake timers 测试 4 个场景：正常插值、seek 后旧包丢弃、暂停恢复锚点正确、emittedAtMs 延迟补偿
+- 推迟原因：需搭建 Vitest 测试基础设施（项目当前无前端测试），与整体测试策略统一规划
 
 ---
 

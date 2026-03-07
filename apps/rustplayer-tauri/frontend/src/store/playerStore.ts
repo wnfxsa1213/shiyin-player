@@ -23,6 +23,8 @@ interface PlayerStore {
   state: PlayerState;
   positionMs: number;
   durationMs: number;
+  /** Unix epoch ms when the backend emitted the most recent progress event. */
+  emittedAtMs: number;
   volume: number;
   queue: Track[];
   queueIndex: number;
@@ -34,7 +36,7 @@ interface PlayerStore {
   seek: (position: number) => void;
   setVolume: (volume: number) => void;
   setTrack: (track: Track) => void;
-  updateProgress: (position: number, duration?: number) => void;
+  updateProgress: (position: number, duration?: number, emittedAtMs?: number) => void;
   addToQueue: (tracks: Track[]) => void;
   insertNext: (track: Track) => void;
   removeFromQueue: (index: number) => void;
@@ -63,6 +65,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   state: 'idle',
   positionMs: 0,
   durationMs: 0,
+  emittedAtMs: 0,
   volume: 1,
   queue: [],
   queueIndex: -1,
@@ -79,7 +82,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     set({ volume: v });
   },
   setTrack: (track) => set({ currentTrack: track, state: 'loading', positionMs: 0, durationMs: track.durationMs }),
-  updateProgress: (positionMs, durationMs) => set((s) => ({ positionMs, durationMs: durationMs ?? s.durationMs })),
+  updateProgress: (positionMs, durationMs, emittedAtMs) => set((s) => ({ positionMs, durationMs: durationMs ?? s.durationMs, emittedAtMs: emittedAtMs ?? s.emittedAtMs })),
 
   addToQueue: (tracks) => set((state) => {
     const newQueue = [...state.queue];

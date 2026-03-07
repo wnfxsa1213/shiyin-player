@@ -138,8 +138,8 @@ export default function App() {
           usePlayerStore.getState().playNext();
         }
       }),
-      onPlayerProgress(({ positionMs, durationMs }) => {
-        updateProgress(positionMs, durationMs);
+      onPlayerProgress(({ positionMs, durationMs, emittedAtMs }) => {
+        updateProgress(positionMs, durationMs, emittedAtMs);
       }),
       onPlayerError((err) => {
         addToast('error', sanitizeError(err));
@@ -149,12 +149,12 @@ export default function App() {
         // Write directly to shared ref — bypasses Zustand store to avoid ~15fps re-renders.
         // SpectrumVisualizer reads from this ref in its RAF loop.
         const arr = spectrumDataRef.current;
-        // Float32Array.set() is a native optimized memcpy, faster than manual loop
-        if (magnitudes.length <= arr.length) {
-          arr.set(magnitudes);
-        } else {
-          arr.set(magnitudes.slice(0, arr.length));
-        }
+        // Copy into pre-allocated Float32Array without intermediate allocation.
+        // magnitudes is a plain number[] from IPC, so subarray is not available.
+        const len = Math.min(magnitudes.length, arr.length);
+        for (let i = 0; i < len; i++) arr[i] = magnitudes[i];
+        // Zero out remaining slots if source is shorter than buffer
+        for (let i = len; i < arr.length; i++) arr[i] = 0;
       }),
       onLoginSuccess((source) => {
         const name = source === 'netease' ? '网易云' : 'QQ音乐';

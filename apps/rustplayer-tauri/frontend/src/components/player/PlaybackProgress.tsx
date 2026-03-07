@@ -19,11 +19,28 @@ export default function PlaybackProgress() {
     let isPlaying = usePlayerStore.getState().state === 'playing';
 
     // Subscribe to store for authoritative position/duration updates (~5Hz from backend).
-    const unsubscribe = usePlayerStore.subscribe((state) => {
+    // Only react to progress-relevant fields — avoids resetting interpolation
+    // anchors when unrelated fields (volume, queue, playMode) change.
+    const unsubscribe = usePlayerStore.subscribe((state, prevState) => {
+      if (state.state === prevState.state &&
+          state.positionMs === prevState.positionMs &&
+          state.durationMs === prevState.durationMs &&
+          state.emittedAtMs === prevState.emittedAtMs) return;
+
       isPlaying = state.state === 'playing';
       lastServerPos = state.positionMs;
-      lastServerTime = performance.now();
       lastDur = state.durationMs;
+
+      // Only apply IPC latency compensation when emittedAtMs actually changed
+      // (i.e., this update came from a real backend progress event).
+      // For local state changes (play/pause/seek), use current time to avoid
+      // stale timestamps causing progress bar jumps.
+      if (state.emittedAtMs && state.emittedAtMs !== prevState.emittedAtMs) {
+        const ipcLatency = Math.max(0, Date.now() - state.emittedAtMs);
+        lastServerTime = performance.now() - ipcLatency;
+      } else {
+        lastServerTime = performance.now();
+      }
 
       if (durationSpanRef.current) {
         durationSpanRef.current.textContent = formatTime(lastDur);

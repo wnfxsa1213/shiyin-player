@@ -99,6 +99,7 @@ fn engine_loop(
             spectrum_buf: Vec::with_capacity(64),
         };
         let mut ticker = tokio::time::interval(Duration::from_millis(33));
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         loop {
             tokio::select! {
@@ -116,6 +117,7 @@ fn engine_loop(
                             };
                             if ticker.period() != new_period {
                                 ticker = tokio::time::interval(new_period);
+                                ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                             }
                         }
                         None => {
@@ -135,6 +137,7 @@ fn engine_loop(
                     };
                     if ticker.period() != new_period {
                         ticker = tokio::time::interval(new_period);
+                        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                     }
                 }
             }

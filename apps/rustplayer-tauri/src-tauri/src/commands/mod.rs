@@ -27,8 +27,6 @@ const LOGIN_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const LOGIN_INITIAL_DELAY: Duration = Duration::from_secs(3);
 /// Cookie extraction timeout.
 const COOKIE_EXTRACT_TIMEOUT: Duration = Duration::from_secs(5);
-/// Event emission timeout.
-const EVENT_EMIT_TIMEOUT: Duration = Duration::from_secs(2);
 /// Timeout for clearing cookies via webkit.
 const COOKIE_CLEAR_TIMEOUT: Duration = Duration::from_secs(2);
 
