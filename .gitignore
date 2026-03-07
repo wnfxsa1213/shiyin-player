@@ -1,8 +1,51 @@
+# Build artifacts
 /target
-node_modules
 dist
+
+# Dependencies
+node_modules
+
+# Lock files
 Cargo.lock
 package-lock.json
+
+# Environment variables
+.env
+.env.*
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Log files
+*.log
+
+# Key / certificate files
+*.pem
+*.key
+*.p12
+*.pfx
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# AI / agent tools
+.claude/
 .agents/
 .augment/
 skills-lock.json
+
+# Development artifacts
+diff.txt
