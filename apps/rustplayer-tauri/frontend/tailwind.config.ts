@@ -60,6 +60,7 @@ export default {
         'pulse-glow': 'pulse-glow 2s ease-in-out infinite',
         'spin-slow': 'spin-slow 8s linear infinite',
         'scale-in': 'scale-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both',
+        'cover-rotate': 'cover-rotate 20s linear infinite',
       },
       backgroundImage: {
         'gradient-accent': 'var(--gradient-accent)',

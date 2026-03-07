@@ -23,12 +23,16 @@ export const COLOR_PRESETS: ColorPreset[] = [
  */
 export const spectrumDataRef = { current: new Float32Array(64) };
 
+export type VisualizationMode = 'bars' | 'circle' | 'wave';
+
 interface VisualizerStore {
   enabled: boolean;
   showParticles: boolean;
+  visualizationMode: VisualizationMode;
   colors: { primary: string; secondary: string; particle: string };
   setEnabled: (v: boolean) => void;
   setShowParticles: (v: boolean) => void;
+  setVisualizationMode: (mode: VisualizationMode) => void;
   setColors: (c: { primary: string; secondary: string; particle: string }) => void;
   applyPreset: (name: string) => void;
 }
@@ -36,6 +40,7 @@ interface VisualizerStore {
 export const useVisualizerStore = create<VisualizerStore>((set) => ({
   enabled: true,
   showParticles: true,
+  visualizationMode: 'bars' as VisualizationMode,
   colors: COLOR_PRESETS[0],
   setEnabled: (enabled) => {
     set({ enabled });
@@ -44,6 +49,10 @@ export const useVisualizerStore = create<VisualizerStore>((set) => ({
   setShowParticles: (showParticles) => {
     set({ showParticles });
     saveSetting('visualizer.showParticles', showParticles).catch(console.error);
+  },
+  setVisualizationMode: (visualizationMode) => {
+    set({ visualizationMode });
+    saveSetting('visualizer.mode', visualizationMode).catch(console.error);
   },
   setColors: (colors) => {
     set({ colors });

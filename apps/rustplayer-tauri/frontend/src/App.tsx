@@ -14,7 +14,7 @@ import Sidebar from '@/components/layout/Sidebar';
 import PlayerBar from '@/components/layout/PlayerBar';
 import HomeView from '@/views/HomeView';
 import SearchView from '@/views/SearchView';
-import LyricsPanel from '@/components/player/LyricsPanel';
+import ImmersiveFMPanel from '@/components/player/ImmersiveFMPanel';
 import QueuePanel from '@/components/player/QueuePanel';
 import ToastContainer from '@/components/common/ToastContainer';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
@@ -23,6 +23,7 @@ import ErrorBoundary from '@/components/common/ErrorBoundary';
 // infrequently accessed; lazy-loading them reduces the initial JS bundle.
 const SettingsView = lazy(() => import('@/views/SettingsView'));
 const PlaylistDetailView = lazy(() => import('@/views/PlaylistDetailView'));
+const DailyRecommendView = lazy(() => import('@/views/DailyRecommendView'));
 
 /** Declarative ARIA live region that announces playback state and track changes to screen readers. */
 function PlayerAnnouncer() {
@@ -49,8 +50,9 @@ function RouteFallback() {
 
 export default function App() {
   const theme = useUiStore((s) => s.theme);
+  const immersiveOpen = useUiStore((s) => s.immersiveOpen);
+  const setImmersiveOpen = useUiStore((s) => s.setImmersiveOpen);
   const setVolume = usePlayerStore((s) => s.setVolume);
-  const [lyricsOpen, setLyricsOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
   // Tracks whether the most recent player stop was caused by an error.
   // Used to prevent the stopped-event handler from retrying a failing track.
@@ -107,6 +109,8 @@ export default function App() {
         if (vizParticles !== null) useVisualizerStore.setState({ showParticles: vizParticles });
         const vizColors = await loadSetting<{ primary: string; secondary: string; particle: string }>('visualizer.colors');
         if (vizColors) useVisualizerStore.setState({ colors: vizColors });
+        const vizMode = await loadSetting<'bars' | 'circle' | 'wave'>('visualizer.mode');
+        if (vizMode) useVisualizerStore.setState({ visualizationMode: vizMode });
       } catch (err) {
         console.error('Failed to load settings:', err);
       }
@@ -227,6 +231,12 @@ export default function App() {
             useUiStore.getState().toggleSidebar();
           }
           break;
+        case 'Escape':
+          if (useUiStore.getState().immersiveOpen) {
+            e.preventDefault();
+            useUiStore.getState().setImmersiveOpen(false);
+          }
+          break;
       }
     };
     window.addEventListener('keydown', onKey);
@@ -237,7 +247,7 @@ export default function App() {
     <MemoryRouter>
       <a href="#main-content" className="sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:top-4 focus-visible:left-4 focus-visible:z-[9999] focus-visible:p-4 focus-visible:bg-accent focus-visible:text-white focus-visible:rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent">跳转到主内容</a>
       <PlayerAnnouncer />
-      <div className="flex h-screen bg-bg-base text-text-primary overflow-hidden pb-20">
+      <div className="flex h-screen bg-bg-base text-text-primary overflow-hidden pb-24">
         <Sidebar />
         <main id="main-content" className="relative flex-1 overflow-y-auto bg-bg-base" tabIndex={-1}>
           <ErrorBoundary>
@@ -247,13 +257,14 @@ export default function App() {
                 <Route path="/search" element={<SearchView />} />
                 <Route path="/settings" element={<SettingsView />} />
                 <Route path="/playlist/:source/:id" element={<PlaylistDetailView />} />
+                <Route path="/daily" element={<DailyRecommendView />} />
               </Routes>
             </Suspense>
           </ErrorBoundary>
-          <LyricsPanel isOpen={lyricsOpen} onClose={() => setLyricsOpen(false)} />
+          <ImmersiveFMPanel isOpen={immersiveOpen} onClose={() => setImmersiveOpen(false)} />
           <QueuePanel isOpen={queueOpen} onClose={() => setQueueOpen(false)} />
         </main>
-        <PlayerBar lyricsOpen={lyricsOpen} onToggleLyrics={() => setLyricsOpen(!lyricsOpen)} onToggleQueue={() => setQueueOpen(!queueOpen)} />
+        <PlayerBar lyricsOpen={immersiveOpen} onToggleLyrics={() => setImmersiveOpen(!immersiveOpen)} onToggleQueue={() => setQueueOpen(!queueOpen)} />
       </div>
       <ToastContainer />
     </MemoryRouter>

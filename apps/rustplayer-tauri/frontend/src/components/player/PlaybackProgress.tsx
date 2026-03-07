@@ -147,8 +147,8 @@ export default function PlaybackProgress() {
   const initialPct = initialDur > 0 ? (initialPos / initialDur) * 100 : 0;
 
   return (
-    <div className="flex items-center gap-2 w-full text-xs text-text-secondary">
-      <span ref={timeSpanRef} className="font-mono tabular-nums">
+    <div className="flex w-full items-center gap-2 text-xs leading-none text-text-secondary">
+      <span ref={timeSpanRef} className="w-11 flex-shrink-0 text-center font-mono tabular-nums">
         {formatTime(initialPos)}
       </span>
       <input
@@ -161,10 +161,10 @@ export default function PlaybackProgress() {
         style={{ '--progress': `${initialPct}%` } as React.CSSProperties}
         onPointerDown={handlePointerDown}
         onChange={handleChange}
-        className="flex-1"
+        className="min-w-0 flex-1"
         aria-label="播放进度"
       />
-      <span ref={durationSpanRef} className="font-mono tabular-nums">
+      <span ref={durationSpanRef} className="w-11 flex-shrink-0 text-center font-mono tabular-nums">
         {formatTime(initialState.durationMs)}
       </span>
     </div>

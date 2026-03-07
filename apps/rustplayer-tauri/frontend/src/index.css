@@ -11,3 +11,21 @@
     margin: 0;
   }
 }
+
+@layer utilities {
+  .scrollbar-hide {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .animate-cover-rotate-paused {
+    animation-play-state: paused;
+  }
+}
+
+@keyframes cover-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

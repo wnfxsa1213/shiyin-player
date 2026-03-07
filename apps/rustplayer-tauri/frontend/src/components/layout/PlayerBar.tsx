@@ -39,6 +39,7 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
   return (
     <footer
       className="h-20 bg-bg-primary/80 glass flex-shrink-0 fixed bottom-0 w-full z-50 border-t border-border-primary flex items-center justify-between px-6 transition-[background-color,border-color] duration-700"
+      style={{ borderLeftWidth: 0, borderRightWidth: 0, borderBottomWidth: 0 }}
       aria-label="播放控制"
     >
       {/* Spectrum background layer — isolated overflow-hidden wrapper */}
@@ -93,9 +94,10 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
         )}
       </div>
 
-      {/* Center: Controls & Transient Progress */}
-      <div ref={centerRef} className="relative flex flex-col items-center w-1/2 max-w-2xl">
-        <div className="flex items-center gap-6 mb-1">
+      {/* Center: Controls & Progress
+          进度条绝对定位到底部，避免双行内容把主控制按钮整体顶偏 */}
+      <div ref={centerRef} className="relative flex h-full w-1/2 max-w-2xl flex-col items-center justify-center">
+        <div className="relative z-10 flex items-center gap-6">
           <button
             onClick={() => queue.length > 0 && usePlayerStore.getState().playPrev()}
             disabled={queue.length === 0}
@@ -141,8 +143,9 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
           </button>
         </div>
 
-        {/* 剥离出的无渲染高性能进度条 */}
-        <PlaybackProgress />
+        <div className="absolute inset-x-0 bottom-1">
+          <PlaybackProgress />
+        </div>
       </div>
 
       {/* Right: Volume & Queue */}

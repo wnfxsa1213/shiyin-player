@@ -2,16 +2,19 @@ import { NavLink } from 'react-router-dom';
 import { useUiStore } from '@/store/uiStore';
 import { usePlaylistStore } from '@/store/playlistStore';
 import CoverImage from '@/components/common/CoverImage';
-import { Home, Search, Settings, PanelLeftClose, PanelLeftOpen, type LucideIcon } from 'lucide-react';
+import { Home, Search, Settings, PanelLeftClose, PanelLeftOpen, CalendarDays, Radio, type LucideIcon } from 'lucide-react';
 
 const navItems: { path: string; label: string; icon: LucideIcon }[] = [
   { path: '/', label: '首页', icon: Home },
   { path: '/search', label: '搜索', icon: Search },
+  { path: '/daily', label: '每日推荐', icon: CalendarDays },
   { path: '/settings', label: '设置', icon: Settings },
 ];
 
 export default function Sidebar() {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
+  const immersiveOpen = useUiStore((s) => s.immersiveOpen);
+  const setImmersiveOpen = useUiStore((s) => s.setImmersiveOpen);
   const playlists = usePlaylistStore((s) => s.playlists);
 
   return (
@@ -63,6 +66,23 @@ export default function Sidebar() {
             </NavLink>
           </li>
         ))}
+        <li>
+          <button
+            onClick={() => setImmersiveOpen(!immersiveOpen)}
+            aria-label={collapsed ? '沉浸 FM' : undefined}
+            className={`relative w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+              immersiveOpen
+                ? 'bg-accent-subtle text-accent font-medium'
+                : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover'
+            }`}
+          >
+            {immersiveOpen && (
+              <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-accent" aria-hidden="true" />
+            )}
+            <Radio size={20} strokeWidth={1.5} className="flex-shrink-0" />
+            {!collapsed && <span className="text-sm">沉浸 FM</span>}
+          </button>
+        </li>
       </ul>
 
       {playlists.length > 0 && (

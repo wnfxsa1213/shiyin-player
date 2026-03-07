@@ -104,6 +104,12 @@ export const ipc = {
   getPlaylistDetail: (id: string, source: MusicSource) =>
     invokeWithTrace<Playlist>('get_playlist_detail', { id, source }),
 
+  getDailyRecommend: (source: MusicSource) =>
+    invokeWithTrace<Track[]>('get_daily_recommend', { source }),
+
+  getPersonalFm: (source: MusicSource) =>
+    invokeWithTrace<Track[]>('get_personal_fm', { source }),
+
   extractCoverColor: (url: string) =>
     invokeWithTrace<[number, number, number]>('extract_cover_color', { url }),
 
