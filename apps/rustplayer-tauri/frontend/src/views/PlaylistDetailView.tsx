@@ -67,32 +67,39 @@ export default function PlaylistDetailView() {
           <div className="p-8 pb-0">
             <div className="flex gap-6 mb-8">
               <CoverImage
-                    src={playlist.coverUrl}
-                    alt={`${playlist.name} 封面`}
-                    className="w-40 h-40 rounded-xl object-cover shadow-md"
-                    fallbackClassName="w-40 h-40 rounded-xl bg-bg-secondary flex items-center justify-center"
-                    iconSize={40}
-                    fallbackIcon={<Play size={40} strokeWidth={1} className="text-text-tertiary" />}
-                    resetKey={playlist.id}
-                  />
+                src={playlist.coverUrl}
+                alt={`${playlist.name} 封面`}
+                width={160}
+                height={160}
+                eager={true}
+                className="w-40 h-40 rounded-xl object-cover shadow-md"
+                fallbackClassName="w-40 h-40 rounded-xl bg-bg-secondary flex items-center justify-center"
+                iconSize={40}
+                fallbackIcon={<Play size={40} strokeWidth={1} className="text-text-tertiary" />}
+                resetKey={playlist.id}
+              />
               <div className="flex flex-col justify-center gap-2">
                 <h1 className="text-2xl font-bold">{playlist.name}</h1>
                 {playlist.description && (
-                  <p className="text-sm text-text-secondary line-clamp-2">{playlist.description}</p>
+                  <p className="text-sm text-text-secondary line-clamp-2" title={playlist.description}>{playlist.description}</p>
                 )}
                 <p className="text-xs text-text-tertiary">{playlist.tracks.length} 首歌曲</p>
                 <div className="flex gap-3 mt-2">
-                  <button onClick={handlePlayAll} className="flex items-center gap-2 px-5 py-2 bg-gradient-accent text-white rounded-full text-sm font-medium hover:shadow-glow transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent focus-visible:outline-none">
+                  <button onClick={handlePlayAll} className="flex items-center gap-2 px-5 py-2 bg-gradient-accent text-white rounded-full text-sm font-medium hover:shadow-glow transition-shadow cursor-pointer focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent focus-visible:outline-none">
                     <Play size={16} fill="currentColor" /> 播放全部
                   </button>
-                  <button onClick={handleShuffleAll} className="flex items-center gap-2 px-5 py-2 bg-bg-secondary text-text-primary rounded-full text-sm hover:bg-bg-hover transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
+                  <button onClick={handleShuffleAll} className="flex items-center gap-2 px-5 py-2 bg-bg-secondary text-text-primary rounded-full text-sm hover:bg-bg-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
                     <Shuffle size={16} strokeWidth={1.5} /> 随机播放
                   </button>
                 </div>
               </div>
             </div>
           </div>
-          <VirtualTrackList tracks={playlist.tracks} />
+          {playlist.tracks.length === 0 ? (
+            <div className="px-8 py-12 text-sm text-text-tertiary">暂无歌曲</div>
+          ) : (
+            <VirtualTrackList tracks={playlist.tracks} />
+          )}
         </>
       )}
       {!loading && !playlist && (

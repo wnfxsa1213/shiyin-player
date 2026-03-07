@@ -8,7 +8,9 @@ interface CoverImageProps {
   fallbackClassName?: string;
   iconSize?: number;
   fallbackIcon?: React.ReactNode;
+  /** 可选的固有宽度，用于已知尺寸时稳定布局。 */
   width?: number;
+  /** 可选的固有高度，用于已知尺寸时稳定布局。 */
   height?: number;
   /** Reset error state when this key changes (e.g. track id). */
   resetKey?: string;

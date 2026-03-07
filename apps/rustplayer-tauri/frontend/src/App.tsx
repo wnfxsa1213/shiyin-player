@@ -49,11 +49,6 @@ function RouteFallback() {
 
 export default function App() {
   const theme = useUiStore((s) => s.theme);
-  // Use individual selectors for stable action references — avoids full-store subscription
-  // that would cause App to re-render on every positionMs/durationMs update (~5Hz).
-  const play = usePlayerStore((s) => s.play);
-  const pause = usePlayerStore((s) => s.pause);
-  const updateProgress = usePlayerStore((s) => s.updateProgress);
   const setVolume = usePlayerStore((s) => s.setVolume);
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
@@ -125,18 +120,23 @@ export default function App() {
     root.classList.add(theme);
   }, [theme]);
 
+  // Register all backend event listeners.
+  // Uses empty dependency array — all store access is via getState() to avoid
+  // re-subscription when action references change (fixes #45 event listener race
+  // and #46 StrictMode double-registration).
   useEffect(() => {
+    let active = true;
+    const cleanups: (() => void)[] = [];
     const addToast = useToastStore.getState().addToast;
-    const unsubs = [
+
+    Promise.all([
       onPlayerState((state) => {
-        if (state === 'playing') play();
-        else if (state === 'paused') pause();
+        if (!active) return;
+        if (state === 'playing') usePlayerStore.getState().play();
+        else if (state === 'paused') usePlayerStore.getState().pause();
         else if (state === 'stopped') {
           if (playerErrorRef.current) {
             playerErrorRef.current = false;
-            // Playback failed. Only skip auto-advance when playNext() would replay
-            // the same failing track (single-track queue or repeat-one mode).
-            // For multi-track queues, advance normally so the failing track is skipped.
             const { queue, playMode } = usePlayerStore.getState();
             const wouldReplaySame = playMode === 'repeat-one' || queue.length <= 1;
             if (wouldReplaySame) return;
@@ -145,24 +145,23 @@ export default function App() {
         }
       }),
       onPlayerProgress(({ positionMs, durationMs, emittedAtMs }) => {
-        updateProgress(positionMs, durationMs, emittedAtMs);
+        if (!active) return;
+        usePlayerStore.getState().updateProgress(positionMs, durationMs, emittedAtMs);
       }),
       onPlayerError((err) => {
+        if (!active) return;
         addToast('error', sanitizeError(err));
         playerErrorRef.current = true;
       }),
       onPlayerSpectrum(({ magnitudes }) => {
-        // Write directly to shared ref — bypasses Zustand store to avoid ~15fps re-renders.
-        // SpectrumVisualizer reads from this ref in its RAF loop.
+        if (!active) return;
         const arr = spectrumDataRef.current;
-        // Copy into pre-allocated Float32Array without intermediate allocation.
-        // magnitudes is a plain number[] from IPC, so subarray is not available.
         const len = Math.min(magnitudes.length, arr.length);
         for (let i = 0; i < len; i++) arr[i] = magnitudes[i];
-        // Zero out remaining slots if source is shorter than buffer
         for (let i = len; i < arr.length; i++) arr[i] = 0;
       }),
       onLoginSuccess((source) => {
+        if (!active) return;
         const name = source === 'netease' ? '网易云' : 'QQ音乐';
         addToast('success', `${name}登录成功`);
         usePlaylistStore.getState().fetchPlaylists(source, true).catch(() => {
@@ -170,12 +169,24 @@ export default function App() {
         });
       }),
       onLoginTimeout((source) => {
+        if (!active) return;
         const name = source === 'netease' ? '网易云' : 'QQ音乐';
         addToast('error', `${name}登录超时，请重试`);
       }),
-    ];
-    return () => { unsubs.forEach((p) => p.then((fn) => fn())); };
-  }, [play, pause, updateProgress]);
+    ]).then((fns) => {
+      if (active) {
+        cleanups.push(...fns);
+      } else {
+        // Component unmounted before listeners resolved — clean up immediately
+        fns.forEach((fn) => fn());
+      }
+    });
+
+    return () => {
+      active = false;
+      cleanups.forEach((fn) => fn());
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -224,7 +235,7 @@ export default function App() {
 
   return (
     <MemoryRouter>
-      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[9999] focus:p-4 focus:bg-accent focus:text-white focus:rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent">跳转到主内容</a>
+      <a href="#main-content" className="sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:top-4 focus-visible:left-4 focus-visible:z-[9999] focus-visible:p-4 focus-visible:bg-accent focus-visible:text-white focus-visible:rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent">跳转到主内容</a>
       <PlayerAnnouncer />
       <div className="flex h-screen bg-bg-base text-text-primary overflow-hidden pb-20">
         <Sidebar />

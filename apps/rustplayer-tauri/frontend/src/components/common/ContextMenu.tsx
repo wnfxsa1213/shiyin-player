@@ -88,7 +88,7 @@ export default function ContextMenu({ x, y, track, onClose }: Props) {
 
   return createPortal(
     <div ref={ref} role="menu" style={style} tabIndex={-1} onKeyDown={handleKeyDown}
-      className="w-48 bg-bg-elevated rounded-xl shadow-xl border border-border-primary py-1 animate-scale-in origin-top-left outline-none"
+      className="w-48 bg-bg-elevated rounded-xl shadow-xl border border-border-primary py-1 animate-scale-in origin-top-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
       {menuItems.map((item) => (
         <button

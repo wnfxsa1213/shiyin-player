@@ -14,6 +14,12 @@ const cards: { label: string; icon: LucideIcon; gradient: string }[] = [
   { label: '电台', icon: Radio, gradient: 'bg-gradient-purple' },
 ];
 
+const getScrollBehavior = (): ScrollBehavior => (
+  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ? 'auto'
+    : 'smooth'
+);
+
 export default function HomeView() {
   const navigate = useNavigate();
   const recentTracks = usePlayerStore((s) => s.recentTracks);
@@ -29,7 +35,7 @@ export default function HomeView() {
         if (recentTracks.length === 0) {
           toast('info', '还没有播放记录');
         } else {
-          recentRef.current?.scrollIntoView({ behavior: 'smooth' });
+          recentRef.current?.scrollIntoView({ behavior: getScrollBehavior() });
         }
         break;
       case '我的收藏':
@@ -61,11 +67,12 @@ export default function HomeView() {
       <p className="text-text-secondary mb-8 text-sm animate-fade-in-up [animation-delay:50ms]">发现你喜欢的音乐</p>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-10">
-        {cards.map((card) => (
+        {cards.map((card, index) => (
           <button
             key={card.label}
             onClick={() => handleCardClick(card.label)}
             className="stagger-item aspect-square rounded-xl bg-bg-secondary flex flex-col items-center justify-center gap-3 text-text-secondary transition-colors duration-200 group animate-fade-in-up cursor-pointer hover:bg-bg-hover focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
+            style={{ animationDelay: `${(index + 1) * 100}ms` }}
           >
             <div className={`w-12 h-12 rounded-xl ${card.gradient} flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform duration-300`}>
               <card.icon size={24} strokeWidth={1.5} className="text-white" />
@@ -90,6 +97,8 @@ export default function HomeView() {
               >
                 <CoverImage
                   src={track.coverUrl}
+                  width={40}
+                  height={40}
                   className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
                   fallbackClassName="w-10 h-10 rounded-lg bg-bg-elevated flex items-center justify-center flex-shrink-0"
                   iconSize={16}
@@ -117,9 +126,12 @@ export default function HomeView() {
                 to={`/playlist/${pl.source}/${pl.id}`}
                 className="group text-left cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none rounded-xl block"
               >
-                <div className="aspect-square rounded-xl bg-bg-secondary mb-2 flex items-center justify-center relative overflow-hidden hover:shadow-md transition-all duration-300">
+                <div className="aspect-square rounded-xl bg-bg-secondary mb-2 flex items-center justify-center relative overflow-hidden hover:shadow-md transition-shadow duration-300">
                   <CoverImage
                     src={pl.coverUrl}
+                    alt={`${pl.name} 封面`}
+                    width={200}
+                    height={200}
                     className="w-full h-full object-cover"
                     fallbackClassName="w-full h-full flex items-center justify-center"
                     iconSize={32}

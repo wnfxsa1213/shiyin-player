@@ -11,12 +11,43 @@ export default function PlaybackProgress() {
   const isDraggingRef = useRef(false);
 
   useEffect(() => {
-    let rafId: number;
+    let rafId: number | undefined;
     // Local interpolation state — updated by store subscription, read by RAF loop.
     let lastServerPos = usePlayerStore.getState().positionMs;
     let lastServerTime = performance.now();
     let lastDur = usePlayerStore.getState().durationMs;
     let isPlaying = usePlayerStore.getState().state === 'playing';
+    const reducedMotionQuery = typeof window !== 'undefined'
+      ? window.matchMedia('(prefers-reduced-motion: reduce)')
+      : null;
+    const prefersReducedMotion = reducedMotionQuery?.matches ?? false;
+
+    const syncDurationUi = (duration: number) => {
+      if (durationSpanRef.current) {
+        durationSpanRef.current.textContent = formatTime(duration);
+      }
+      if (inputRef.current) {
+        inputRef.current.max = (duration || 100).toString();
+      }
+    };
+
+    const syncProgressUi = (position: number, duration: number) => {
+      const clampedPos = duration > 0 ? Math.min(position, duration) : position;
+      const max = duration || 100;
+      const pct = max > 0 ? (clampedPos / max) * 100 : 0;
+
+      syncDurationUi(duration);
+
+      if (timeSpanRef.current) {
+        timeSpanRef.current.textContent = formatTime(clampedPos);
+      }
+      if (inputRef.current) {
+        inputRef.current.value = clampedPos.toString();
+        inputRef.current.style.setProperty('--progress', `${pct}%`);
+      }
+    };
+
+    syncProgressUi(lastServerPos, lastDur);
 
     // Subscribe to store for authoritative position/duration updates (~5Hz from backend).
     // Only react to progress-relevant fields — avoids resetting interpolation
@@ -42,12 +73,16 @@ export default function PlaybackProgress() {
         lastServerTime = performance.now();
       }
 
-      if (durationSpanRef.current) {
-        durationSpanRef.current.textContent = formatTime(lastDur);
+      if (prefersReducedMotion) {
+        if (!isDraggingRef.current) {
+          syncProgressUi(lastServerPos, lastDur);
+        } else {
+          syncDurationUi(lastDur);
+        }
+        return;
       }
-      if (inputRef.current) {
-        inputRef.current.max = (lastDur || 100).toString();
-      }
+
+      syncDurationUi(lastDur);
     });
 
     // RAF loop for smooth 60fps progress bar interpolation.
@@ -60,21 +95,17 @@ export default function PlaybackProgress() {
       const elapsed = isPlaying ? now - lastServerTime : 0;
       const pos = Math.min(lastServerPos + elapsed, lastDur);
 
-      if (timeSpanRef.current) {
-        timeSpanRef.current.textContent = formatTime(pos);
-      }
-      if (inputRef.current) {
-        const max = lastDur || 100;
-        const pct = max > 0 ? (pos / max) * 100 : 0;
-        inputRef.current.value = pos.toString();
-        inputRef.current.style.setProperty('--progress', `${pct}%`);
-      }
+      syncProgressUi(pos, lastDur);
     };
 
-    rafId = requestAnimationFrame(tick);
+    if (!prefersReducedMotion) {
+      rafId = requestAnimationFrame(tick);
+    }
 
     return () => {
-      cancelAnimationFrame(rafId);
+      if (rafId !== undefined) {
+        cancelAnimationFrame(rafId);
+      }
       unsubscribe();
     };
   }, []);
@@ -123,6 +154,7 @@ export default function PlaybackProgress() {
       <input
         ref={inputRef}
         type="range"
+        name="progress"
         min={0}
         max={initialDur}
         defaultValue={initialPos}

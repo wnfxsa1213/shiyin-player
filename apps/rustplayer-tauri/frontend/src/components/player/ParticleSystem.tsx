@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { useVisualizerStore, spectrumDataRef } from '@/store/visualizerStore';
 
 interface Props {
@@ -21,10 +21,27 @@ interface Particle {
 
 const MAX_PARTICLES = 60;
 
+const getPrefersReducedMotion = () => (
+  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+);
+
 export default function ParticleSystem({ width, height, className }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const particles = useRef<Particle[]>([]);
   const rafRef = useRef<number>(0);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(getPrefersReducedMotion);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const handleChange = (event: MediaQueryListEvent) => setPrefersReducedMotion(event.matches);
+
+    setPrefersReducedMotion(mediaQuery.matches);
+    mediaQuery.addEventListener('change', handleChange);
+
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -36,6 +53,12 @@ export default function ParticleSystem({ width, height, className }: Props) {
     canvas.width = width * dpr;
     canvas.height = height * dpr;
     ctx.scale(dpr, dpr);
+
+    if (prefersReducedMotion) {
+      particles.current = [];
+      ctx.clearRect(0, 0, width, height);
+      return;
+    }
 
     const draw = () => {
       const { enabled, showParticles, colors } = useVisualizerStore.getState();
@@ -98,7 +121,7 @@ export default function ParticleSystem({ width, height, className }: Props) {
 
     rafRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [width, height]);
+  }, [width, height, prefersReducedMotion]);
 
   return (
     <canvas

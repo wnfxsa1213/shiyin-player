@@ -22,7 +22,7 @@ export default function ToastContainer() {
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          role="alert"
+          role="status"
           className="pointer-events-auto relative flex items-center gap-3 px-4 py-3 rounded-xl bg-bg-elevated/95 backdrop-blur-lg border border-border-primary shadow-lg min-w-[280px] max-w-[400px] text-sm animate-slide-in-right overflow-hidden"
         >
           <div className={`absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full ${colorMap[toast.type]}`} />

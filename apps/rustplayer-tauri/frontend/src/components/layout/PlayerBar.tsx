@@ -38,12 +38,12 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
 
   return (
     <footer
-      className="h-20 bg-bg-primary/80 glass flex-shrink-0 fixed bottom-0 w-full z-50 border-t border-border-primary flex items-center justify-between px-6 transition-all duration-700"
+      className="h-20 bg-bg-primary/80 glass flex-shrink-0 fixed bottom-0 w-full z-50 border-t border-border-primary flex items-center justify-between px-6 transition-[background-color,border-color] duration-700"
       aria-label="播放控制"
     >
       {/* Spectrum background layer — isolated overflow-hidden wrapper */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
-        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 opacity-50 transition-all duration-700">
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 opacity-50 transition-opacity duration-700">
           <SpectrumVisualizer width={centerWidth} height={60} />
         </div>
       </div>
@@ -60,12 +60,12 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
                     alt=""
                     width={48}
                     height={48}
-                    className={`w-full h-full shadow-sm object-cover transition-[border-radius] duration-500 ${isPlaying ? 'rounded-full' : 'rounded-lg'}`}
+                    className={`w-full h-full shadow-sm object-cover ${isPlaying ? 'rounded-full' : 'rounded-lg'}`}
                     onError={() => setCoverFailed(true)}
                   />
                 ) : (
                   <div
-                    className={`w-full h-full bg-bg-secondary flex items-center justify-center transition-[border-radius] duration-500 ${isPlaying ? 'rounded-full' : 'rounded-lg'}`}
+                    className={`w-full h-full bg-bg-secondary flex items-center justify-center ${isPlaying ? 'rounded-full' : 'rounded-lg'}`}
                   >
                     <Music size={20} strokeWidth={1.5} className="text-text-tertiary" />
                   </div>
@@ -153,6 +153,7 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
         <Volume2 size={16} strokeWidth={1.5} className="text-text-tertiary flex-shrink-0" aria-hidden="true" />
         <input
           type="range"
+          name="volume"
           min={0}
           max={1}
           step={0.01}

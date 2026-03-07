@@ -16,7 +16,7 @@ export default function Sidebar() {
 
   return (
     <nav
-      className={`${collapsed ? 'w-16' : 'w-56'} bg-bg-primary/80 glass flex-shrink-0 flex flex-col border-r border-border-primary transition-all duration-300`}
+      className={`${collapsed ? 'w-16' : 'w-56'} bg-bg-primary/80 glass flex-shrink-0 flex flex-col border-r border-border-primary`}
       aria-label="主导航"
     >
       <div className="flex items-center gap-3 px-4 py-5">
@@ -68,7 +68,7 @@ export default function Sidebar() {
       {playlists.length > 0 && (
         <div className="px-2 mt-2 border-t border-border-secondary pt-2 flex-1 overflow-y-auto min-h-0">
           {!collapsed && <div className="px-3 py-1 text-xs text-text-tertiary font-medium">歌单</div>}
-          <ul className="space-y-0.5">
+          <ul className="space-y-0.5" style={{ contentVisibility: 'auto' }}>
             {playlists.map((pl) => (
               <li key={`${pl.source}-${pl.id}`}>
                 <NavLink
@@ -78,6 +78,8 @@ export default function Sidebar() {
                 >
                   <CoverImage
                     src={pl.coverUrl}
+                    width={24}
+                    height={24}
                     className="w-6 h-6 rounded object-cover flex-shrink-0"
                     fallbackClassName="w-6 h-6 rounded bg-bg-secondary flex items-center justify-center flex-shrink-0"
                     iconSize={12}

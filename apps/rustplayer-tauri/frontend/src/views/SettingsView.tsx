@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { LogIn, Loader2, CheckCircle, Info, ChevronRight } from 'lucide-react';
 import { useUiStore } from '@/store/uiStore';
 import { useVisualizerStore, COLOR_PRESETS } from '@/store/visualizerStore';
@@ -7,16 +7,20 @@ import { sanitizeError } from '@/lib/errorMessages';
 import { ipc, onLoginSuccess, onLoginTimeout, type MusicSource } from '@/lib/ipc';
 
 type LoginStatus = 'idle' | 'webview-pending' | 'cookie-submitting' | 'logged-in';
+const COOKIE_ERROR_ID = 'cookie-login-error';
 
 export default function SettingsView() {
-  const { theme, toggleTheme } = useUiStore();
+  const theme = useUiStore((s) => s.theme);
+  const toggleTheme = useUiStore((s) => s.toggleTheme);
   const [cookie, setCookie] = useState('');
+  const [cookieError, setCookieError] = useState('');
   const [source, setSource] = useState<MusicSource>('netease');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [loginStatusMap, setLoginStatusMap] = useState<Record<MusicSource, LoginStatus>>({
     netease: 'idle',
     qqmusic: 'idle',
   });
+  const cookieInputRef = useRef<HTMLInputElement>(null);
 
   const {
     enabled, showParticles, colors,
@@ -51,9 +55,16 @@ export default function SettingsView() {
     return () => { unsubs.forEach((p) => p.then((fn) => fn())); };
   }, []);
 
+  useEffect(() => {
+    if (loginStatus === 'logged-in') {
+      setCookieError('');
+    }
+  }, [loginStatus]);
+
   const handleWebViewLogin = async () => {
     if (loginStatus !== 'idle') return;
     const toast = useToastStore.getState().addToast;
+    setCookieError('');
     setLoginStatusMap((prev) => ({ ...prev, [source]: 'webview-pending' as LoginStatus }));
     try {
       await ipc.openLoginWindow(source);
@@ -66,13 +77,19 @@ export default function SettingsView() {
   const handleCookieLogin = async () => {
     if (!cookie.trim() || loginStatus === 'cookie-submitting') return;
     const toast = useToastStore.getState().addToast;
+    setCookieError('');
     setLoginStatusMap((prev) => ({ ...prev, [source]: 'cookie-submitting' as LoginStatus }));
     try {
       await ipc.login(source, cookie);
       setCookie('');
+      setCookieError('');
       // Status update and toast are handled by the global onLoginSuccess listener
     } catch (e) {
-      toast('error', `登录失败: ${sanitizeError(e)}`);
+      const message = sanitizeError(e);
+      toast('error', `登录失败: ${message}`);
+      setCookieError(message);
+      setShowAdvanced(true);
+      requestAnimationFrame(() => cookieInputRef.current?.focus());
       setLoginStatusMap((prev) => ({ ...prev, [source]: 'idle' as LoginStatus }));
     }
   };
@@ -100,7 +117,7 @@ export default function SettingsView() {
           <span className="text-text-secondary text-sm">主题</span>
           <button
             onClick={toggleTheme}
-            className="px-4 py-2 bg-bg-hover rounded-lg text-sm text-text-primary hover:bg-bg-elevated transition-all duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            className="px-4 py-2 bg-bg-hover rounded-lg text-sm text-text-primary hover:bg-bg-elevated transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
             {theme === 'dark' ? '浅色模式' : '深色模式'}
           </button>
@@ -115,8 +132,8 @@ export default function SettingsView() {
           <span className="text-text-secondary text-sm">启用可视化</span>
           <button
             onClick={() => setEnabled(!enabled)}
-            className={`w-11 h-6 rounded-full transition-colors duration-200 cursor-pointer relative focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${enabled ? 'bg-accent' : 'bg-bg-hover'}`}
-            role="switch" aria-checked={enabled}
+            className={`w-11 h-6 rounded-full transition-colors duration-200 cursor-pointer relative focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none ${enabled ? 'bg-accent' : 'bg-bg-hover'}`}
+            role="switch" aria-checked={enabled} aria-label="启用可视化"
           >
             <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${enabled ? 'translate-x-5' : ''}`} />
           </button>
@@ -126,8 +143,8 @@ export default function SettingsView() {
           <span className="text-text-secondary text-sm">粒子效果</span>
           <button
             onClick={() => setShowParticles(!showParticles)}
-            className={`w-11 h-6 rounded-full transition-colors duration-200 cursor-pointer relative focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${showParticles ? 'bg-accent' : 'bg-bg-hover'}`}
-            role="switch" aria-checked={showParticles}
+            className={`w-11 h-6 rounded-full transition-colors duration-200 cursor-pointer relative focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none ${showParticles ? 'bg-accent' : 'bg-bg-hover'}`}
+            role="switch" aria-checked={showParticles} aria-label="粒子效果"
           >
             <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${showParticles ? 'translate-x-5' : ''}`} />
           </button>
@@ -140,7 +157,7 @@ export default function SettingsView() {
               <button
                 key={p.name}
                 onClick={() => applyPreset(p.name)}
-                className="w-8 h-8 rounded-full border-2 transition-all duration-200 cursor-pointer hover:scale-110 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+                className="w-8 h-8 rounded-full border-2 transition-[transform,border-color] duration-200 cursor-pointer hover:scale-110 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
                 style={{ background: `linear-gradient(135deg, ${p.primary}, ${p.secondary})`, borderColor: colors.primary === p.primary ? 'var(--accent)' : 'transparent' }}
                 aria-label={p.name}
                 title={p.name}
@@ -156,6 +173,7 @@ export default function SettingsView() {
               <label key={key} className="flex items-center gap-2 text-xs text-text-tertiary">
                 <input
                   type="color"
+                  name={`visualizer-color-${key}`}
                   value={colors[key]}
                   onChange={(e) => setColors({ ...colors, [key]: e.target.value })}
                   className="w-7 h-7 rounded border-0 cursor-pointer bg-transparent focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
@@ -186,9 +204,13 @@ export default function SettingsView() {
           {(['netease', 'qqmusic'] as const).map((s) => (
             <button
               key={s}
-              onClick={() => { setSource(s); setCookie(''); }}
+              onClick={() => {
+                setSource(s);
+                setCookie('');
+                setCookieError('');
+              }}
               disabled={loginStatus === 'webview-pending'}
-              className={`px-3 py-1.5 rounded-full text-sm transition-all duration-200 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+              className={`px-3 py-1.5 rounded-full text-sm transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
                 loginStatus === 'webview-pending'
                   ? 'opacity-50 cursor-not-allowed'
                   : 'cursor-pointer'
@@ -211,7 +233,7 @@ export default function SettingsView() {
             </span>
             <button
               onClick={handleLogout}
-              className="px-3 py-1.5 text-sm rounded-lg text-text-secondary hover:text-red-400 bg-bg-hover hover:bg-red-500/10 transition-all duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+              className="px-3 py-1.5 text-sm rounded-lg text-text-secondary hover:text-red-400 bg-bg-hover hover:bg-red-500/10 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
             >
               登出
             </button>
@@ -221,7 +243,7 @@ export default function SettingsView() {
             <button
               onClick={handleWebViewLogin}
               disabled={isLoading}
-              className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium text-sm transition-all duration-200 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+              className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium text-sm transition-[background-color,opacity] duration-200 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
                 isLoading
                   ? 'bg-accent/60 text-white/80 cursor-not-allowed'
                   : 'bg-accent text-white hover:bg-accent-hover active:bg-accent-active cursor-pointer'
@@ -254,25 +276,34 @@ export default function SettingsView() {
             <div
               id="advanced-cookie-section"
               role="region"
-              inert={!showAdvanced || undefined}
-              className={`grid transition-all duration-300 ${showAdvanced ? 'grid-rows-[1fr] mt-3' : 'grid-rows-[0fr]'}`}
+              hidden={!showAdvanced}
+              className="mt-3"
             >
-              <div className="overflow-hidden">
+              {showAdvanced && (
+                <div className="animate-fade-in motion-reduce:animate-none">
                 <p className="text-sm text-text-tertiary mb-2">手动粘贴 Cookie</p>
                 <div className="flex gap-2">
                   <input
+                    ref={cookieInputRef}
                     type="password"
+                    name="cookie"
                     value={cookie}
-                    onChange={(e) => setCookie(e.target.value)}
-                    placeholder="MUSIC_U=..."
+                    onChange={(e) => {
+                      setCookie(e.target.value);
+                      if (cookieError) setCookieError('');
+                    }}
+                    placeholder="MUSIC_U=…"
                     autoComplete="off"
                     spellCheck={false}
-                    className="flex-1 bg-bg-base border border-border-primary px-4 py-2 rounded-lg text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent-subtle transition-all duration-200 text-sm"
+                    aria-label="Cookie"
+                    aria-invalid={cookieError ? true : undefined}
+                    aria-describedby={cookieError ? COOKIE_ERROR_ID : undefined}
+                    className="flex-1 bg-bg-base border border-border-primary px-4 py-2 rounded-lg text-text-primary placeholder:text-text-tertiary focus-visible:outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-subtle transition-[border-color,box-shadow] duration-200 text-sm"
                   />
                   <button
                     onClick={handleCookieLogin}
                     disabled={loginStatus === 'cookie-submitting' || !cookie.trim()}
-                    className={`px-5 py-2 bg-accent text-white rounded-lg font-medium transition-all duration-200 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent focus-visible:outline-none ${
+                    className={`px-5 py-2 bg-accent text-white rounded-lg font-medium transition-[background-color,opacity] duration-200 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent focus-visible:outline-none ${
                       loginStatus === 'cookie-submitting' || !cookie.trim()
                         ? 'opacity-50 cursor-not-allowed'
                         : 'hover:bg-accent-hover active:bg-accent-active cursor-pointer'
@@ -281,7 +312,13 @@ export default function SettingsView() {
                     {loginStatus === 'cookie-submitting' ? '登录中…' : '登录'}
                   </button>
                 </div>
-              </div>
+                {cookieError && (
+                  <p id={COOKIE_ERROR_ID} className="mt-2 text-xs text-error" role="status">
+                    Cookie 登录失败：{cookieError}
+                  </p>
+                )}
+                </div>
+              )}
             </div>
           </>
         )}

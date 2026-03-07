@@ -28,11 +28,26 @@ function wrapInvokeError(error: unknown, traceId: string) {
   return { kind: 'internal', message: String(error ?? 'unknown error'), traceId };
 }
 
-function invokeWithTrace<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+// Transient error kinds eligible for automatic retry.
+const RETRYABLE_KINDS = new Set(['network', 'rate_limited']);
+const MAX_RETRIES = 2;
+const RETRY_BASE_MS = 200;
+
+async function invokeWithTrace<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const traceId = newTraceId();
-  return invoke<T>(cmd, { ...(args ?? {}), traceId }).catch((e) => {
-    throw wrapInvokeError(e, traceId);
-  });
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await invoke<T>(cmd, { ...(args ?? {}), traceId });
+    } catch (e) {
+      const wrapped = wrapInvokeError(e, traceId);
+      const kind = (wrapped as { kind?: string }).kind;
+      if (attempt < MAX_RETRIES && kind && RETRYABLE_KINDS.has(kind)) {
+        await new Promise((r) => setTimeout(r, RETRY_BASE_MS * (1 << attempt)));
+        continue;
+      }
+      throw wrapped;
+    }
+  }
 }
 
 export interface PlaylistBrief {

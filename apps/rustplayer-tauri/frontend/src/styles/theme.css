@@ -32,6 +32,8 @@
 
 /* ===== Dark Theme - 深邃蓝紫夜空 ===== */
 .dark {
+  color-scheme: dark;
+
   /* 背景层次系统 - 带微妙蓝紫色调 */
   --bg-base: #0A0B0F;
   --bg-primary: #13141B;
@@ -98,6 +100,8 @@
 
 /* ===== Light Theme - 温暖米白纸张 ===== */
 .light {
+  color-scheme: light;
+
   /* 背景层次系统 - 温暖的浅色调 */
   --bg-base: #F8F9FC;
   --bg-primary: #FFFFFF;
@@ -234,7 +238,8 @@ input[type="range"]::-webkit-slider-thumb {
   background: var(--accent);
   margin-top: -6px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  transition: width 0.2s ease, height 0.2s ease, margin-top 0.2s ease, box-shadow 0.2s ease;
+  transform: scale(1);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
   /* 24px 触控热区（透明边框扩展） */
   border: 4px solid transparent;
   background-clip: content-box;
@@ -251,15 +256,11 @@ input[type="range"]:hover::-webkit-slider-track {
   );
 }
 input[type="range"]:hover::-webkit-slider-thumb {
-  width: 16px;
-  height: 16px;
-  margin-top: -6px;
+  transform: scale(1.05);
   box-shadow: var(--shadow-glow);
 }
 input[type="range"]:active::-webkit-slider-thumb {
-  width: 18px;
-  height: 18px;
-  margin-top: -7px;
+  transform: scale(1.1);
   box-shadow: var(--shadow-glow-strong);
 }
 
@@ -341,5 +342,10 @@ input[type="range"]:active::-webkit-slider-thumb {
 .stagger-item:nth-child(4) { animation-delay: 0.24s; }
 
 /* Glow utilities */
+/* Touch interaction */
+button, a, [role="button"], [role="switch"] {
+  touch-action: manipulation;
+}
+
 .glow { box-shadow: var(--shadow-glow); }
 .glow-strong { box-shadow: var(--shadow-glow-strong); }

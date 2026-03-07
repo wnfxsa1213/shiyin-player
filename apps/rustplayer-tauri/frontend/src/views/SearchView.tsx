@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ipc } from '@/lib/ipc';
 import { Track } from '@/store/playerStore';
 import { useToastStore } from '@/store/toastStore';
@@ -39,6 +39,38 @@ export default function SearchView() {
   }, [debouncedQuery, debouncedSource]);
 
   const tabs = ['all', 'netease', 'qqmusic'] as const;
+  const panelId = 'search-source-panel';
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  const focusTab = (index: number) => {
+    const nextIndex = (index + tabs.length) % tabs.length;
+    setSource(tabs[nextIndex]);
+    tabRefs.current[nextIndex]?.focus();
+  };
+
+  const handleTablistKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const currentIndex = tabs.indexOf(source);
+    if (currentIndex === -1) return;
+
+    switch (e.key) {
+      case 'ArrowLeft':
+        e.preventDefault();
+        focusTab(currentIndex - 1);
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        focusTab(currentIndex + 1);
+        break;
+      case 'Home':
+        e.preventDefault();
+        focusTab(0);
+        break;
+      case 'End':
+        e.preventDefault();
+        focusTab(tabs.length - 1);
+        break;
+    }
+  };
 
   return (
     <div className="p-8 pb-28 flex flex-col h-full">
@@ -48,23 +80,34 @@ export default function SearchView() {
         <Search size={20} strokeWidth={1.5} className="absolute left-4 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none" aria-hidden="true" />
         <input
           type="search"
+          name="search"
           placeholder="输入关键词…"
           aria-label="搜索音乐"
           autoComplete="off"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          className="w-full bg-bg-secondary border border-border-primary pl-12 pr-5 py-3 rounded-xl text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent-subtle focus:shadow-[0_0_12px_var(--accent-subtle)] transition-all duration-200"
+          className="w-full bg-bg-secondary border border-border-primary pl-12 pr-5 py-3 rounded-xl text-text-primary placeholder:text-text-tertiary focus-visible:outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-subtle focus-visible:shadow-[0_0_12px_var(--accent-subtle)] transition-[border-color,box-shadow] duration-200"
         />
       </div>
 
-      <div className="flex gap-2 mb-6 animate-fade-in-up [animation-delay:100ms]" role="tablist" aria-label="音乐源">
-        {tabs.map((t) => (
+      <div
+        className="flex gap-2 mb-6 animate-fade-in-up [animation-delay:100ms]"
+        role="tablist"
+        aria-label="音乐源"
+        onKeyDown={handleTablistKeyDown}
+      >
+        {tabs.map((t, index) => (
           <button
             key={t}
+            ref={(node) => { tabRefs.current[index] = node; }}
+            type="button"
+            id={`search-source-tab-${t}`}
             role="tab"
             aria-selected={source === t}
+            aria-controls={panelId}
+            tabIndex={source === t ? 0 : -1}
             onClick={() => setSource(t)}
-            className={`px-4 py-1.5 rounded-full text-sm transition-all duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+            className={`px-4 py-1.5 rounded-full text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
               source === t
                 ? 'bg-gradient-accent text-white font-medium shadow-sm'
                 : 'bg-bg-secondary text-text-secondary hover:bg-bg-hover hover:text-text-primary'
@@ -75,7 +118,13 @@ export default function SearchView() {
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0" role="tabpanel" aria-live="polite">
+      <div
+        id={panelId}
+        className="flex-1 overflow-y-auto min-h-0"
+        role="tabpanel"
+        aria-labelledby={`search-source-tab-${source}`}
+        aria-live="polite"
+      >
         {loading && (
           <div className="space-y-3 py-4" role="status" aria-busy="true" aria-label="搜索中">
             {Array.from({ length: 6 }).map((_, i) => (

@@ -61,9 +61,13 @@ export function useDynamicTheme() {
 
     const url = currentTrack.coverUrl;
 
-    // Cache hit
+    // Cache hit — delete-and-reinsert to refresh LRU position.
+    // JavaScript Map preserves insertion order, so the first key is always the
+    // least-recently-used entry (correct eviction target on line 79).
     const cached = colorCache.get(url);
     if (cached) {
+      colorCache.delete(url);
+      colorCache.set(url, cached);
       applyTheme(cached[0], cached[1], cached[2]);
       return;
     }

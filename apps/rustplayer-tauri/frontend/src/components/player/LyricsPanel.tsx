@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { usePlayerStore } from '@/store/playerStore';
 import { useToastStore } from '@/store/toastStore';
 import { sanitizeError } from '@/lib/errorMessages';
@@ -18,10 +19,20 @@ interface LyricsPanelProps {
   onClose: () => void;
 }
 
+const getScrollBehavior = (): ScrollBehavior => (
+  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ? 'auto'
+    : 'smooth'
+);
+
+const LYRICS_TOP_PADDING = 256;
+const LYRICS_BOTTOM_PADDING = 384;
+
 export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const [lyrics, setLyrics] = useState<LyricsLine[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  const lineRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const panelRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [coverFailed, setCoverFailed] = useState(false);
@@ -60,11 +71,24 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
     return result;
   });
 
+  const virtualizer = useVirtualizer({
+    count: lyrics.length,
+    getScrollElement: () => containerRef.current,
+    estimateSize: (index) => (lyrics[index]?.translation ? 120 : 84),
+    overscan: 6,
+  });
+
   useEffect(() => {
     if (!containerRef.current || lyrics.length === 0) return;
-    const el = containerRef.current.children[activeIndex] as HTMLElement;
-    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [activeIndex]);
+    virtualizer.scrollToIndex(activeIndex, { align: 'center' });
+    const rafId = window.requestAnimationFrame(() => {
+      lineRefs.current.get(activeIndex)?.scrollIntoView({
+        behavior: getScrollBehavior(),
+        block: 'center',
+      });
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [activeIndex, lyrics.length, virtualizer]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -83,7 +107,7 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
       aria-label="歌词面板"
       aria-modal="true"
       tabIndex={-1}
-      className="fixed inset-0 bg-bg-base z-[60] flex overflow-hidden border-l border-border-primary animate-fade-in"
+      className="fixed inset-0 bg-bg-base z-[60] flex overflow-hidden border-l border-border-primary animate-fade-in overscroll-contain"
     >
       {/* Left Side: Album Cover */}
       <div className="w-1/2 flex items-center justify-center p-12">
@@ -125,44 +149,78 @@ export default function LyricsPanel({ isOpen, onClose }: LyricsPanelProps) {
             <ParticleSystem width={size.w / 2} height={size.h} />
           </div>
 
-          <div
-            ref={containerRef}
-            className="relative z-[1] h-full overflow-y-auto space-y-8 py-64 px-12 pb-96"
-          >
-            {lyrics.length === 0 ? (
+          {lyrics.length === 0 ? (
+            <div className="relative z-[1] h-full flex items-center px-12">
               <p className="text-text-tertiary text-lg">暂无歌词</p>
-            ) : (
-              lyrics.map((line, i) => (
-                <div
-                  key={i}
-                  className={`transition-[transform,opacity,filter] duration-500 origin-left ${
-                    i === activeIndex ? 'scale-105'
-                      : Math.abs(i - activeIndex) <= 3 ? 'opacity-30 blur-[1px]'
-                      : 'opacity-30'
-                  }`}
-                >
-                  <p
-                    className={`${
-                      i === activeIndex
-                        ? 'text-3xl lg:text-4xl font-bold text-accent'
-                        : 'text-2xl lg:text-3xl text-text-secondary'
-                    }`}
-                  >
-                    {line.text || '…'}
-                  </p>
-                  {line.translation && (
-                    <p
-                      className={`text-base mt-2 ${
-                        i === activeIndex ? 'text-text-secondary' : 'text-text-tertiary'
-                      }`}
+            </div>
+          ) : (
+            <div
+              ref={containerRef}
+              className="relative z-[1] h-full overflow-y-auto px-12"
+              style={{
+                paddingTop: LYRICS_TOP_PADDING,
+                paddingBottom: LYRICS_BOTTOM_PADDING,
+              }}
+            >
+              <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
+                {virtualizer.getVirtualItems().map((vItem) => {
+                  const line = lyrics[vItem.index];
+                  const isActive = vItem.index === activeIndex;
+                  const isNearby = !isActive && Math.abs(vItem.index - activeIndex) <= 3;
+
+                  return (
+                    <div
+                      key={vItem.key}
+                      ref={(node) => {
+                        if (node) {
+                          lineRefs.current.set(vItem.index, node);
+                          virtualizer.measureElement(node);
+                        } else {
+                          lineRefs.current.delete(vItem.index);
+                        }
+                      }}
+                      data-index={vItem.index}
+                      className={vItem.index === lyrics.length - 1 ? '' : 'pb-8'}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${vItem.start}px)`,
+                      }}
                     >
-                      {line.translation}
-                    </p>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
+                      <div
+                        className={`origin-left transition-[transform,opacity] duration-500 ${
+                          isActive ? 'scale-105'
+                            : isNearby ? 'opacity-30 blur-[1px]'
+                            : 'opacity-30'
+                        }`}
+                      >
+                        <p
+                          className={`${
+                            isActive
+                              ? 'text-3xl lg:text-4xl font-bold text-accent'
+                              : 'text-2xl lg:text-3xl text-text-secondary'
+                          }`}
+                        >
+                          {line.text || '…'}
+                        </p>
+                        {line.translation && (
+                          <p
+                            className={`text-base mt-2 ${
+                              isActive ? 'text-text-secondary' : 'text-text-tertiary'
+                            }`}
+                          >
+                            {line.translation}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

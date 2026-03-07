@@ -30,13 +30,15 @@ function TrackRow({ track, index }: Props) {
     setMenu({ x: e.clientX, y: e.clientY });
   };
 
+  const isPlayKey = (key: string) => key === 'Enter' || key === ' ' || key === 'Spacebar';
+
   return (
     <>
       <div
         role="listitem"
         tabIndex={0}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
+          if (isPlayKey(e.key)) {
             e.preventDefault();
             handlePlay();
           }
@@ -46,6 +48,7 @@ function TrackRow({ track, index }: Props) {
             ? 'bg-accent-subtle'
             : 'hover:bg-bg-hover'
         }`}
+        style={{ touchAction: 'manipulation' }}
         onDoubleClick={handlePlay}
         onContextMenu={handleContextMenu}
       >
@@ -56,7 +59,17 @@ function TrackRow({ track, index }: Props) {
           <span className="group-hover:hidden group-focus-within:hidden">
             {isCurrent ? <span className="text-accent">&#9835;</span> : index}
           </span>
-          <button onClick={handlePlay} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); handlePlay(); } }} className="hidden group-hover:inline group-focus-within:inline text-accent hover:text-accent-hover cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none" aria-label="播放">
+          <button
+            type="button"
+            onClick={handlePlay}
+            onKeyDown={(e) => {
+              if (isPlayKey(e.key)) {
+                e.stopPropagation();
+              }
+            }}
+            className="hidden group-hover:inline group-focus-within:inline text-accent hover:text-accent-hover cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            aria-label="播放"
+          >
             &#9654;
           </button>
         </div>

@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { usePlayerStore, type PlayMode } from '@/store/playerStore';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { Repeat, Repeat1, Shuffle, X, Trash2 } from 'lucide-react';
@@ -16,6 +17,7 @@ const modeIcons: { mode: PlayMode; icon: typeof Repeat; label: string }[] = [
 
 export default function QueuePanel({ isOpen, onClose }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const queue = usePlayerStore((s) => s.queue);
   const queueIndex = usePlayerStore((s) => s.queueIndex);
   const playMode = usePlayerStore((s) => s.playMode);
@@ -24,6 +26,14 @@ export default function QueuePanel({ isOpen, onClose }: Props) {
   const clearQueue = usePlayerStore((s) => s.clearQueue);
   const setPlayMode = usePlayerStore((s) => s.setPlayMode);
   const [confirmClear, setConfirmClear] = useState(false);
+
+  const virtualizer = useVirtualizer({
+    count: queue.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => 58,
+    overscan: 6,
+    getItemKey: (index) => `${queue[index]?.source}-${queue[index]?.id}-${index}`,
+  });
 
   useFocusTrap(containerRef, isOpen, onClose);
 
@@ -36,7 +46,7 @@ export default function QueuePanel({ isOpen, onClose }: Props) {
       aria-label="播放队列"
       aria-modal="true"
       tabIndex={-1}
-      className="fixed right-0 top-0 bottom-20 w-80 z-40 bg-bg-primary/95 glass border-l border-border-primary flex flex-col animate-slide-in-right"
+      className="fixed right-0 top-0 bottom-20 w-80 z-40 bg-bg-primary/95 glass border-l border-border-primary flex flex-col animate-slide-in-right overscroll-contain"
     >      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border-secondary">
         <h2 className="text-sm font-semibold">播放队列 ({queue.length})</h2>
@@ -80,7 +90,7 @@ export default function QueuePanel({ isOpen, onClose }: Props) {
           <button
             key={mode}
             onClick={() => setPlayMode(mode)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-all duration-200 cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-colors duration-200 cursor-pointer ${
               playMode === mode
                 ? 'bg-accent-subtle text-accent font-medium'
                 : 'text-text-tertiary hover:text-text-primary hover:bg-bg-hover'
@@ -94,38 +104,65 @@ export default function QueuePanel({ isOpen, onClose }: Props) {
         ))}
       </div>
       {/* Queue list */}
-      <ul className="flex-1 overflow-y-auto list-none m-0 p-0" role="list">
-        {queue.length === 0 ? (
-          <li className="text-center py-12 text-text-tertiary text-sm">队列为空</li>
-        ) : (
-          queue.map((track, i) => (
-            <li
-              key={`${track.source}-${track.id}-${i}`}
-              className={`group flex items-center gap-3 px-4 py-2.5 transition-colors duration-150 ${
-                i === queueIndex ? 'bg-accent-subtle' : 'hover:bg-bg-hover'
-              }`}
-            >
-              <span className="w-6 text-xs text-text-tertiary text-center tabular-nums">
-                {i === queueIndex ? <span className="text-accent">&#9835;</span> : i + 1}
-              </span>
-              <button
-                onClick={() => playFromQueue(i)}
-                className="flex-1 min-w-0 text-left cursor-pointer bg-transparent border-0 p-0 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none rounded"
-              >
-                <div className={`text-sm truncate ${i === queueIndex ? 'text-accent font-medium' : ''}`}>{track.name}</div>
-                <div className="text-xs text-text-tertiary truncate">{track.artist}</div>
-              </button>
-              <button
-                onClick={() => removeFromQueue(i)}
-                className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none p-1 rounded text-text-tertiary hover:text-error transition-all cursor-pointer"
-                aria-label="移除"
-              >
-                <X size={14} strokeWidth={1.5} />
-              </button>
-            </li>
-          ))
-        )}
-      </ul>
+      {queue.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center text-text-tertiary text-sm">
+          队列为空
+        </div>
+      ) : (
+        <div
+          ref={listRef}
+          className="flex-1 overflow-y-auto min-h-0"
+          role="list"
+          aria-label="播放队列列表"
+        >
+          <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
+            {virtualizer.getVirtualItems().map((vItem) => {
+              const track = queue[vItem.index];
+              const isCurrent = vItem.index === queueIndex;
+
+              return (
+                <div
+                  key={vItem.key}
+                  role="listitem"
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${vItem.start}px)`,
+                  }}
+                >
+                  <div
+                    className={`group flex items-center gap-3 px-4 py-2.5 transition-colors duration-150 ${
+                      isCurrent ? 'bg-accent-subtle' : 'hover:bg-bg-hover'
+                    }`}
+                  >
+                    <span className="w-6 text-xs text-text-tertiary text-center tabular-nums">
+                      {isCurrent ? <span className="text-accent">&#9835;</span> : vItem.index + 1}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => playFromQueue(vItem.index)}
+                      className="flex-1 min-w-0 text-left cursor-pointer bg-transparent border-0 p-0 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none rounded"
+                    >
+                      <div className={`text-sm truncate ${isCurrent ? 'text-accent font-medium' : ''}`} title={track.name}>{track.name}</div>
+                      <div className="text-xs text-text-tertiary truncate" title={track.artist}>{track.artist}</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeFromQueue(vItem.index)}
+                      className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none p-1 rounded text-text-tertiary hover:text-error transition-[opacity,color] cursor-pointer"
+                      aria-label="移除"
+                    >
+                      <X size={14} strokeWidth={1.5} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
