@@ -36,6 +36,8 @@ fn main() {
             commands::check_login_status,
             commands::get_user_playlists,
             commands::get_playlist_detail,
+            commands::get_daily_recommend,
+            commands::get_personal_fm,
             commands::extract_cover_color,
             commands::client_log,
         ])

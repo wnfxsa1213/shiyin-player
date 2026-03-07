@@ -84,6 +84,12 @@ impl MusicSource for NeteaseClient {
     async fn get_playlist_detail(&self, id: &str) -> Result<Playlist, SourceError> {
         api::playlist_detail(&self.http, &self.base_url, id, self.cookie().as_deref()).await
     }
+    async fn get_daily_recommend(&self) -> Result<Vec<Track>, SourceError> {
+        api::daily_recommend(&self.http, &self.base_url, self.cookie().as_deref()).await
+    }
+    async fn get_personal_fm(&self) -> Result<Vec<Track>, SourceError> {
+        api::personal_fm(&self.http, &self.base_url, self.cookie().as_deref()).await
+    }
     fn logout(&self) {
         if let Ok(mut guard) = self.cookie.write() {
             *guard = None;

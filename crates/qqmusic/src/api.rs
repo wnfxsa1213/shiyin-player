@@ -286,6 +286,111 @@ pub async fn lyrics(
     Err(last_error.unwrap_or_else(|| SourceError::Network("all retry attempts failed".into())))
 }
 
+pub async fn daily_recommend(
+    http: &reqwest::Client,
+    base_url: &str,
+    cookie: Option<&str>,
+) -> Result<Vec<Track>, SourceError> {
+    recommend_feed(
+        http, base_url, cookie, 6,
+        &["/req/data/track_list", "/req/data/songlist", "/req/data/list"],
+        "daily_recommend",
+    ).await
+}
+
+pub async fn personal_fm(
+    http: &reqwest::Client,
+    base_url: &str,
+    cookie: Option<&str>,
+) -> Result<Vec<Track>, SourceError> {
+    recommend_feed(
+        http, base_url, cookie, 2,
+        &["/req/data/track_list", "/req/data/songlist"],
+        "personal_fm",
+    ).await
+}
+
+/// Shared helper for daily_recommend and personal_fm.
+/// Validates UIN from cookie, masks UIN in logs, and properly distinguishes
+/// missing fields (InvalidResponse) from empty arrays (Ok(Vec::new())).
+async fn recommend_feed(
+    http: &reqwest::Client,
+    base_url: &str,
+    cookie: Option<&str>,
+    cmd: i32,
+    candidate_paths: &[&str],
+    endpoint_name: &str,
+) -> Result<Vec<Track>, SourceError> {
+    let cookie = cookie.ok_or(SourceError::Unauthorized)?;
+    let uin = extract_uin_from_cookie(cookie).ok_or_else(|| {
+        log::warn!("qqmusic {endpoint_name}: cookie missing uin field");
+        SourceError::Unauthorized
+    })?;
+    if uin.is_empty() || !uin.chars().all(|c| c.is_ascii_digit()) {
+        log::warn!("qqmusic {endpoint_name}: invalid uin format");
+        return Err(SourceError::Unauthorized);
+    }
+
+    // Mask UIN in logs: show only last 4 chars
+    let uin_masked = if uin.len() > 4 {
+        format!("***{}", &uin[uin.len() - 4..])
+    } else {
+        "***".to_string()
+    };
+
+    let data = json!({
+        "comm": { "ct": API_CLIENT_TYPE, "cv": API_CLIENT_VERSION, "uin": uin },
+        "req": {
+            "module": "music.recommend.RecommendFeed",
+            "method": "get_recommend_feed",
+            "param": {
+                "cmd": cmd,
+                "qc_flag": 2
+            }
+        }
+    });
+
+    log::debug!("qqmusic {endpoint_name}: requesting, uin={uin_masked}");
+    let value = musicu_post(http, base_url, data, Some(cookie)).await?;
+    let code = value.pointer("/req/code").and_then(|v| v.as_i64()).unwrap_or(-1);
+
+    match code {
+        0 => {},
+        -100 | -200 | 40000 => {
+            log::warn!("qqmusic {endpoint_name}: unauthorized (code {code})");
+            return Err(SourceError::Unauthorized);
+        }
+        -1001 | -1002 => return Err(SourceError::RateLimited),
+        _ => {
+            log::warn!("qqmusic {endpoint_name}: unexpected code {code}");
+            return Err(SourceError::Internal(format!("api error code {code}")));
+        }
+    }
+
+    // Try candidate paths in order
+    for path in candidate_paths {
+        if let Some(node) = value.pointer(path) {
+            return match node.as_array() {
+                Some(arr) => Ok(arr.iter().filter_map(parse_song).collect()),
+                None => {
+                    log::warn!("qqmusic {endpoint_name}: field at {path} is not an array");
+                    Err(SourceError::InvalidResponse(
+                        format!("{endpoint_name}: field at {path} is not an array"),
+                    ))
+                }
+            };
+        }
+    }
+
+    // No candidate path found at all — this is an unexpected response structure
+    log::warn!("qqmusic {endpoint_name}: no track list found in response");
+    log::debug!("qqmusic {endpoint_name}: response keys: {:?}",
+        value.pointer("/req/data").and_then(|v| v.as_object()).map(|m| m.keys().cloned().collect::<Vec<_>>()));
+    Err(SourceError::InvalidResponse(
+        format!("{endpoint_name}: missing song list in response"),
+    ))
+}
+
 pub async fn user_playlists(
     http: &reqwest::Client,
     base_url: &str,

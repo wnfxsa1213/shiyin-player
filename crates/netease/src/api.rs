@@ -309,6 +309,62 @@ async fn get_user_uid(
         .ok_or(SourceError::Unauthorized)
 }
 
+pub async fn daily_recommend(
+    http: &reqwest::Client,
+    base_url: &str,
+    cookie: Option<&str>,
+) -> Result<Vec<Track>, SourceError> {
+    let cookie = cookie.ok_or(SourceError::Unauthorized)?;
+    let payload = json!({});
+    let value = weapi_post(
+        http, base_url,
+        "/weapi/v3/discovery/recommend/songs",
+        payload, Some(cookie),
+    ).await?;
+    // New API: data.dailySongs; Old API fallback: recommend
+    // Check each candidate: missing entirely → try next; present but not array → error; empty array → Ok([])
+    let list = if let Some(node) = value.pointer("/data/dailySongs") {
+        node.as_array().ok_or_else(|| {
+            log::warn!("netease daily_recommend: dailySongs field is not an array");
+            SourceError::InvalidResponse("daily_recommend: dailySongs is not an array".into())
+        })?
+    } else if let Some(node) = value.get("recommend") {
+        node.as_array().ok_or_else(|| {
+            log::warn!("netease daily_recommend: recommend field is not an array");
+            SourceError::InvalidResponse("daily_recommend: recommend is not an array".into())
+        })?
+    } else {
+        log::warn!("netease daily_recommend: missing song list in response");
+        return Err(SourceError::InvalidResponse(
+            "daily_recommend: missing song list in response".into(),
+        ));
+    };
+    Ok(list.iter().filter_map(parse_song).collect())
+}
+
+pub async fn personal_fm(
+    http: &reqwest::Client,
+    base_url: &str,
+    cookie: Option<&str>,
+) -> Result<Vec<Track>, SourceError> {
+    let cookie = cookie.ok_or(SourceError::Unauthorized)?;
+    let payload = json!({});
+    let value = weapi_post(
+        http, base_url,
+        "/weapi/v1/radio/get",
+        payload, Some(cookie),
+    ).await?;
+    let node = value.get("data").ok_or_else(|| {
+        log::warn!("netease personal_fm: missing data field in response");
+        SourceError::InvalidResponse("personal_fm: missing data field in response".into())
+    })?;
+    let list = node.as_array().ok_or_else(|| {
+        log::warn!("netease personal_fm: data field is not an array");
+        SourceError::InvalidResponse("personal_fm: data field is not an array".into())
+    })?;
+    Ok(list.iter().filter_map(parse_song).collect())
+}
+
 pub async fn user_playlists(
     http: &reqwest::Client,
     base_url: &str,

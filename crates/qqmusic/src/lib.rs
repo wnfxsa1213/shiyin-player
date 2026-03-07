@@ -7,6 +7,7 @@ use rustplayer_core::{
     AuthToken, Credentials, CookieStorage, LyricsLine, MusicSource, MusicSourceId, Playlist, PlaylistBrief,
     SearchQuery, SourceError, StreamInfo, Track,
 };
+use tokio::sync::Mutex as TokioMutex;
 
 pub mod api;
 pub mod sign;
@@ -25,6 +26,7 @@ pub struct QqMusicClient {
     cookie: RwLock<Option<Arc<str>>>,
     refresh_info: RwLock<Option<RefreshInfo>>,
     on_refresh: RwLock<Option<Box<dyn Fn(RefreshInfo, String) + Send + Sync>>>,
+    refresh_lock: TokioMutex<()>,
 }
 
 impl QqMusicClient {
@@ -42,6 +44,7 @@ impl QqMusicClient {
             cookie: RwLock::new(None),
             refresh_info: RwLock::new(None),
             on_refresh: RwLock::new(None),
+            refresh_lock: TokioMutex::new(()),
         })
     }
 
@@ -68,7 +71,9 @@ impl QqMusicClient {
 
     /// Attempt to refresh expired credentials.
     /// Returns true if refresh succeeded and cookie was updated.
+    /// Uses a mutex to prevent concurrent refresh attempts (race condition).
     async fn try_refresh(&self) -> bool {
+        let _guard = self.refresh_lock.lock().await;
         let cookie = match self.cookie() {
             Some(c) => c,
             None => return false,
@@ -196,6 +201,20 @@ impl MusicSource for QqMusicClient {
         let result = api::playlist_detail(&self.http, &self.base_url, id, self.cookie().as_deref()).await;
         if matches!(result, Err(SourceError::Unauthorized)) && self.try_refresh().await {
             return api::playlist_detail(&self.http, &self.base_url, id, self.cookie().as_deref()).await;
+        }
+        result
+    }
+    async fn get_daily_recommend(&self) -> Result<Vec<Track>, SourceError> {
+        let result = api::daily_recommend(&self.http, &self.base_url, self.cookie().as_deref()).await;
+        if matches!(result, Err(SourceError::Unauthorized)) && self.try_refresh().await {
+            return api::daily_recommend(&self.http, &self.base_url, self.cookie().as_deref()).await;
+        }
+        result
+    }
+    async fn get_personal_fm(&self) -> Result<Vec<Track>, SourceError> {
+        let result = api::personal_fm(&self.http, &self.base_url, self.cookie().as_deref()).await;
+        if matches!(result, Err(SourceError::Unauthorized)) && self.try_refresh().await {
+            return api::personal_fm(&self.http, &self.base_url, self.cookie().as_deref()).await;
         }
         result
     }

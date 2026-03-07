@@ -214,6 +214,12 @@ pub trait MusicSource: Send + Sync {
     async fn get_playlist_detail(&self, _id: &str) -> Result<Playlist, SourceError> {
         Err(SourceError::Unimplemented)
     }
+    async fn get_daily_recommend(&self) -> Result<Vec<Track>, SourceError> {
+        Err(SourceError::Unimplemented)
+    }
+    async fn get_personal_fm(&self) -> Result<Vec<Track>, SourceError> {
+        Err(SourceError::Unimplemented)
+    }
     fn logout(&self) {}
     fn is_logged_in(&self) -> bool { false }
 }

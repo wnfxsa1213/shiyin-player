@@ -821,6 +821,32 @@ pub async fn get_playlist_detail(
     }).await
 }
 
+#[tauri::command]
+pub async fn get_daily_recommend(
+    source: MusicSourceId,
+    trace_id: Option<String>,
+    registry: State<'_, Arc<SourceRegistry>>,
+) -> Result<Vec<Track>, IpcError> {
+    run_with_trace("get_daily_recommend", trace_id, async {
+        let src = registry.get(source)
+            .ok_or(IpcError::NotFound("source not found".into()))?;
+        src.get_daily_recommend().await.map_err(IpcError::from)
+    }).await
+}
+
+#[tauri::command]
+pub async fn get_personal_fm(
+    source: MusicSourceId,
+    trace_id: Option<String>,
+    registry: State<'_, Arc<SourceRegistry>>,
+) -> Result<Vec<Track>, IpcError> {
+    run_with_trace("get_personal_fm", trace_id, async {
+        let src = registry.get(source)
+            .ok_or(IpcError::NotFound("source not found".into()))?;
+        src.get_personal_fm().await.map_err(IpcError::from)
+    }).await
+}
+
 // --- Platform-specific cookie extraction ---
 
 /// Extract cookies from multiple domains and merge them.
