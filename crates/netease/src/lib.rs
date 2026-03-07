@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -14,7 +15,7 @@ pub mod crypto;
 pub struct NeteaseClient {
     http: reqwest::Client,
     base_url: String,
-    cookie: RwLock<Option<String>>,
+    cookie: RwLock<Option<Arc<str>>>,
     /// Tracks whether cloudsearch endpoint is available (set false on Unauthorized).
     /// Reset to true on login. When false or no cookie, search falls back to /weapi/search/get directly.
     cloudsearch_available: AtomicBool,
@@ -38,7 +39,7 @@ impl NeteaseClient {
 }
 
 impl CookieStorage for NeteaseClient {
-    fn cookie_lock(&self) -> &RwLock<Option<String>> {
+    fn cookie_lock(&self) -> &RwLock<Option<Arc<str>>> {
         &self.cookie
     }
 }
@@ -69,7 +70,7 @@ impl MusicSource for NeteaseClient {
                 // Write lock failure indicates internal state corruption
                 self.cookie.write()
                     .map_err(|e| SourceError::Internal(format!("failed to acquire cookie lock: {e}")))?
-                    .replace(cookie.clone());
+                    .replace(Arc::from(cookie.as_str()));
                 // Reset cloudsearch availability on login (cookie may now be valid)
                 self.cloudsearch_available.store(true, Ordering::Relaxed);
                 Ok(AuthToken { access_token: cookie, expires_at: None })

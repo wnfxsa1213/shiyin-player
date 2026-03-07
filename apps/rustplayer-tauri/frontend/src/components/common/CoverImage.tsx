@@ -12,6 +12,8 @@ interface CoverImageProps {
   height?: number;
   /** Reset error state when this key changes (e.g. track id). */
   resetKey?: string;
+  /** When true, loads image eagerly (no lazy loading). Use for above-the-fold images. */
+  eager?: boolean;
 }
 
 export default function CoverImage({
@@ -24,6 +26,7 @@ export default function CoverImage({
   width,
   height,
   resetKey,
+  eager = false,
 }: CoverImageProps) {
   const [failed, setFailed] = useState(false);
 
@@ -46,6 +49,8 @@ export default function CoverImage({
       width={width}
       height={height}
       className={className}
+      loading={eager ? 'eager' : 'lazy'}
+      decoding={eager ? 'sync' : 'async'}
       onError={() => setFailed(true)}
     />
   );

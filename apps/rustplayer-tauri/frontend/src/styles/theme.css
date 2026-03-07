@@ -11,8 +11,8 @@
 
   transition: --accent 0.8s ease-in-out;
 
-  /* Glass morphism 参数 */
-  --glass-blur: 24px;
+  /* Glass morphism 参数 — 16px base balances visual quality vs GPU cost */
+  --glass-blur: 16px;
   --glass-saturation: 180%;
 
   /* 渐变系统 - 更丰富的渐变组合 */

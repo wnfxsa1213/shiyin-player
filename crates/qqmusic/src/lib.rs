@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::sync::RwLock;
 use std::time::Duration;
 
@@ -21,7 +22,7 @@ pub struct QqMusicClient {
     http: reqwest::Client,
     base_url: String,
     guid: String,
-    cookie: RwLock<Option<String>>,
+    cookie: RwLock<Option<Arc<str>>>,
     refresh_info: RwLock<Option<RefreshInfo>>,
     on_refresh: RwLock<Option<Box<dyn Fn(RefreshInfo, String) + Send + Sync>>>,
 }
@@ -95,7 +96,7 @@ impl QqMusicClient {
 
                 // Update stored cookie
                 if let Ok(mut guard) = self.cookie.write() {
-                    *guard = Some(new_cookie.clone());
+                    *guard = Some(Arc::from(new_cookie.as_str()));
                     log::info!("qqmusic try_refresh: cookie updated successfully");
                 }
 
@@ -119,7 +120,7 @@ impl QqMusicClient {
 }
 
 impl CookieStorage for QqMusicClient {
-    fn cookie_lock(&self) -> &RwLock<Option<String>> {
+    fn cookie_lock(&self) -> &RwLock<Option<Arc<str>>> {
         &self.cookie
     }
 }
@@ -165,7 +166,7 @@ impl MusicSource for QqMusicClient {
                 // Only store cookie after successful validation
                 match self.cookie.write() {
                     Ok(mut guard) => {
-                        *guard = Some(cookie.clone());
+                        *guard = Some(Arc::from(cookie.as_str()));
                         log::info!("qqmusic login: cookie stored successfully");
                     }
                     Err(e) => {

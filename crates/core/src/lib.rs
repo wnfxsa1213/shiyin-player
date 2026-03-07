@@ -1,6 +1,8 @@
+use std::sync::Arc;
+use std::sync::RwLock;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::sync::RwLock;
 use thiserror::Error;
 
 pub type TrackId = String;
@@ -64,9 +66,9 @@ pub struct LyricsLine {
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum PlayerState {
     Idle,
-    Loading { track: Track },
-    Playing { track: Track, position_ms: u64 },
-    Paused { track: Track, position_ms: u64 },
+    Loading { track: Arc<Track> },
+    Playing { track: Arc<Track>, position_ms: u64 },
+    Paused { track: Arc<Track>, position_ms: u64 },
     Stopped,
 }
 
@@ -86,7 +88,7 @@ pub enum PlayerCommand {
 pub enum PlayerEvent {
     StateChanged { state: PlayerState },
     Progress { position_ms: u64, duration_ms: u64 },
-    Spectrum { magnitudes: Vec<f32> },
+    Spectrum { magnitudes: Arc<Vec<f32>> },
     Error { error: PlayerError },
 }
 
@@ -184,13 +186,15 @@ pub enum AppError {
 
 /// Helper trait for managing cookie storage in music source implementations.
 /// Provides a default implementation for retrieving cookies from RwLock storage.
+/// Uses `Arc<str>` internally to avoid cloning cookie strings on every API call.
 pub trait CookieStorage {
-    /// Returns the RwLock containing the optional cookie string.
-    fn cookie_lock(&self) -> &RwLock<Option<String>>;
+    /// Returns the RwLock containing the optional cookie.
+    fn cookie_lock(&self) -> &RwLock<Option<Arc<str>>>;
 
     /// Retrieves the current cookie value, if available.
     /// Returns None if the lock is poisoned or no cookie is set.
-    fn cookie(&self) -> Option<String> {
+    /// Clone cost is an atomic increment (Arc), not a string allocation.
+    fn cookie(&self) -> Option<Arc<str>> {
         self.cookie_lock().read().ok().and_then(|v| v.clone())
     }
 }

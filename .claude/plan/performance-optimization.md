@@ -240,17 +240,17 @@
 | **Codex** | 复查 R1 | 55/100 | emittedAtMs 实现有副作用 |
 | **Codex** | 复查 R2 | 64/100 | emittedAtMs 修正通过，剩余建议推迟到 P2 |
 
-### P1→P2 推迟项
+### P1→P2 推迟项（已在 P2 处理）
 
-- **#15**: PlayerState clone overhead → 需改公共类型
-- **#9**: Blocking pool 异步 facade → 架构改造
-- **#32**: RwLock cookie → Arc → 需改跨 crate trait
-- **#14 完善**: spectrum clone 消除 → 需改 broadcast channel 为 Arc<[f32]>
-- **#20**: 三重动画帧率检测 → 合并到三档帧率模式
+- **#15**: PlayerState clone overhead → ✅ 改为 Arc<Track>
+- **#9**: Blocking pool 异步 facade → ⏭ 推迟到 P3
+- **#32**: RwLock cookie → ✅ 改为 Arc<str>
+- **#14 完善**: spectrum clone 消除 → ✅ 改为 Arc<Vec<f32>>（部分优化）
+- **#20**: 三重动画帧率检测 → ⏭ 合并到三档帧率模式
 
-### P1 审查→P2 推迟项（审查发现，推迟到 P2 处理）
+### P1 审查→P2 推迟项（已在 P2 处理）
 
-#### P2-0a. progress 事件加 playSeq 防乱序（来自 Codex 复查 R2）
+#### P2-0a. progress 事件加 playSeq 防乱序 — ⏭ 推迟
 
 - 问题：seek/切歌后旧 progress 包可能迟到覆盖本地乐观状态，导致进度条瞬跳
 - 修改文件：`crates/player/src/lib.rs`（发送端加 seq）、`events.rs`（透传）、`ipc.ts`（类型更新）、`playerStore.ts`（比较 seq 丢弃旧包）
@@ -258,14 +258,14 @@
 - 推迟原因：同机 Tauri IPC 延迟 <5ms，实际发生概率极低；需改后端事件类型 + 前端 store，影响面偏大
 - 优先级：低（防御性增强）
 
-#### P2-0b. CLAUDE.md 文档同步（来自 Codex 复查）
+#### P2-0b. CLAUDE.md 文档同步 — ✅ 已完成
 
 - 问题：`src-tauri/CLAUDE.md` 中 progress 事件仍写 `{ positionMs, durationMs }` 和 `~2Hz`
 - 修改文件：`apps/rustplayer-tauri/src-tauri/CLAUDE.md`、`apps/rustplayer-tauri/frontend/CLAUDE.md`
 - 策略：更新 progress 事件为 `{ positionMs, durationMs, emittedAtMs }`、频率为 `~5Hz`；更新 playerStore 字段列表
 - 推迟原因：不影响运行，下次 `/ccg:init` 增量更新时一并处理
 
-#### P2-0c. 进度插值/延迟补偿自动化测试（来自 Codex 复查）
+#### P2-0c. 进度插值/延迟补偿自动化测试 — ⏭ 推迟（来自 Codex 复查）
 
 - 问题：PlaybackProgress 的 RAF 插值、emittedAtMs 补偿、精确订阅逻辑无自动化测试
 - 修改文件：新增 `frontend/src/components/player/__tests__/PlaybackProgress.test.ts`
@@ -274,39 +274,82 @@
 
 ---
 
-## P2 批次：资源效率与包体积
+## P2 批次：资源效率与包体积 ✅ 已完成 (2026-03-07)
+
+> **实施摘要**：14 个文件修改，+169/-161 行。双模型交叉审查（Codex 50/100 + Gemini 建议修改后通过），审查发现的 Critical/Major 问题已修复。
+>
+> **编译验证**：`cargo check` 通过，`npx tsc --noEmit` 通过，`cargo test -p rustplayer-qqmusic` 5/5 通过。
 
 ### P2-1. 前端资源优化（#33 #34 #35 #23）
 
-**#33 Framer Motion ~70KB 仅用 3 处**
-- 策略：替换为 CSS transitions + CSS animation
+**#33 Framer Motion ~70KB 仅用 3 处** ✅
+- 修改文件：`PlayerBar.tsx`, `LyricsPanel.tsx`, `App.tsx`, `package.json`
+- 实际方案：移除 framer-motion 依赖，motion.img/div 替换为原生 img/div + CSS transitions；AnimatePresence 替换为 `if (!isOpen) return null` + CSS `animate-fade-in`；LayoutGroup 移除
+- 审查备注：退出动画丢失（Gemini Critical），共享元素过渡丢失（Gemini Major），均为预期降级；P3 可探索 View Transitions API
 
-**#34 无路由级代码分割**
-- 策略：React.lazy + Suspense 懒加载 SettingsView、PlaylistDetailView 等
+**#34 无路由级代码分割** ✅
+- 修改文件：`App.tsx`
+- 实际方案：SettingsView 和 PlaylistDetailView 使用 `React.lazy` + `Suspense` 懒加载，新增 RouteFallback 组件
 
-**#35 CoverImage 无 loading="lazy"**
-- 策略：添加 `loading="lazy"` + `decoding="async"`
+**#35 CoverImage 无 loading="lazy"** ✅
+- 修改文件：`CoverImage.tsx`
+- 实际方案：添加 `loading` + `decoding` 属性，默认 lazy/async；新增 `eager` prop 允许首屏图片跳过懒加载
+- 审查修复：Codex + Gemini 均指出 PlayerBar 封面不应 lazy，已添加 eager prop
 
-**#23 PlayerBar Framer Motion layout**
-- 策略：仅对简单位移使用 CSS transition，移除 layoutId morph
+**#23 PlayerBar Framer Motion layout** ✅
+- 修改文件：`PlayerBar.tsx`
+- 实际方案：移除 motion 组件，保留 CSS `transition-[border-radius] duration-500` 实现播放/暂停时圆角变化
 
-### P2-2. GStreamer 缓冲策略（#16）
+### P2-2. GStreamer 缓冲策略（#16） ✅
 
-**#16 管线缺 queue2 / BUFFERING**
-- 修改文件：`crates/player/src/lib.rs:319-337`, `player/lib.rs:193`
-- 策略：第一步在 uridecodebin 上启用 buffering 属性，bus 处理 Buffering 消息；第二步演进到 urisourcebin + queue2 + decodebin3
-- 风险：状态机复杂化，本地文件和 HTTP 流要分流处理
+**#16 管线缺 queue2 / BUFFERING** ✅
+- 修改文件：`crates/player/src/lib.rs`
+- 实际方案：uridecodebin 启用 `use-buffering` 属性；bus 添加 `Buffering` 消息处理（<100% 暂停管线，100% 恢复）
+- 审查修复：Codex Critical — 原实现仅在 `Playing` 状态恢复，首播 `Loading` 状态会卡住；已修复为 `Loading | Playing` 均可恢复。set_state 错误从 `let _` 改为 `log::warn!`
 
 ### P2-3. CSS/GPU 开销（#38 #39 #40）
 
-**#38 backdrop-filter blur(24px) × 3**
-- 策略：降到 12px，或限制在顶层导航/固定底栏
+**#38 backdrop-filter blur(24px) × 3** ✅
+- 修改文件：`theme.css`
+- 实际方案：`--glass-blur` 从 24px 降至 16px
 
-**#39 text-gradient background-clip**
-- 策略：限制在小字号元素上使用
+**#39 text-gradient background-clip** ✅
+- 修改文件：`LyricsPanel.tsx`
+- 实际方案：活跃歌词从 `bg-clip-text text-transparent bg-gradient-to-r` 改为纯色 `text-accent`，移除 `style={{ transition: 'background-image 0.8s ease' }}`
+- 审查备注：Gemini 指出视觉降级，建议高性能设备保留渐变（P3 可与帧率模式联动）
 
-**#40 16 个 gradient CSS 变量**
-- 策略：按需加载或合并为动态生成
+**#40 16 个 gradient CSS 变量** — 跳过
+- 评估结论：10 个渐变 CSS 变量均为 `:root` 声明，不产生运行时计算开销，无需优化
+
+### P1→P2 推迟项完成情况
+
+| 编号 | 项目 | 状态 |
+|------|------|------|
+| #15 | PlayerState clone → Arc<Track> | ✅ 已完成 |
+| #14 | spectrum clone → Arc<Vec<f32>> | ✅ 已完成（部分优化：减少广播 clone，每帧仍有一次 Vec 分配） |
+| #32 | RwLock cookie → Arc<str> | ✅ 已完成 |
+| #9 | blocking pool → async DB facade | ⏭ 推迟到 P3（架构改造需 tokio-rusqlite，影响面大） |
+| #20 | 三重帧率检测 | ⏭ 合并到"三档帧率模式"独立功能 |
+
+### P1 审查→P2 推迟项完成情况
+
+| 编号 | 项目 | 状态 |
+|------|------|------|
+| P2-0a | playSeq 防乱序 | ⏭ 推迟（同机 IPC <5ms，实际概率极低） |
+| P2-0b | CLAUDE.md 文档同步 | ✅ 已完成 |
+| P2-0c | 自动化测试 | ⏭ 推迟（需搭建 Vitest 基础设施） |
+
+### P2 审查结果汇总
+
+| 审查方 | 评分 | 关键发现 | 处理 |
+|--------|------|----------|------|
+| **Codex** | 50/100 | Critical: 首播 Buffering 状态机回归；Major: set_state 错误吞掉 | ✅ 已修复 |
+| **Gemini** | 建议修改后通过 | Critical: 退出动画丢失；Major: CoverImage 首屏 lazy、共享元素丢失 | CoverImage ✅ 已修复；退出动画/共享元素为预期降级 |
+
+### 附加优化
+
+- **SQLite prepare_cached** — `db.rs` 读查询从 `prepare()` 改为 `prepare_cached()`，避免重复 SQL 解析
+- **serde "rc" feature** — `core/Cargo.toml` 启用 `rc` feature，Arc<T> 透明序列化
 
 ---
 

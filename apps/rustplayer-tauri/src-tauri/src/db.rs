@@ -106,7 +106,7 @@ impl Db {
             .map_err(|e| format!("database connection error: {e}"))?;
         let cutoff = now - CACHE_TTL_SECS;
         let src = source.storage_key();
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             "SELECT id, name, artist, album, duration_ms, cover_url, media_mid FROM tracks
              WHERE source = ?1 AND search_keyword = ?2 AND cached_at > ?3
              ORDER BY rowid"
@@ -147,7 +147,7 @@ impl Db {
         let conn = self.pool.get_timeout(DB_CONNECTION_TIMEOUT)
             .map_err(|e| format!("database connection error: {e}"))?;
         let cutoff = now - CACHE_TTL_SECS;
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             "SELECT lines_json FROM lyrics WHERE track_id = ?1 AND source = ?2 AND cached_at > ?3"
         ).map_err(|e| e.to_string())?;
         let result: Option<String> = match stmt.query_row(

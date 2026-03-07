@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use gstreamer as gst;
@@ -68,7 +69,7 @@ struct Engine {
     pipeline: Option<gst::Pipeline>,
     volume_elem: Option<gst::Element>,
     state: PlayerState,
-    current_track: Option<Track>,
+    current_track: Option<Arc<Track>>,
     /// Time-based progress emission (replaces tick-count based approach).
     last_progress_emit: Option<std::time::Instant>,
     /// Time-based state mismatch detection (replaces tick-count based approach).
@@ -158,7 +159,8 @@ fn handle_cmd(
             let (pipeline, vol) = build_pipeline(&stream)?;
             eng.pipeline = Some(pipeline);
             eng.volume_elem = Some(vol);
-            eng.current_track = Some(track.clone());
+            let track = Arc::new(track);
+            eng.current_track = Some(Arc::clone(&track));
             set_state(eng, PlayerState::Loading { track }, tx);
             if let Some(p) = &eng.pipeline {
                 set_gst_state(p, gst::State::Playing)?;
@@ -247,7 +249,7 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
                         if sc.current() == gst::State::Playing {
                             if matches!(eng.state, PlayerState::Loading { .. }) {
                                 if let Some(track) = eng.current_track.clone() {
-                                    eng.state = PlayerState::Playing { track: track.clone(), position_ms: 0 };
+                                    eng.state = PlayerState::Playing { track: Arc::clone(&track), position_ms: 0 };
                                     emit(tx, PlayerEvent::StateChanged { state: eng.state.clone() });
                                 }
                             }
@@ -259,9 +261,9 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
                         if s.name() == "spectrum" {
                             extract_spectrum_into(s, &mut eng.spectrum_buf);
                             if !eng.spectrum_buf.is_empty() {
-                                // Note: clone() still allocates per-frame, but of known size (64 * 4 bytes).
-                                // Eliminating this requires changing broadcast channel to Arc<[f32]>.
-                                emit(tx, PlayerEvent::Spectrum { magnitudes: eng.spectrum_buf.clone() });
+                                // Wrap in Arc so broadcast::send clones are atomic increments
+                                // instead of heap allocations (~15fps × 64 floats).
+                                emit(tx, PlayerEvent::Spectrum { magnitudes: Arc::new(eng.spectrum_buf.clone()) });
                             }
                         }
                     }
@@ -269,6 +271,24 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
                 gst::MessageView::Warning(w) => {
                     let detail = format!("{}{}", w.error(), w.debug().map(|d| format!(" ({d})")).unwrap_or_default());
                     log::warn!("gstreamer pipeline warning: {detail}");
+                }
+                gst::MessageView::Buffering(b) => {
+                    let percent = b.percent();
+                    if percent < 100 {
+                        if let Err(e) = p.set_state(gst::State::Paused) {
+                            log::warn!("failed to pause pipeline during buffering: {e}");
+                        }
+                        log::debug!("buffering: {percent}%");
+                    } else {
+                        // Resume playback when buffer is full — covers both Loading
+                        // (first play) and Playing (mid-stream rebuffer) states.
+                        if matches!(eng.state, PlayerState::Loading { .. } | PlayerState::Playing { .. }) {
+                            if let Err(e) = p.set_state(gst::State::Playing) {
+                                log::warn!("failed to resume pipeline after buffering: {e}");
+                            }
+                        }
+                        log::debug!("buffering complete");
+                    }
                 }
                 _ => {}
             }
@@ -350,6 +370,9 @@ fn build_pipeline(stream: &StreamInfo) -> Result<(gst::Pipeline, gst::Element), 
 
     let src = make("uridecodebin", "source")?;
     src.set_property("uri", &stream.url);
+    // Enable buffering for HTTP streams — uridecodebin will emit Buffering messages
+    // on the bus so the engine can pause/resume during network stalls.
+    src.set_property("use-buffering", true);
 
     let convert = make("audioconvert", "convert")?;
     let resample = make("audioresample", "resample")?;

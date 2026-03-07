@@ -4,7 +4,6 @@ import { ipc } from '@/lib/ipc';
 import SpectrumVisualizer from '@/components/player/SpectrumVisualizer';
 import PlaybackProgress from '@/components/player/PlaybackProgress';
 import { Music, SkipBack, Play, Pause, SkipForward, Music2, Volume2, ListMusic } from 'lucide-react';
-import { motion } from 'framer-motion';
 
 export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }: { lyricsOpen: boolean, onToggleLyrics: () => void, onToggleQueue: () => void }) {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
@@ -49,33 +48,27 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
         </div>
       </div>
 
-      {/* Left: Track Info & Layout Animation Cover */}
+      {/* Left: Track Info & Cover */}
       <div className="relative flex items-center w-1/4 min-w-[180px]">
         {currentTrack ? (
           <>
             <button className="relative z-50 group w-12 h-12 flex-shrink-0 bg-transparent border-0 p-0 cursor-pointer" onClick={onToggleLyrics} aria-label="展开歌词">
               {!lyricsOpen && (
                 currentTrack.coverUrl && !coverFailed ? (
-                  <motion.img
-                    layout
-                    layoutId="cover-shared"
+                  <img
                     src={currentTrack.coverUrl}
                     alt=""
                     width={48}
                     height={48}
                     className={`w-full h-full shadow-sm object-cover transition-[border-radius] duration-500 ${isPlaying ? 'rounded-full' : 'rounded-lg'}`}
-                    transition={{ layout: { type: 'spring', stiffness: 200, damping: 28 } }}
                     onError={() => setCoverFailed(true)}
                   />
                 ) : (
-                  <motion.div
-                    layout
-                    layoutId="cover-shared"
+                  <div
                     className={`w-full h-full bg-bg-secondary flex items-center justify-center transition-[border-radius] duration-500 ${isPlaying ? 'rounded-full' : 'rounded-lg'}`}
-                    transition={{ layout: { type: 'spring', stiffness: 200, damping: 28 } }}
                   >
                     <Music size={20} strokeWidth={1.5} className="text-text-tertiary" />
-                  </motion.div>
+                  </div>
                 )
               )}
               {lyricsOpen && (
@@ -89,7 +82,7 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
                 </div>
               )}
             </button>
-            
+
             <div className="ml-3 min-w-0 overflow-hidden">
               <div className="text-sm font-medium truncate" title={currentTrack.name}>{currentTrack.name}</div>
               <div className="text-xs text-text-secondary truncate" title={currentTrack.artist}>{currentTrack.artist}</div>
@@ -147,7 +140,7 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
             <SkipForward size={20} strokeWidth={1.5} />
           </button>
         </div>
-        
+
         {/* 剥离出的无渲染高性能进度条 */}
         <PlaybackProgress />
       </div>

@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
-import { LayoutGroup } from 'framer-motion';
 import { useUiStore } from '@/store/uiStore';
 import { usePlayerStore } from '@/store/playerStore';
 import { useVisualizerStore, spectrumDataRef } from '@/store/visualizerStore';
@@ -15,12 +14,15 @@ import Sidebar from '@/components/layout/Sidebar';
 import PlayerBar from '@/components/layout/PlayerBar';
 import HomeView from '@/views/HomeView';
 import SearchView from '@/views/SearchView';
-import SettingsView from '@/views/SettingsView';
-import PlaylistDetailView from '@/views/PlaylistDetailView';
 import LyricsPanel from '@/components/player/LyricsPanel';
 import QueuePanel from '@/components/player/QueuePanel';
 import ToastContainer from '@/components/common/ToastContainer';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
+
+// Route-level code splitting — SettingsView and PlaylistDetailView are
+// infrequently accessed; lazy-loading them reduces the initial JS bundle.
+const SettingsView = lazy(() => import('@/views/SettingsView'));
+const PlaylistDetailView = lazy(() => import('@/views/PlaylistDetailView'));
 
 /** Declarative ARIA live region that announces playback state and track changes to screen readers. */
 function PlayerAnnouncer() {
@@ -39,6 +41,10 @@ function PlayerAnnouncer() {
       {text}
     </div>
   );
+}
+
+function RouteFallback() {
+  return <div className="flex items-center justify-center h-full text-text-tertiary text-sm">加载中…</div>;
 }
 
 export default function App() {
@@ -218,26 +224,26 @@ export default function App() {
 
   return (
     <MemoryRouter>
-      <LayoutGroup>
-        <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[9999] focus:p-4 focus:bg-accent focus:text-white focus:rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent">跳转到主内容</a>
-        <PlayerAnnouncer />
-        <div className="flex h-screen bg-bg-base text-text-primary overflow-hidden pb-20">
-          <Sidebar />
-          <main id="main-content" className="relative flex-1 overflow-y-auto bg-bg-base" tabIndex={-1}>
-            <ErrorBoundary>
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[9999] focus:p-4 focus:bg-accent focus:text-white focus:rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent">跳转到主内容</a>
+      <PlayerAnnouncer />
+      <div className="flex h-screen bg-bg-base text-text-primary overflow-hidden pb-20">
+        <Sidebar />
+        <main id="main-content" className="relative flex-1 overflow-y-auto bg-bg-base" tabIndex={-1}>
+          <ErrorBoundary>
+            <Suspense fallback={<RouteFallback />}>
               <Routes>
                 <Route path="/" element={<HomeView />} />
                 <Route path="/search" element={<SearchView />} />
                 <Route path="/settings" element={<SettingsView />} />
                 <Route path="/playlist/:source/:id" element={<PlaylistDetailView />} />
               </Routes>
-            </ErrorBoundary>
-            <LyricsPanel isOpen={lyricsOpen} onClose={() => setLyricsOpen(false)} />
-            <QueuePanel isOpen={queueOpen} onClose={() => setQueueOpen(false)} />
-          </main>
-          <PlayerBar lyricsOpen={lyricsOpen} onToggleLyrics={() => setLyricsOpen(!lyricsOpen)} onToggleQueue={() => setQueueOpen(!queueOpen)} />
-        </div>
-      </LayoutGroup>
+            </Suspense>
+          </ErrorBoundary>
+          <LyricsPanel isOpen={lyricsOpen} onClose={() => setLyricsOpen(false)} />
+          <QueuePanel isOpen={queueOpen} onClose={() => setQueueOpen(false)} />
+        </main>
+        <PlayerBar lyricsOpen={lyricsOpen} onToggleLyrics={() => setLyricsOpen(!lyricsOpen)} onToggleQueue={() => setQueueOpen(!queueOpen)} />
+      </div>
       <ToastContainer />
     </MemoryRouter>
   );
