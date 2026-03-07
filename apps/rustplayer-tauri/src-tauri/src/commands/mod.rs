@@ -498,7 +498,13 @@ pub async fn open_login_window(
 
             let start = std::time::Instant::now();
             let timeout = LOGIN_TIMEOUT;
-            let mut interval = tokio::time::interval(LOGIN_POLL_INTERVAL);
+            // Exponential backoff for polling: start at 2s, double after each
+            // probe-negative tick, capped at 16s. Early polls (first 3) stay at
+            // the base interval so the user doesn't wait long after login.
+            // Uses sleep (not interval) to avoid tokio interval's immediate-first-tick
+            // semantics which would cause rapid consecutive polls on backoff.
+            let mut poll_interval = LOGIN_POLL_INTERVAL;
+            let mut tick_count: u32 = 0;
 
             let mut rx = rx;
             let mut login_detected = false;
@@ -532,7 +538,7 @@ pub async fn open_login_window(
                 let probe_fut = std::future::pending::<bool>();
 
                 tokio::select! {
-                    _ = interval.tick() => {
+                    _ = tokio::time::sleep(poll_interval) => {
                         if closed.load(Ordering::SeqCst) {
                             tracing::info!("login window closed by user");
                             let _ = app_clone.emit("login://timeout", source);
@@ -567,6 +573,21 @@ pub async fn open_login_window(
                             }
                         };
                         let _ = window_handle.eval(js);
+
+                        // Exponential backoff: after the first 3 fast polls at base
+                        // interval, progressively increase to reduce JS injection
+                        // frequency (2s → 4s → 8s → 16s cap).
+                        tick_count += 1;
+                        if tick_count >= 3 {
+                            let next = std::cmp::min(
+                                poll_interval.saturating_mul(2),
+                                Duration::from_secs(16),
+                            );
+                            if next != poll_interval {
+                                poll_interval = next;
+                                tracing::debug!("login poll interval increased to {:?}", poll_interval);
+                            }
+                        }
                     }
                     probed = probe_fut => {
                         if probed {
