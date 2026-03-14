@@ -27,32 +27,32 @@ pub fn spawn_event_forwarder(app: AppHandle, player: &Arc<Player>) {
                 Ok(event) => {
                     // Avoid constructing serde_json::Value on the hot path.
                     // Let Tauri serialize typed payloads directly (fewer allocations).
-                    let emit_result = match event {
+                    let (channel, emit_result) = match event {
                         PlayerEvent::StateChanged { state } => {
-                            app.emit("player://state", state_label(&state))
+                            ("player://state", app.emit("player://state", state_label(&state)))
                         }
                         PlayerEvent::Progress { position_ms, duration_ms } => {
                             let emitted_at_ms = std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap_or_default()
                                 .as_millis() as u64;
-                            app.emit("player://progress", ProgressPayload {
+                            ("player://progress", app.emit("player://progress", ProgressPayload {
                                 position_ms,
                                 duration_ms,
                                 emitted_at_ms,
-                            })
+                            }))
                         }
                         // Spectrum events are forwarded directly — GStreamer spectrum interval
                         // is already set to ~15fps in the pipeline, no need for secondary throttling.
                         PlayerEvent::Spectrum { magnitudes } => {
-                            app.emit("player://spectrum", SpectrumPayload { magnitudes })
+                            ("player://spectrum", app.emit("player://spectrum", SpectrumPayload { magnitudes }))
                         }
                         PlayerEvent::Error { error } => {
-                            app.emit("player://error", error.to_string())
+                            ("player://error", app.emit("player://error", error.to_string()))
                         }
                     };
                     if let Err(e) = emit_result {
-                        log::warn!("failed to emit player event: {e}");
+                        log::warn!("failed to emit {channel}: {e}");
                     }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {

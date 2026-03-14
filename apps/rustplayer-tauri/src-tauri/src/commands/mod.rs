@@ -28,7 +28,7 @@ const LOGIN_INITIAL_DELAY: Duration = Duration::from_secs(3);
 /// Hard timeout for fetching stream URL in play_track (UI critical path).
 const STREAM_URL_TIMEOUT: Duration = Duration::from_secs(12);
 /// Hard timeout for enqueueing a PlayerCommand (protects against engine stalls).
-const PLAYER_SEND_TIMEOUT: Duration = Duration::from_secs(2);
+const PLAYER_SEND_TIMEOUT: Duration = Duration::from_secs(5);
 /// Cookie extraction timeout.
 const COOKIE_EXTRACT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Timeout for clearing cookies via webkit.
@@ -296,7 +296,7 @@ pub async fn play_track(
         let stream = match tokio::time::timeout(STREAM_URL_TIMEOUT, src.get_stream_url(&track)).await {
             Ok(Ok(s)) => s,
             Ok(Err(e)) => return Err(IpcError::from(e)),
-            Err(_) => return Err(IpcError::Network("get_stream_url timeout".into())),
+            Err(_) => return Err(IpcError::Internal("get_stream_url timeout (12s)".into())),
         };
         tracing::info!(
             track_id = %track.id,

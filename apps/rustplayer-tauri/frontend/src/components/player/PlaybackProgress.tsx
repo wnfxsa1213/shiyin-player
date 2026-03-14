@@ -18,7 +18,7 @@ export default function PlaybackProgress() {
     let lastDur = usePlayerStore.getState().durationMs;
     let lastDurStr = formatTime(lastDur);
     let lastPosSec = -1;
-    let lastPosStr = '0:00';
+    let lastPosStr = formatTime(0);
     let isPlaying = usePlayerStore.getState().state === 'playing';
     const reducedMotionQuery = typeof window !== 'undefined'
       ? window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -72,6 +72,7 @@ export default function PlaybackProgress() {
       if (state.durationMs !== lastDur) {
         lastDur = state.durationMs;
         lastDurStr = formatTime(lastDur);
+        lastPosSec = -1; // Force fresh position string on track change
       }
 
       // Only apply IPC latency compensation when emittedAtMs actually changed
