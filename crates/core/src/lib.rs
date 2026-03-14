@@ -88,7 +88,7 @@ pub enum PlayerCommand {
 pub enum PlayerEvent {
     StateChanged { state: PlayerState },
     Progress { position_ms: u64, duration_ms: u64 },
-    Spectrum { magnitudes: Arc<Vec<f32>> },
+    Spectrum { magnitudes: Arc<[f32]> },
     Error { error: PlayerError },
 }
 

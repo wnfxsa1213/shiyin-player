@@ -16,6 +16,9 @@ export default function PlaybackProgress() {
     let lastServerPos = usePlayerStore.getState().positionMs;
     let lastServerTime = performance.now();
     let lastDur = usePlayerStore.getState().durationMs;
+    let lastDurStr = formatTime(lastDur);
+    let lastPosSec = -1;
+    let lastPosStr = '0:00';
     let isPlaying = usePlayerStore.getState().state === 'playing';
     const reducedMotionQuery = typeof window !== 'undefined'
       ? window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -24,7 +27,7 @@ export default function PlaybackProgress() {
 
     const syncDurationUi = (duration: number) => {
       if (durationSpanRef.current) {
-        durationSpanRef.current.textContent = formatTime(duration);
+        durationSpanRef.current.textContent = lastDurStr;
       }
       if (inputRef.current) {
         inputRef.current.max = (duration || 100).toString();
@@ -39,7 +42,12 @@ export default function PlaybackProgress() {
       syncDurationUi(duration);
 
       if (timeSpanRef.current) {
-        timeSpanRef.current.textContent = formatTime(clampedPos);
+        const sec = Math.floor(clampedPos / 1000);
+        if (sec !== lastPosSec) {
+          lastPosSec = sec;
+          lastPosStr = formatTime(clampedPos);
+        }
+        timeSpanRef.current.textContent = lastPosStr;
       }
       if (inputRef.current) {
         inputRef.current.value = clampedPos.toString();
@@ -60,7 +68,11 @@ export default function PlaybackProgress() {
 
       isPlaying = state.state === 'playing';
       lastServerPos = state.positionMs;
-      lastDur = state.durationMs;
+      // Only regenerate duration string when duration actually changes
+      if (state.durationMs !== lastDur) {
+        lastDur = state.durationMs;
+        lastDurStr = formatTime(lastDur);
+      }
 
       // Only apply IPC latency compensation when emittedAtMs actually changed
       // (i.e., this update came from a real backend progress event).

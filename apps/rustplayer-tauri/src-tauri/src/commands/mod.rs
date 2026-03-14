@@ -25,6 +25,10 @@ const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
 const LOGIN_POLL_INTERVAL: Duration = Duration::from_secs(2);
 /// Initial delay before starting login detection.
 const LOGIN_INITIAL_DELAY: Duration = Duration::from_secs(3);
+/// Hard timeout for fetching stream URL in play_track (UI critical path).
+const STREAM_URL_TIMEOUT: Duration = Duration::from_secs(12);
+/// Hard timeout for enqueueing a PlayerCommand (protects against engine stalls).
+const PLAYER_SEND_TIMEOUT: Duration = Duration::from_secs(2);
 /// Cookie extraction timeout.
 const COOKIE_EXTRACT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Timeout for clearing cookies via webkit.
@@ -286,9 +290,33 @@ pub async fn play_track(
     player: State<'_, Arc<Player>>,
 ) -> Result<(), IpcError> {
     run_with_trace("play_track", trace_id, async {
+        let started = std::time::Instant::now();
         let src = registry.get(track.source).ok_or(IpcError::NotFound("source not found".into()))?;
-        let stream = src.get_stream_url(&track).await.map_err(IpcError::from)?;
-        player.send(PlayerCommand::Load(track, stream)).await.map_err(IpcError::from)
+        let stream_started = std::time::Instant::now();
+        let stream = match tokio::time::timeout(STREAM_URL_TIMEOUT, src.get_stream_url(&track)).await {
+            Ok(Ok(s)) => s,
+            Ok(Err(e)) => return Err(IpcError::from(e)),
+            Err(_) => return Err(IpcError::Network("get_stream_url timeout".into())),
+        };
+        tracing::info!(
+            track_id = %track.id,
+            source = ?track.source,
+            elapsed_ms = stream_started.elapsed().as_millis() as u64,
+            "stream url resolved"
+        );
+
+        let send_started = std::time::Instant::now();
+        match tokio::time::timeout(PLAYER_SEND_TIMEOUT, player.send(PlayerCommand::Load(track, stream))).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return Err(IpcError::from(e)),
+            Err(_) => return Err(IpcError::Internal("player command timeout".into())),
+        }
+        tracing::info!(
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            enqueue_ms = send_started.elapsed().as_millis() as u64,
+            "play_track enqueued"
+        );
+        Ok(())
     }).await
 }
 

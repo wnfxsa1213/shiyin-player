@@ -70,6 +70,8 @@ struct Engine {
     volume_elem: Option<gst::Element>,
     state: PlayerState,
     current_track: Option<Arc<Track>>,
+    /// Timing for "Load command handled → pipeline enters Playing" measurement.
+    loading_since: Option<std::time::Instant>,
     /// Time-based progress emission (replaces tick-count based approach).
     last_progress_emit: Option<std::time::Instant>,
     /// Time-based state mismatch detection (replaces tick-count based approach).
@@ -95,6 +97,7 @@ fn engine_loop(
             volume_elem: None,
             state: PlayerState::Idle,
             current_track: None,
+            loading_since: None,
             last_progress_emit: None,
             state_mismatch_since: None,
             spectrum_buf: Vec::with_capacity(64),
@@ -156,7 +159,10 @@ fn handle_cmd(
     match cmd {
         PlayerCommand::Load(track, stream) => {
             teardown(eng);
+            let build_started = std::time::Instant::now();
             let (pipeline, vol) = build_pipeline(&stream)?;
+            let build_ms = build_started.elapsed().as_millis() as u64;
+            log::info!("build_pipeline took {build_ms}ms (track id={}, source={:?})", track.id, track.source);
             eng.pipeline = Some(pipeline);
             eng.volume_elem = Some(vol);
             let track = Arc::new(track);
@@ -248,8 +254,21 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
                     if sc.src().map(|s| s == p.upcast_ref::<gst::Object>()).unwrap_or(false) {
                         if sc.current() == gst::State::Playing {
                             if matches!(eng.state, PlayerState::Loading { .. }) {
+                                if let Some(since) = eng.loading_since.take() {
+                                    let ms = since.elapsed().as_millis() as u64;
+                                    if let Some(track) = &eng.current_track {
+                                        log::info!(
+                                            "pipeline reached Playing after {ms}ms (track id={}, source={:?})",
+                                            track.id, track.source
+                                        );
+                                    } else {
+                                        log::info!("pipeline reached Playing after {ms}ms");
+                                    }
+                                }
                                 if let Some(track) = eng.current_track.clone() {
-                                    eng.state = PlayerState::Playing { track: Arc::clone(&track), position_ms: 0 };
+                                    // Inline set_state to avoid borrow conflict with `p`
+                                    eng.loading_since = None;
+                                    eng.state = PlayerState::Playing { track, position_ms: 0 };
                                     emit(tx, PlayerEvent::StateChanged { state: eng.state.clone() });
                                 }
                             }
@@ -261,9 +280,8 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
                         if s.name() == "spectrum" {
                             extract_spectrum_into(s, &mut eng.spectrum_buf);
                             if !eng.spectrum_buf.is_empty() {
-                                // Wrap in Arc so broadcast::send clones are atomic increments
-                                // instead of heap allocations (~15fps × 64 floats).
-                                emit(tx, PlayerEvent::Spectrum { magnitudes: Arc::new(eng.spectrum_buf.clone()) });
+                                // One allocation per frame (Arc header + slice), copy 64 floats.
+                                emit(tx, PlayerEvent::Spectrum { magnitudes: Arc::from(eng.spectrum_buf.as_slice()) });
                             }
                         }
                     }
@@ -408,7 +426,15 @@ fn build_pipeline(stream: &StreamInfo) -> Result<(gst::Pipeline, gst::Element), 
 // --- Helpers ---
 
 fn set_gst_state(pipeline: &gst::Pipeline, state: gst::State) -> Result<(), PlayerError> {
-    pipeline.set_state(state).map_err(|e| PlayerError::Pipeline(format!("failed to set state {state:?}: {e}")))?;
+    let started = std::time::Instant::now();
+    let result = pipeline.set_state(state)
+        .map_err(|e| PlayerError::Pipeline(format!("failed to set state {state:?}: {e}")))?;
+    let elapsed = started.elapsed();
+    if elapsed >= Duration::from_millis(50) {
+        log::warn!("set_state({state:?}) took {}ms (result={result:?})", elapsed.as_millis());
+    } else {
+        log::debug!("set_state({state:?}) took {}ms (result={result:?})", elapsed.as_millis());
+    }
     Ok(())
 }
 
@@ -426,12 +452,18 @@ fn teardown(eng: &mut Engine) {
     }
     eng.volume_elem = None;
     eng.current_track = None;
+    eng.loading_since = None;
     // Reset time-based tracking to avoid stale state leaking to next track
     eng.last_progress_emit = None;
     eng.state_mismatch_since = None;
 }
 
 fn set_state(eng: &mut Engine, state: PlayerState, tx: &broadcast::Sender<PlayerEvent>) {
+    if matches!(state, PlayerState::Loading { .. }) {
+        eng.loading_since = Some(std::time::Instant::now());
+    } else {
+        eng.loading_since = None;
+    }
     eng.state = state.clone();
     emit(tx, PlayerEvent::StateChanged { state });
 }

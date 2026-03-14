@@ -10,7 +10,7 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
   const state = usePlayerStore((s) => s.state);
   const volume = usePlayerStore((s) => s.volume);
   const setVolume = usePlayerStore((s) => s.setVolume);
-  const queue = usePlayerStore((s) => s.queue);
+  const hasQueue = usePlayerStore((s) => s.queue.length > 0);
   const [coverFailed, setCoverFailed] = useState(false);
 
   const centerRef = useRef<HTMLDivElement>(null);
@@ -99,10 +99,10 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
       <div ref={centerRef} className="relative flex h-full w-1/2 max-w-2xl flex-col items-center justify-center">
         <div className="relative z-10 flex items-center gap-6">
           <button
-            onClick={() => queue.length > 0 && usePlayerStore.getState().playPrev()}
-            disabled={queue.length === 0}
+            onClick={() => hasQueue && usePlayerStore.getState().playPrev()}
+            disabled={!hasQueue}
             className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors duration-200 ${
-              queue.length === 0
+              !hasQueue
                 ? 'text-text-tertiary opacity-40 cursor-not-allowed'
                 : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover cursor-pointer'
             }`}
@@ -130,10 +130,10 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
           </button>
 
           <button
-            onClick={() => queue.length > 0 && usePlayerStore.getState().playNext()}
-            disabled={queue.length === 0}
+            onClick={() => hasQueue && usePlayerStore.getState().playNext()}
+            disabled={!hasQueue}
             className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors duration-200 ${
-              queue.length === 0
+              !hasQueue
                 ? 'text-text-tertiary opacity-40 cursor-not-allowed'
                 : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover cursor-pointer'
             }`}
