@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default permissions for RustPlayer","local":true,"windows":["main"],"permissions":["core:default","shell:allow-open","store:default"]}}
+{"default":{"identifier":"default","description":"Default permissions for RustPlayer","local":true,"windows":["main"],"permissions":["core:default","core:window:allow-set-fullscreen","shell:allow-open","store:default"]}}
