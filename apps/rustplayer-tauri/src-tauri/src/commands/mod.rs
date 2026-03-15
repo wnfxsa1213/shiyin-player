@@ -905,15 +905,20 @@ pub async fn get_smart_recommend(
     run_with_trace("get_smart_recommend", trace_id, async {
         let all_sources = registry.all().to_vec();
 
-        // 1. Fetch platform recommendations from all logged-in sources in parallel
+        // 1. Fetch platform recommendations from all logged-in sources in parallel.
+        // Use indexed futures to preserve deterministic per-source ordering
+        // (JoinSet returns by completion order, which would make rank_score
+        // depend on network latency and bias toward faster sources).
+        let logged_in_sources: Vec<_> = all_sources.iter()
+            .filter(|s| s.is_logged_in())
+            .cloned()
+            .collect();
+        let mut source_results: Vec<(usize, Vec<Track>)> = Vec::new();
         let mut join_set = tokio::task::JoinSet::new();
-        for src in &all_sources {
-            if !src.is_logged_in() {
-                continue;
-            }
+        for (idx, src) in logged_in_sources.iter().enumerate() {
             let src = Arc::clone(src);
             join_set.spawn(async move {
-                match tokio::time::timeout(
+                let tracks = match tokio::time::timeout(
                     std::time::Duration::from_secs(15),
                     src.get_daily_recommend(),
                 ).await {
@@ -926,15 +931,20 @@ pub async fn get_smart_recommend(
                         tracing::warn!(source = ?src.id(), "daily recommend timed out");
                         Vec::new()
                     }
-                }
+                };
+                (idx, tracks)
             });
         }
-
-        let mut platform_tracks: Vec<rustplayer_core::Track> = Vec::new();
         while let Some(result) = join_set.join_next().await {
-            if let Ok(tracks) = result {
-                platform_tracks.extend(tracks);
+            if let Ok(pair) = result {
+                source_results.push(pair);
             }
+        }
+        // Sort by source index to restore deterministic ordering
+        source_results.sort_by_key(|(idx, _)| *idx);
+        let mut platform_tracks: Vec<Track> = Vec::new();
+        for (_, tracks) in source_results {
+            platform_tracks.extend(tracks);
         }
 
         // 2. Query local behavior data (on blocking thread)
@@ -1085,21 +1095,22 @@ pub async fn get_radio_batch(
             candidates.retain(|t| seen.insert((t.id.clone(), t.source)));
         }
 
-        // 5. Re-rank using profile
+        // 5. Re-rank using profile (consistent threshold with get_smart_recommend)
         let db_arc = db.inner().clone();
-        let (artist_stats, recent_ids) = {
+        let (artist_stats, recent_ids, event_count) = {
             let db = db_arc;
             tauri::async_runtime::spawn_blocking(move || -> Result<_, String> {
                 let stats = db.get_artist_stats(90, 50)?;
                 let recent = db.get_recent_track_ids(24)?;
-                Ok((stats, recent))
+                let count = db.get_play_event_count()?;
+                Ok((stats, recent, count))
             })
             .await
             .map_err(|e| IpcError::Internal(e.to_string()))?
             .map_err(IpcError::Internal)?
         };
 
-        let reranked = if !artist_stats.is_empty() {
+        let reranked = if event_count >= 10 && !artist_stats.is_empty() {
             let profile = rustplayer_recommend::build_profile(&artist_stats);
             rustplayer_recommend::rerank(candidates, &profile, &recent_ids)
         } else {

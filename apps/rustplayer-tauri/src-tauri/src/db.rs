@@ -226,11 +226,18 @@ impl Db {
     /// Aggregate play events by artist over the last `days` days.
     /// Returns top `limit` artists sorted by preference score.
     /// Score = play_count * avg_completion_rate * recency_factor.
+    ///
+    /// SQL fetches a wider candidate set (4x limit) sorted by play_count,
+    /// then Rust applies the full score formula and truncates to `limit`.
+    /// This avoids prematurely discarding artists with low play_count but
+    /// high completion rate and recency.
     pub fn get_artist_stats(&self, days: u32, limit: u32) -> Result<Vec<ArtistPreference>, String> {
         let now = now_epoch();
         let conn = self.pool.get_timeout(DB_CONNECTION_TIMEOUT)
             .map_err(|e| format!("database connection error: {e}"))?;
         let cutoff = now - (days as i64 * 86400);
+        // Fetch 4x candidates to account for score reranking
+        let sql_limit = limit.saturating_mul(4).max(200);
         let mut stmt = conn.prepare_cached(
             "SELECT
                 artist,
@@ -245,7 +252,7 @@ impl Db {
              ORDER BY play_count DESC
              LIMIT ?2"
         ).map_err(|e| e.to_string())?;
-        let rows = stmt.query_map(rusqlite::params![cutoff, limit], |row| {
+        let rows = stmt.query_map(rusqlite::params![cutoff, sql_limit], |row| {
             let play_count: u32 = row.get(1)?;
             let avg_completion_rate: f64 = row.get(2)?;
             let last_played_at: i64 = row.get(3)?;
@@ -265,8 +272,9 @@ impl Db {
             Ok(s) => Some(s),
             Err(e) => { tracing::warn!("db: corrupt artist stat row: {e}"); None }
         }).collect();
-        // Re-sort by computed score (DB sorted by play_count, but score includes recency)
+        // Sort by computed score and truncate to requested limit
         stats.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        stats.truncate(limit as usize);
         Ok(stats)
     }
 
@@ -329,7 +337,9 @@ impl Db {
                 "qqmusic" => MusicSourceId::Qqmusic,
                 other => {
                     tracing::warn!("db: unknown source in play_events: {other}");
-                    return Err(rusqlite::Error::InvalidColumnName("unknown source".into()));
+                    return Err(rusqlite::Error::InvalidParameterName(
+                        format!("unknown music source: {other}"),
+                    ));
                 }
             };
             Ok(Track {

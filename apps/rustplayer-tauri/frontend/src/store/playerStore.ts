@@ -79,7 +79,7 @@ function onPlayerStateChangeForTracking(newState: string) {
 }
 
 /** Fire-and-forget: report the previous track's play session to the backend. */
-function flushPlayEvent() {
+export function flushPlayEvent() {
   if (!trackingTrack || trackingStartedAt === 0) return;
   // Flush any remaining playing time
   if (trackingPlayingSince > 0) {
@@ -208,17 +208,27 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       // Flush play event for the track that was playing before this one
       flushPlayEvent();
       const track = queue[index];
+      const seq = ++playSeq;
+      // Save tracking state before overwriting, so we can rollback on failure
+      const prevTrackingTrack = trackingTrack;
+      const prevTrackingStartedAt = trackingStartedAt;
+      const prevTrackingPlayingMs = trackingPlayingMs;
+      const prevTrackingPlayingSince = trackingPlayingSince;
       // Start tracking the new track
       trackingTrack = track;
       trackingStartedAt = Math.floor(Date.now() / 1000);
       trackingPlayingMs = 0;
       trackingPlayingSince = 0;
-      const seq = ++playSeq;
       ipc.playTrack(track).catch((err) => {
         // Only rollback if this is still the most recent play request
         // This prevents stale failures from overwriting newer successful plays
         if (seq !== playSeq) return;
         useToastStore.getState().addToast('error', `播放失败: ${sanitizeError(err)}`);
+        // Rollback tracking state to avoid writing a never-played event
+        trackingTrack = prevTrackingTrack;
+        trackingStartedAt = prevTrackingStartedAt;
+        trackingPlayingMs = prevTrackingPlayingMs;
+        trackingPlayingSince = prevTrackingPlayingSince;
         // Rollback to previous track on failure to maintain UI consistency
         set({
           currentTrack: previousTrack,

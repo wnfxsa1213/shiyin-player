@@ -38,3 +38,66 @@ pub fn build_profile(artist_stats: &[ArtistPreference]) -> UserProfile {
         max_artist_score,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_pref(artist: &str, score: f64) -> ArtistPreference {
+        ArtistPreference {
+            artist: artist.to_string(),
+            play_count: 1,
+            avg_completion_rate: 1.0,
+            last_played_at: 0,
+            score,
+        }
+    }
+
+    #[test]
+    fn test_build_profile_empty() {
+        let profile = build_profile(&[]);
+        assert!(profile.artist_scores.is_empty());
+        assert!((profile.max_artist_score - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_build_profile_single() {
+        let stats = vec![make_pref("Jay Chou", 5.0)];
+        let profile = build_profile(&stats);
+        assert_eq!(profile.artist_scores.len(), 1);
+        assert!((profile.artist_scores["jay chou"] - 5.0).abs() < f64::EPSILON);
+        assert!((profile.max_artist_score - 5.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_build_profile_merges_normalized() {
+        let stats = vec![
+            make_pref("Jay Chou", 3.0),
+            make_pref("jay chou", 2.0),
+            make_pref("JAY CHOU", 1.0),
+        ];
+        let profile = build_profile(&stats);
+        assert_eq!(profile.artist_scores.len(), 1);
+        assert!((profile.artist_scores["jay chou"] - 6.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_build_profile_skips_empty() {
+        let stats = vec![
+            make_pref("", 5.0),
+            make_pref("  ", 3.0),
+            make_pref("Valid", 2.0),
+        ];
+        let profile = build_profile(&stats);
+        assert_eq!(profile.artist_scores.len(), 1);
+        assert!(profile.artist_scores.contains_key("valid"));
+    }
+
+    #[test]
+    fn test_build_profile_max_score_floor() {
+        // Scores below 1.0 should still give max_artist_score of 1.0
+        let stats = vec![make_pref("A", 0.5)];
+        let profile = build_profile(&stats);
+        assert!((profile.max_artist_score - 1.0).abs() < f64::EPSILON);
+    }
+}

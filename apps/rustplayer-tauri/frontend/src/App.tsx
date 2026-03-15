@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { useUiStore } from '@/store/uiStore';
-import { usePlayerStore } from '@/store/playerStore';
+import { usePlayerStore, flushPlayEvent } from '@/store/playerStore';
 import { useVisualizerStore, spectrumDataRef } from '@/store/visualizerStore';
 import { useToastStore } from '@/store/toastStore';
 import { usePlaylistStore } from '@/store/playlistStore';
@@ -139,6 +139,8 @@ export default function App() {
         if (state === 'playing') usePlayerStore.getState().play();
         else if (state === 'paused') usePlayerStore.getState().pause();
         else if (state === 'stopped') {
+          // Always flush the current track's play event when playback stops
+          flushPlayEvent();
           if (playerErrorRef.current) {
             playerErrorRef.current = false;
             const { queue, playMode } = usePlayerStore.getState();
@@ -186,9 +188,14 @@ export default function App() {
       }
     });
 
+    // Flush the last track's play event when the window is closing
+    const handleBeforeUnload = () => flushPlayEvent();
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
     return () => {
       active = false;
       cleanups.forEach((fn) => fn());
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, []);
 
