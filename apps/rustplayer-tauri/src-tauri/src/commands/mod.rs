@@ -986,17 +986,19 @@ pub async fn get_smart_recommend(
 
 /// Fetch a batch of new tracks for continuous playback ("radio mode").
 /// Combines Personal FM + random playlist songs, re-ranked by user profile.
-/// `exclude_ids` prevents returning songs already in the current queue.
+/// `exclude_keys` prevents returning songs already in the current queue.
+/// Each key is formatted as "source:id" (e.g. "netease:12345") for cross-source safety.
 #[tauri::command]
 pub async fn get_radio_batch(
-    exclude_ids: Vec<String>,
+    exclude_keys: Vec<String>,
     trace_id: Option<String>,
     registry: State<'_, Arc<SourceRegistry>>,
     db: State<'_, Arc<Db>>,
 ) -> Result<Vec<Track>, IpcError> {
     run_with_trace("get_radio_batch", trace_id, async {
         let all_sources = registry.all().to_vec();
-        let exclude_set: HashSet<String> = exclude_ids.into_iter().collect();
+        // S1: cap exclude list to prevent memory amplification from abnormal input
+        let exclude_set: HashSet<String> = exclude_keys.into_iter().take(2000).collect();
 
         // 1. Fetch from Personal FM (returns different songs each call)
         let mut candidates: Vec<Track> = Vec::new();
@@ -1030,55 +1032,52 @@ pub async fn get_radio_batch(
         }
 
         // 2. Supplement with random songs from user playlists if FM returned few results
+        // M4: only load from one source to limit memory, and cap total candidates at 200
         if candidates.len() < 5 {
-            let mut playlist_join_set = tokio::task::JoinSet::new();
-            for src in &all_sources {
-                if !src.is_logged_in() {
-                    continue;
-                }
+            // Pick the first logged-in source only
+            if let Some(src) = all_sources.iter().find(|s| s.is_logged_in()) {
                 let src = Arc::clone(src);
-                playlist_join_set.spawn(async move {
-                    match tokio::time::timeout(
-                        std::time::Duration::from_secs(10),
-                        src.get_user_playlists(),
-                    ).await {
-                        Ok(Ok(playlists)) => {
-                            // Pick first non-empty playlist and sample tracks from it
-                            if let Some(pl) = playlists.first() {
-                                match tokio::time::timeout(
-                                    std::time::Duration::from_secs(10),
-                                    src.get_playlist_detail(&pl.id),
-                                ).await {
-                                    Ok(Ok(detail)) => detail.tracks,
-                                    _ => Vec::new(),
-                                }
-                            } else {
-                                Vec::new()
+                let playlist_tracks: Vec<Track> = match tokio::time::timeout(
+                    std::time::Duration::from_secs(10),
+                    src.get_user_playlists(),
+                ).await {
+                    Ok(Ok(playlists)) => {
+                        if let Some(pl) = playlists.first() {
+                            match tokio::time::timeout(
+                                std::time::Duration::from_secs(10),
+                                src.get_playlist_detail(&pl.id),
+                            ).await {
+                                Ok(Ok(detail)) => detail.tracks,
+                                _ => Vec::new(),
                             }
+                        } else {
+                            Vec::new()
                         }
-                        _ => Vec::new(),
                     }
-                });
-            }
-            while let Some(result) = playlist_join_set.join_next().await {
-                if let Ok(tracks) = result {
-                    // Shuffle playlist tracks: take a pseudo-random slice
+                    _ => Vec::new(),
+                };
+                // Shuffle: take a pseudo-random slice of up to 10 tracks
+                let len = playlist_tracks.len();
+                if len > 0 {
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_millis() as usize;
-                    let len = tracks.len();
-                    if len > 0 {
-                        let start = now % len;
-                        let end = (start + 10).min(len);
-                        candidates.extend(tracks[start..end].iter().cloned());
-                    }
+                    let start = now % len;
+                    let end = (start + 10).min(len);
+                    candidates.extend(playlist_tracks[start..end].iter().cloned());
                 }
             }
         }
 
-        // 3. Filter out excluded tracks
-        candidates.retain(|t| !exclude_set.contains(&t.id));
+        // Hard cap on total candidates to prevent memory blow-up
+        candidates.truncate(200);
+
+        // 3. Filter out excluded tracks (key = "source:id")
+        candidates.retain(|t| {
+            let key = format!("{}:{}", t.source.storage_key(), t.id);
+            !exclude_set.contains(&key)
+        });
 
         // 4. Deduplicate by (id, source)
         {

@@ -141,8 +141,8 @@ export const ipc = {
   getSmartRecommend: () =>
     invokeWithTrace<RecommendResult>('get_smart_recommend'),
 
-  getRadioBatch: (excludeIds: string[]) =>
-    invokeWithTrace<Track[]>('get_radio_batch', { excludeIds }),
+  getRadioBatch: (excludeKeys: string[]) =>
+    invokeWithTrace<Track[]>('get_radio_batch', { excludeKeys }),
 
   extractCoverColor: (url: string) =>
     invokeWithTrace<[number, number, number]>('extract_cover_color', { url }),

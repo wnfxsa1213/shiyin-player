@@ -62,14 +62,32 @@ let playSeq = 0;
 
 // --- Behavior tracking state (non-reactive, outside store) ---
 let trackingTrack: Track | null = null;
-let trackingStartedAt = 0; // Unix epoch seconds
+let trackingStartedAt = 0; // Unix epoch seconds when tracking session began
+let trackingPlayingMs = 0; // cumulative ms actually spent in 'playing' state
+let trackingPlayingSince = 0; // timestamp (ms) when last entered 'playing', 0 if paused
+
+/** Call when player state changes to accumulate actual playing time. */
+function onPlayerStateChangeForTracking(newState: string) {
+  const now = Date.now();
+  if (newState === 'playing') {
+    trackingPlayingSince = now;
+  } else if (trackingPlayingSince > 0) {
+    // Was playing, now paused/stopped/loading — accumulate
+    trackingPlayingMs += now - trackingPlayingSince;
+    trackingPlayingSince = 0;
+  }
+}
 
 /** Fire-and-forget: report the previous track's play session to the backend. */
 function flushPlayEvent() {
   if (!trackingTrack || trackingStartedAt === 0) return;
-  const now = Math.floor(Date.now() / 1000);
-  const playedDurationMs = (now - trackingStartedAt) * 1000;
+  // Flush any remaining playing time
+  if (trackingPlayingSince > 0) {
+    trackingPlayingMs += Date.now() - trackingPlayingSince;
+    trackingPlayingSince = 0;
+  }
   const track = trackingTrack;
+  const playedDurationMs = Math.min(trackingPlayingMs, track.durationMs);
   // completed = played >= 80% of track duration, or played >= duration - 10s
   const completed =
     track.durationMs > 0 &&
@@ -81,12 +99,14 @@ function flushPlayEvent() {
     artist: track.artist,
     album: track.album,
     trackDurationMs: track.durationMs,
-    playedDurationMs: Math.min(playedDurationMs, track.durationMs),
+    playedDurationMs,
     startedAt: trackingStartedAt,
     completed,
   });
   trackingTrack = null;
   trackingStartedAt = 0;
+  trackingPlayingMs = 0;
+  trackingPlayingSince = 0;
 }
 
 // --- Auto-replenish: infinite radio mode ---
@@ -100,8 +120,8 @@ function autoReplenish() {
   if (remaining > 2 || queue.length === 0) return;
 
   replenishInProgress = true;
-  const excludeIds = queue.map((t) => t.id);
-  ipc.getRadioBatch(excludeIds)
+  const excludeKeys = queue.map((t) => `${t.source}:${t.id}`);
+  ipc.getRadioBatch(excludeKeys)
     .then((newTracks) => {
       if (newTracks.length > 0) {
         usePlayerStore.getState().addToQueue(newTracks);
@@ -128,8 +148,8 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   shuffleOrder: [],
   recentTracks: [],
 
-  play: () => set({ state: 'playing' }),
-  pause: () => set({ state: 'paused' }),
+  play: () => { onPlayerStateChangeForTracking('playing'); set({ state: 'playing' }); },
+  pause: () => { onPlayerStateChangeForTracking('paused'); set({ state: 'paused' }); },
   seek: (positionMs) => set({ positionMs }),
   setVolume: (volume) => {
     const v = Math.max(0, Math.min(1, volume));
@@ -191,6 +211,8 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       // Start tracking the new track
       trackingTrack = track;
       trackingStartedAt = Math.floor(Date.now() / 1000);
+      trackingPlayingMs = 0;
+      trackingPlayingSince = 0;
       const seq = ++playSeq;
       ipc.playTrack(track).catch((err) => {
         // Only rollback if this is still the most recent play request

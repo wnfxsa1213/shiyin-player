@@ -34,7 +34,8 @@ export default function DailyRecommendView() {
     if (anyLoggedIn === true && personalized.length === 0 && !loading) {
       fetchRecommendations();
     }
-  }, [anyLoggedIn, personalized.length, loading, fetchRecommendations]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchRecommendations is stable (zustand)
+  }, [anyLoggedIn, personalized.length, loading]);
 
   const handlePlayAll = () => {
     if (!personalized.length) return;

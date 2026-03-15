@@ -54,8 +54,10 @@ pub fn rerank(
                 / profile.max_artist_score;
 
             // 3. Freshness score: 1.0 if not recently played, 0.0 if played in last 24h
-            let source_key = track.source.storage_key().to_string();
-            let is_recent = recent_ids.contains(&(track.id.clone(), source_key));
+            // m1: use &str reference for source_key to avoid allocation
+            let source_key = track.source.storage_key();
+            let lookup = (track.id.as_str(), source_key);
+            let is_recent = recent_ids.iter().any(|(id, src)| id == lookup.0 && src == lookup.1);
             let freshness_score = if is_recent { 0.0 } else { 1.0 };
 
             let score = WEIGHT_PLATFORM_RANK * rank_score
@@ -69,7 +71,9 @@ pub fn rerank(
     // Sort by score descending (stable sort preserves platform order for equal scores)
     scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
 
-    // Apply diversity constraint: no more than MAX_CONSECUTIVE_SAME_ARTIST in a row
+    // Apply best-effort diversity constraint: tries to avoid more than
+    // MAX_CONSECUTIVE_SAME_ARTIST in a row, but may not guarantee it
+    // when too many tracks are from the same artist.
     apply_diversity(scored)
 }
 

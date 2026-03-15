@@ -3,6 +3,7 @@ use std::time::Duration;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use rustplayer_core::{ArtistPreference, LyricsLine, MusicSourceId, PlayEvent, Track};
 
 const CACHE_TTL_SECS: i64 = 24 * 3600; // 1 day
@@ -140,7 +141,7 @@ impl Db {
         }).map_err(|e| e.to_string())?;
         let tracks: Vec<Track> = rows.filter_map(|r| match r {
             Ok(t) => Some(t),
-            Err(e) => { log::warn!("db: corrupt track row: {e}"); None }
+            Err(e) => { tracing::warn!("db: corrupt track row: {e}"); None }
         }).collect();
         if tracks.is_empty() { Ok(None) } else { Ok(Some(tracks)) }
     }
@@ -171,7 +172,7 @@ impl Db {
         ) {
             Ok(v) => Some(v),
             Err(rusqlite::Error::QueryReturnedNoRows) => None,
-            Err(e) => { log::warn!("db: lyrics query error: {e}"); None }
+            Err(e) => { tracing::warn!("db: lyrics query error: {e}"); None }
         };
         match result {
             Some(json) => {
@@ -185,6 +186,15 @@ impl Db {
     // --- Recommendation: Play Event Tracking ---
 
     pub fn record_play_event(&self, event: &PlayEvent) -> Result<(), String> {
+        /// Counter for sampled cleanup: purge old events every 100 inserts.
+        static PLAY_EVENT_INSERT_COUNT: AtomicU64 = AtomicU64::new(0);
+        // S2: lightweight input validation
+        let now = now_epoch();
+        if event.started_at > now + 60 || event.started_at < now - 86400 * 365 {
+            return Err("started_at out of reasonable range".into());
+        }
+        let played = event.played_duration_ms.min(event.track_duration_ms);
+
         let conn = self.pool.get_timeout(DB_CONNECTION_TIMEOUT)
             .map_err(|e| format!("database connection error: {e}"))?;
         conn.execute(
@@ -196,11 +206,20 @@ impl Db {
                 event.artist,
                 event.album,
                 event.track_duration_ms,
-                event.played_duration_ms,
+                played,
                 event.started_at,
                 event.completed as i32,
             ],
         ).map_err(|e| e.to_string())?;
+
+        // M2: sampled cleanup — purge events older than 180 days every 100 inserts
+        let count = PLAY_EVENT_INSERT_COUNT.fetch_add(1, AtomicOrdering::Relaxed);
+        if count % 100 == 99 {
+            if let Err(e) = self.purge_old_events(180) {
+                tracing::warn!("sampled purge_old_events failed: {e}");
+            }
+        }
+
         Ok(())
     }
 
@@ -244,7 +263,7 @@ impl Db {
         }).map_err(|e| e.to_string())?;
         let mut stats: Vec<ArtistPreference> = rows.filter_map(|r| match r {
             Ok(s) => Some(s),
-            Err(e) => { log::warn!("db: corrupt artist stat row: {e}"); None }
+            Err(e) => { tracing::warn!("db: corrupt artist stat row: {e}"); None }
         }).collect();
         // Re-sort by computed score (DB sorted by play_count, but score includes recency)
         stats.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
@@ -280,27 +299,38 @@ impl Db {
         let conn = self.pool.get_timeout(DB_CONNECTION_TIMEOUT)
             .map_err(|e| format!("database connection error: {e}"))?;
         let stale_cutoff = now - (stale_days as i64 * 86400);
-        // Find tracks with >= 2 plays total, whose most recent play is older than stale_cutoff.
-        // Join with tracks cache to recover full Track metadata.
+        // C1 fix: aggregate play_events first in a subquery, then LEFT JOIN tracks
+        // to avoid row multiplication from the tracks table's (id, source, search_keyword) PK.
         let mut stmt = conn.prepare_cached(
-            "SELECT pe.track_id, pe.source, pe.artist, pe.album,
-                    COALESCE(t.name, pe.artist || ' - Unknown') as name,
-                    COALESCE(t.duration_ms, pe.track_duration_ms) as duration_ms,
-                    t.cover_url, t.media_mid,
-                    COUNT(*) as play_count, MAX(pe.started_at) as last_played
-             FROM play_events pe
-             LEFT JOIN tracks t ON t.id = pe.track_id AND t.source = pe.source
-             GROUP BY pe.track_id, pe.source
-             HAVING play_count >= 2 AND last_played < ?1
-             ORDER BY play_count DESC
-             LIMIT ?2"
+            "SELECT agg.track_id, agg.source, agg.artist, agg.album,
+                    COALESCE(t.name, agg.artist || ' - Unknown') as name,
+                    COALESCE(t.duration_ms, agg.track_duration_ms) as duration_ms,
+                    t.cover_url, t.media_mid
+             FROM (
+                SELECT track_id, source, artist, album,
+                       MAX(track_duration_ms) as track_duration_ms,
+                       COUNT(*) as play_count, MAX(started_at) as last_played
+                FROM play_events
+                GROUP BY track_id, source
+                HAVING play_count >= 2 AND last_played < ?1
+                ORDER BY play_count DESC
+                LIMIT ?2
+             ) agg
+             LEFT JOIN tracks t ON t.id = agg.track_id AND t.source = agg.source
+                AND t.cached_at = (
+                    SELECT MAX(t2.cached_at) FROM tracks t2
+                    WHERE t2.id = agg.track_id AND t2.source = agg.source
+                )"
         ).map_err(|e| e.to_string())?;
         let rows = stmt.query_map(rusqlite::params![stale_cutoff, limit], |row| {
             let source_str: String = row.get(1)?;
             let source = match source_str.as_str() {
                 "netease" => MusicSourceId::Netease,
                 "qqmusic" => MusicSourceId::Qqmusic,
-                _ => MusicSourceId::Netease,
+                other => {
+                    tracing::warn!("db: unknown source in play_events: {other}");
+                    return Err(rusqlite::Error::InvalidColumnName("unknown source".into()));
+                }
             };
             Ok(Track {
                 id: row.get(0)?,
@@ -315,7 +345,7 @@ impl Db {
         }).map_err(|e| e.to_string())?;
         let tracks: Vec<Track> = rows.filter_map(|r| match r {
             Ok(t) => Some(t),
-            Err(e) => { log::warn!("db: corrupt stale track row: {e}"); None }
+            Err(e) => { tracing::warn!("db: corrupt stale track row: {e}"); None }
         }).collect();
         Ok(tracks)
     }

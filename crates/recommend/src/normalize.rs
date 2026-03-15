@@ -1,6 +1,6 @@
 /// Normalize an artist name for cross-source matching.
 ///
-/// Applies: lowercase, trim, collapse whitespace, strip common punctuation.
+/// Applies: lowercase, trim, collapse whitespace, normalize separators (/ 、 ·) to spaces.
 /// This enables matching "周杰伦" across Netease and QQ Music, as well as
 /// "Jay Chou" vs "jay chou" or "JAY CHOU".
 pub fn normalize_artist(name: &str) -> String {

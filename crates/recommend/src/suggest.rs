@@ -1,11 +1,36 @@
+use std::collections::HashSet;
 use rustplayer_core::{ArtistPreference, Track};
+use crate::normalize::normalize_artist;
 
-/// Return the top `limit` artists by preference score.
+/// Return the top `limit` artists by preference score, deduplicated by normalized name.
 ///
-/// The input `artist_stats` should already be sorted by score from the database.
-/// This function simply truncates to the requested limit.
+/// Different spellings of the same artist (e.g. "Jay Chou" vs "jay chou") are merged:
+/// the first occurrence's display name is kept, scores are summed.
 pub fn suggest_artists(artist_stats: &[ArtistPreference], limit: usize) -> Vec<ArtistPreference> {
-    artist_stats.iter().take(limit).cloned().collect()
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut result: Vec<ArtistPreference> = Vec::new();
+
+    for stat in artist_stats {
+        let key = normalize_artist(&stat.artist);
+        if key.is_empty() {
+            continue;
+        }
+        if let Some(existing) = result.iter_mut().find(|r| normalize_artist(&r.artist) == key) {
+            // Merge into existing entry
+            existing.play_count += stat.play_count;
+            existing.score += stat.score;
+            if stat.last_played_at > existing.last_played_at {
+                existing.last_played_at = stat.last_played_at;
+            }
+        } else if seen.insert(key) {
+            result.push(stat.clone());
+        }
+        if result.len() >= limit {
+            break;
+        }
+    }
+
+    result
 }
 
 /// Pick tracks for the "rediscover" section from stale (not recently played) tracks.
