@@ -2,6 +2,13 @@
 
 # crates/core - 核心类型定义
 
+## 变更记录 (Changelog)
+
+| 时间 | 操作 | 说明 |
+|------|------|------|
+| 2026-03-15T11:22:14 | 增量更新 | 新增 PlayEvent, ArtistPreference, RecommendResult 类型；MusicSource trait 新增 get_daily_recommend/get_personal_fm 方法；新增 CookieStorage trait；新增 PaymentRequired 错误变体 |
+| 2026-02-24T22:48:14 | 初始化 | 首次扫描生成文档 |
+
 ## 模块职责
 
 定义整个项目共享的数据类型、trait 接口和错误类型。所有其他 crate 都依赖此模块。
@@ -15,13 +22,19 @@
 
 ### 核心数据类型
 
-- `Track` - 歌曲元数据（id, name, artist, album, duration_ms, source, cover_url）
+- `Track` - 歌曲元数据（id, name, artist, album, duration_ms, source, cover_url, media_mid）
 - `StreamInfo` - 音频流信息（url, format, bitrate）
 - `LyricsLine` - 歌词行（time_ms, text, translation）
 - `PlaylistBrief` / `Playlist` - 歌单摘要与详情
 - `SearchQuery` - 搜索参数（keyword, limit, offset）
 - `Credentials` / `AuthToken` - 认证凭据与令牌
-- `MusicSourceId` - 音源枚举（Netease, Qqmusic）
+- `MusicSourceId` - 音源枚举（Netease, Qqmusic），含 `display_name()` 和 `storage_key()` 方法
+
+### 推荐系统类型
+
+- `PlayEvent` - 播放事件记录（track_id, source, artist, album, track_duration_ms, played_duration_ms, started_at, completed）
+- `ArtistPreference` - 艺术家偏好聚合（artist, play_count, avg_completion_rate, last_played_at, score）
+- `RecommendResult` - 推荐结果（personalized, top_artists, rediscover）
 
 ### 状态与命令
 
@@ -29,13 +42,14 @@
 - `PlayerCommand` - 播放器命令（Load / Play / Pause / Toggle / Stop / Seek / SetVolume）
 - `PlayerEvent` - 播放器事件（StateChanged / Progress / Spectrum / Error）
 
-### Trait
+### Traits
 
-- `MusicSource` - 音乐源插件接口，定义 search / get_stream_url / get_lyrics / get_album_art / login / get_user_playlists / get_playlist_detail
+- `MusicSource` - 音乐源插件接口：search / get_stream_url / get_lyrics / get_album_art / login / get_user_playlists / get_playlist_detail / get_daily_recommend / get_personal_fm / logout / is_logged_in
+- `CookieStorage` - Cookie 存储辅助 trait：`cookie_lock()` 返回 `&RwLock<Option<Arc<str>>>`，提供默认 `cookie()` 方法（原子引用计数，避免字符串克隆）
 
 ### 错误类型
 
-- `SourceError` - 音源错误（Network / Unauthorized / NotFound / RateLimited / InvalidResponse / Unimplemented / Internal）
+- `SourceError` - 音源错误（Network / Unauthorized / NotFound / RateLimited / InvalidResponse / PaymentRequired / Unimplemented / Internal）
 - `PlayerError` - 播放器错误（InvalidState / Pipeline / Stream / ChannelClosed / Internal）
 - `AppError` - 应用顶层错误（Source / Player / InvalidInput / Internal）
 
@@ -55,10 +69,4 @@
 
 ## 相关文件清单
 
-- `src/lib.rs` - 全部类型定义（176 行）
-
-## 变更记录 (Changelog)
-
-| 时间 | 操作 | 说明 |
-|------|------|------|
-| 2026-02-24T22:48:14 | 初始化 | 首次扫描生成文档 |
+- `src/lib.rs` - 全部类型定义（259 行）
