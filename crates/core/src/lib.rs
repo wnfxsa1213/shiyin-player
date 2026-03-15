@@ -134,6 +134,39 @@ pub struct Playlist {
     pub source: MusicSourceId,
 }
 
+// --- Recommendation Types ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayEvent {
+    pub track_id: TrackId,
+    pub source: MusicSourceId,
+    pub artist: String,
+    pub album: String,
+    pub track_duration_ms: u64,
+    pub played_duration_ms: u64,
+    pub started_at: i64,
+    pub completed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtistPreference {
+    pub artist: String,
+    pub play_count: u32,
+    pub avg_completion_rate: f64,
+    pub last_played_at: i64,
+    pub score: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecommendResult {
+    pub personalized: Vec<Track>,
+    pub top_artists: Vec<ArtistPreference>,
+    pub rediscover: Vec<Track>,
+}
+
 // --- Errors ---
 
 #[derive(Debug, Clone, Serialize, Deserialize, Error)]

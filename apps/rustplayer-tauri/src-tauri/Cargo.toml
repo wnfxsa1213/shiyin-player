@@ -19,6 +19,7 @@ rustplayer-sources = { path = "../../../crates/sources" }
 rustplayer-netease = { path = "../../../crates/netease" }
 rustplayer-qqmusic = { path = "../../../crates/qqmusic" }
 rustplayer-cache = { path = "../../../crates/cache" }
+rustplayer-recommend = { path = "../../../crates/recommend" }
 rusqlite = { version = "0.31", features = ["bundled"] }
 r2d2 = "0.8"
 r2d2_sqlite = "0.24"

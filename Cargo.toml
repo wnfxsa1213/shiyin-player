@@ -7,5 +7,6 @@ members = [
     "crates/netease",
     "crates/qqmusic",
     "crates/cache",
+    "crates/recommend",
 ]
 resolver = "2"

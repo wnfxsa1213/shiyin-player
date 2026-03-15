@@ -38,6 +38,9 @@ fn main() {
             commands::get_playlist_detail,
             commands::get_daily_recommend,
             commands::get_personal_fm,
+            commands::record_play_event,
+            commands::get_smart_recommend,
+            commands::get_radio_batch,
             commands::extract_cover_color,
             commands::client_log,
         ])

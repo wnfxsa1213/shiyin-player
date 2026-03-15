@@ -67,6 +67,31 @@ export interface Playlist {
   source: MusicSource;
 }
 
+export interface PlayEvent {
+  trackId: string;
+  source: MusicSource;
+  artist: string;
+  album: string;
+  trackDurationMs: number;
+  playedDurationMs: number;
+  startedAt: number;
+  completed: boolean;
+}
+
+export interface ArtistPreference {
+  artist: string;
+  playCount: number;
+  avgCompletionRate: number;
+  lastPlayedAt: number;
+  score: number;
+}
+
+export interface RecommendResult {
+  personalized: Track[];
+  topArtists: ArtistPreference[];
+  rediscover: Track[];
+}
+
 export const ipc = {
   searchMusic: (query: string, source?: MusicSource) =>
     invokeWithTrace<Track[]>('search_music', { query, source }),
@@ -109,6 +134,15 @@ export const ipc = {
 
   getPersonalFm: (source: MusicSource) =>
     invokeWithTrace<Track[]>('get_personal_fm', { source }),
+
+  recordPlayEvent: (event: PlayEvent) =>
+    invoke<void>('record_play_event', { event, traceId: newTraceId() }).catch(() => {}),
+
+  getSmartRecommend: () =>
+    invokeWithTrace<RecommendResult>('get_smart_recommend'),
+
+  getRadioBatch: (excludeIds: string[]) =>
+    invokeWithTrace<Track[]>('get_radio_batch', { excludeIds }),
 
   extractCoverColor: (url: string) =>
     invokeWithTrace<[number, number, number]>('extract_cover_color', { url }),
