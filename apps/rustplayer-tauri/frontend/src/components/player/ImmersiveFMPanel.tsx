@@ -20,13 +20,21 @@ export default function ImmersiveFMPanel({ isOpen, onClose }: Props) {
 
   useFocusTrap(panelRef, isOpen, onClose);
 
-  // Update size on resize
+  // Update size on resize — debounced to avoid rapid canvas teardown/rebuild during fullscreen transitions
   useEffect(() => {
     if (!isOpen) return;
     const update = () => setSize({ w: window.innerWidth, h: window.innerHeight });
     update();
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
+    let timer: ReturnType<typeof setTimeout>;
+    const debouncedUpdate = () => {
+      clearTimeout(timer);
+      timer = setTimeout(update, 100);
+    };
+    window.addEventListener('resize', debouncedUpdate);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', debouncedUpdate);
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;

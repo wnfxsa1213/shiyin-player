@@ -4,9 +4,24 @@ import { useVisualizerStore, spectrumDataRef } from '@/store/visualizerStore';
 const getPrefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-export default function FullscreenVisualizer({ width, height }: { width: number; height: number }) {
+interface Particle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  alpha: number;
+  life: number;
+  maxLife: number;
+  color: string;
+}
+
+const MAX_PARTICLES = 60;
+
+export default function FullscreenVisualizer({ width, height, alpha = 1 }: { width: number; height: number; alpha?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>();
+  const particlesRef = useRef<Particle[]>([]);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(getPrefersReducedMotion);
 
   useEffect(() => {
@@ -24,61 +39,150 @@ export default function FullscreenVisualizer({ width, height }: { width: number;
     const ctx = canvas.getContext('2d', { willReadFrequently: false });
     if (!ctx) return;
 
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    ctx.scale(dpr, dpr);
+    // Render at 75% internal resolution — the background visualizer is
+    // semi-transparent and blended, so the slight softness is invisible.
+    // Cuts pixel fill workload by ~44% vs native resolution.
+    const RENDER_SCALE = 0.75;
+    canvas.width = Math.round(width * RENDER_SCALE);
+    canvas.height = Math.round(height * RENDER_SCALE);
+    ctx.scale(RENDER_SCALE, RENDER_SCALE);
 
     if (prefersReducedMotion) {
       ctx.clearRect(0, 0, width, height);
+      particlesRef.current = [];
       return;
     }
 
+    // Cache accent color — updated via CSS variable observer, never getComputedStyle in RAF
     let cachedAccent = '#8B5CF6';
-    let frameCount = 0;
+    // Read initial value once
+    const rawInitial =
+      getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#8B5CF6';
+    ctx.fillStyle = rawInitial;
+    cachedAccent = ctx.fillStyle;
 
-    const renderLoop = () => {
-      const { enabled, visualizationMode } = useVisualizerStore.getState();
+    // Observe --accent changes via MutationObserver on style attribute
+    const observer = new MutationObserver(() => {
+      const raw =
+        getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#8B5CF6';
+      ctx.fillStyle = raw;
+      cachedAccent = ctx.fillStyle;
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'class'] });
+
+    // Cache gradients — recreated only when accent changes
+    let cachedBarsGradient: CanvasGradient | null = null;
+    let cachedWaveGradient: CanvasGradient | null = null;
+    let lastGradientAccent = '';
+
+    const ensureGradients = () => {
+      if (lastGradientAccent === cachedAccent) return;
+      lastGradientAccent = cachedAccent;
+      cachedBarsGradient = ctx.createLinearGradient(0, height, 0, 0);
+      cachedBarsGradient.addColorStop(0, cachedAccent);
+      cachedBarsGradient.addColorStop(1, cachedAccent + '40');
+      cachedWaveGradient = ctx.createLinearGradient(0, height * 0.7 - height * 0.3, 0, height);
+      cachedWaveGradient.addColorStop(0, cachedAccent + '40');
+      cachedWaveGradient.addColorStop(1, 'transparent');
+    };
+
+    // Throttle to ~30fps — spectrum data arrives at ~15fps and particle physics
+    // don't need 60fps precision. Halves GPU workload on full-screen canvas.
+    let lastFrameTime = 0;
+    const FRAME_INTERVAL = 1000 / 30; // ~33ms
+
+    const renderLoop = (now: number) => {
+      animationRef.current = requestAnimationFrame(renderLoop);
+
+      const delta = now - lastFrameTime;
+      if (delta < FRAME_INTERVAL) return;
+      lastFrameTime = now - (delta % FRAME_INTERVAL);
+
+      const { enabled, visualizationMode, showParticles, colors } = useVisualizerStore.getState();
       const magnitudes = spectrumDataRef.current;
 
       ctx.clearRect(0, 0, width, height);
 
-      if (!enabled) {
-        animationRef.current = requestAnimationFrame(renderLoop);
-        return;
+      if (!enabled) return;
+
+      ensureGradients();
+
+      // Apply background alpha via canvas globalAlpha instead of a DOM opacity
+      // wrapper — avoids creating an extra GPU compositing layer on WebKitGTK.
+      ctx.globalAlpha = alpha;
+
+      // --- Draw visualizer ---
+      let hasSignal = false;
+      if (magnitudes && magnitudes.length > 0) {
+        for (let i = 0; i < magnitudes.length; i++) {
+          if (magnitudes[i] > 0) { hasSignal = true; break; }
+        }
       }
 
-      // Refresh accent color every ~0.5s, normalized to #rrggbb hex
-      // so that appending alpha suffix (e.g. '40') produces valid 8-digit hex.
-      if (frameCount++ % 30 === 0) {
-        const raw =
-          getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#8B5CF6';
-        ctx.fillStyle = raw;
-        cachedAccent = ctx.fillStyle; // Canvas getter always returns #rrggbb
-      }
-
-      // Empty data gate
-      if (magnitudes && magnitudes.length > 0 && magnitudes.some((v) => v > 0)) {
+      if (hasSignal) {
         switch (visualizationMode) {
           case 'bars':
-            drawBars(ctx, magnitudes, width, height, cachedAccent);
+            drawBars(ctx, magnitudes, width, height, cachedAccent, cachedBarsGradient!);
             break;
           case 'circle':
-            drawCircle(ctx, magnitudes, width, height, cachedAccent);
+            drawCircle(ctx, magnitudes, width, height, cachedAccent, alpha);
             break;
           case 'wave':
-            drawWave(ctx, magnitudes, width, height, cachedAccent);
+            drawWave(ctx, magnitudes, width, height, cachedAccent, cachedWaveGradient!);
             break;
         }
       }
 
-      animationRef.current = requestAnimationFrame(renderLoop);
+      // --- Draw particles (merged from ParticleSystem) ---
+      if (showParticles) {
+        let lowSum = 0;
+        const bandCount = Math.min(8, magnitudes.length);
+        for (let i = 0; i < bandCount; i++) lowSum += magnitudes[i];
+        const lowEnergy = bandCount > 0 ? lowSum / bandCount : 0;
+
+        const spawnRate = Math.floor(lowEnergy * 4);
+        for (let s = 0; s < spawnRate && particlesRef.current.length < MAX_PARTICLES; s++) {
+          particlesRef.current.push({
+            x: Math.random() * width,
+            y: height + 5,
+            vx: (Math.random() - 0.5) * 1.5,
+            vy: -(1 + Math.random() * 2 + lowEnergy * 2),
+            size: 2 + Math.random() * 3 + lowEnergy * 3,
+            alpha: 0.6 + Math.random() * 0.4,
+            life: 0,
+            maxLife: 60 + Math.random() * 60,
+            color: colors.particle,
+          });
+        }
+
+        const alive: Particle[] = [];
+        ctx.fillStyle = colors.particle;
+        for (const p of particlesRef.current) {
+          p.life++;
+          if (p.life >= p.maxLife) continue;
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy *= 0.98;
+          p.vx *= 0.99;
+          p.alpha = (1 - p.life / p.maxLife) * 0.7;
+          p.size *= 0.995;
+
+          ctx.globalAlpha = p.alpha * alpha;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+          alive.push(p);
+        }
+        ctx.globalAlpha = 1;
+        particlesRef.current = alive;
+      }
     };
 
-    renderLoop();
+    animationRef.current = requestAnimationFrame(renderLoop);
 
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      observer.disconnect();
     };
   }, [width, height, prefersReducedMotion]);
 
@@ -98,15 +202,11 @@ function drawBars(
   magnitudes: Float32Array,
   width: number,
   height: number,
-  accent: string,
+  _accent: string,
+  gradient: CanvasGradient,
 ) {
   const barCount = magnitudes.length;
   const barWidth = width / barCount;
-
-  // Gradient from bottom (opaque) to top (semi-transparent)
-  const gradient = ctx.createLinearGradient(0, height, 0, 0);
-  gradient.addColorStop(0, accent);
-  gradient.addColorStop(1, accent + '40');
 
   ctx.fillStyle = gradient;
   ctx.beginPath();
@@ -121,13 +221,14 @@ function drawBars(
   ctx.fill();
 }
 
-// --- Circle mode ---
+// --- Circle mode (batched strokes) ---
 function drawCircle(
   ctx: CanvasRenderingContext2D,
   magnitudes: Float32Array,
   width: number,
   height: number,
   accent: string,
+  alpha: number,
 ) {
   const cx = width / 2;
   const cy = height / 2;
@@ -138,7 +239,10 @@ function drawCircle(
   ctx.strokeStyle = accent;
   ctx.lineWidth = 3;
   ctx.lineCap = 'round';
+  ctx.globalAlpha = 0.7 * alpha;
 
+  // Batch all lines into a single path + single stroke
+  ctx.beginPath();
   for (let i = 0; i < count; i++) {
     const angle = (i / count) * Math.PI * 2 - Math.PI / 2;
     const val = magnitudes[i] > 1 ? magnitudes[i] / 255 : magnitudes[i];
@@ -149,14 +253,11 @@ function drawCircle(
     const y1 = cy + sin * baseRadius;
     const x2 = cx + cos * (baseRadius + barLen);
     const y2 = cy + sin * (baseRadius + barLen);
-
-    ctx.globalAlpha = 0.5 + val * 0.5;
-    ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.lineTo(x2, y2);
-    ctx.stroke();
   }
-  ctx.globalAlpha = 1;
+  ctx.stroke();
+  ctx.globalAlpha = alpha;
 }
 
 // --- Wave mode ---
@@ -166,20 +267,19 @@ function drawWave(
   width: number,
   height: number,
   accent: string,
+  gradient: CanvasGradient,
 ) {
   const midY = height * 0.7;
   const count = magnitudes.length;
   if (count < 2) return;
   const step = width / (count - 1);
 
-  // Collect y values
   const yValues: number[] = [];
   for (let i = 0; i < count; i++) {
     const val = magnitudes[i] > 1 ? magnitudes[i] / 255 : magnitudes[i];
     yValues.push(midY - val * height * 0.3);
   }
 
-  // Draw wave with quadratic bezier curves
   ctx.beginPath();
   ctx.moveTo(0, yValues[0]);
   for (let i = 1; i < count; i++) {
@@ -192,13 +292,9 @@ function drawWave(
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // Fill gradient below wave
   ctx.lineTo(width, height);
   ctx.lineTo(0, height);
   ctx.closePath();
-  const gradient = ctx.createLinearGradient(0, midY - height * 0.3, 0, height);
-  gradient.addColorStop(0, accent + '40');
-  gradient.addColorStop(1, 'transparent');
   ctx.fillStyle = gradient;
   ctx.fill();
 }

@@ -140,6 +140,30 @@ fn main() {
             app.manage(cache);
             app.manage(cover_http);
 
+            // Force GPU-accelerated compositing on Linux (WebKitGTK).
+            // Default policy is OnDemand; forcing Always ensures the GPU compositing
+            // path is used for canvas, CSS filters, and layer blending — especially
+            // beneficial for the immersive visualizer overlay.
+            #[cfg(target_os = "linux")]
+            if let Some(main_window) = app.get_webview_window("main") {
+                let _ = main_window.with_webview(|platform_wv| {
+                    use webkit2gtk::*;
+
+                    let webview: webkit2gtk::WebView = platform_wv.inner();
+                    if let Some(settings) = WebViewExt::settings(&webview) {
+                        let current = SettingsExt::hardware_acceleration_policy(&settings);
+                        SettingsExt::set_hardware_acceleration_policy(
+                            &settings,
+                            HardwareAccelerationPolicy::Always,
+                        );
+                        tracing::info!(
+                            previous = ?current,
+                            "WebKitGTK hardware acceleration policy set to Always"
+                        );
+                    }
+                });
+            }
+
             events::spawn_event_forwarder(app.handle().clone(), &player);
             let database = db::Db::open(app_data_dir).unwrap_or_else(|e| {
                 tracing::error!("failed to open SQLite database: {e}");

@@ -17,7 +17,7 @@ export default function ImmersiveControls({ visible, onClose }: Props) {
       }`}
       aria-hidden={!visible}
     >
-      <div className="backdrop-blur-xl bg-black/30 border-t border-white/10 px-8 py-4">
+      <div className="bg-black/50 border-t border-white/10 px-8 py-4">
         <div className="mx-auto flex max-w-5xl flex-col gap-3">
           {/* Controls row
               先放主控制按钮，再放进度条，和底栏播放器保持一致的视觉节奏 */}

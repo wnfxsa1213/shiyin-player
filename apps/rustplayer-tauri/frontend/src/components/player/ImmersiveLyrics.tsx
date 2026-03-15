@@ -18,6 +18,7 @@ export default function ImmersiveLyrics() {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const [lyrics, setLyrics] = useState<LyricsLine[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   // Fetch lyrics with race condition protection
   useEffect(() => {
@@ -67,10 +68,15 @@ export default function ImmersiveLyrics() {
     overscan: 6,
   });
 
-  // Auto-scroll to active line (virtualizer-only, no dual scrollIntoView)
+  // Auto-scroll to active line — debounced to avoid overlapping smooth scrolls
+  // when lyrics lines change rapidly (e.g. fast songs).
   useEffect(() => {
     if (!containerRef.current || lyrics.length === 0) return;
-    virtualizer.scrollToIndex(activeIndex, { align: 'center', behavior: 'smooth' });
+    clearTimeout(scrollTimerRef.current);
+    scrollTimerRef.current = setTimeout(() => {
+      virtualizer.scrollToIndex(activeIndex, { align: 'center', behavior: 'smooth' });
+    }, 300);
+    return () => clearTimeout(scrollTimerRef.current);
   }, [activeIndex, lyrics.length, virtualizer]);
 
   if (lyrics.length === 0) {
@@ -118,11 +124,11 @@ export default function ImmersiveLyrics() {
                 }}
               >
                 <div
-                  className={`transition-[transform,opacity,filter] duration-500 ${
+                  className={`transition-[transform,opacity] duration-500 ${
                     isActive
                       ? ''
                       : isNearby
-                        ? 'opacity-30 blur-[1px]'
+                        ? 'opacity-30'
                         : 'opacity-20'
                   }`}
                 >

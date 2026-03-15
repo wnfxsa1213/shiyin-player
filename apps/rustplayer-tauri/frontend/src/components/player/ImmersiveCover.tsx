@@ -22,12 +22,16 @@ export default function ImmersiveCover() {
     <div className="relative flex items-center justify-center">
       {showCover ? (
         <>
-          {/* Glow layer */}
+          {/* Glow layer — uses a tiny scaled-up cover instead of real-time blur-3xl
+              to avoid expensive GPU compositing on WebKitGTK */}
           <img
             src={coverUrl}
             alt=""
-            className="absolute w-full h-full blur-3xl opacity-40 scale-125 pointer-events-none"
+            className="absolute w-full h-full opacity-30 scale-150 pointer-events-none"
+            style={{ imageRendering: 'pixelated', filter: 'blur(8px)' }}
             aria-hidden="true"
+            width={32}
+            height={32}
           />
           {/* Main cover */}
           <img

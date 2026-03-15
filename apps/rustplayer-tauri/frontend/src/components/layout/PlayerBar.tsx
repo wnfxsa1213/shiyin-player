@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { usePlayerStore } from '@/store/playerStore';
+import { useUiStore } from '@/store/uiStore';
 import { ipc } from '@/lib/ipc';
 import SpectrumVisualizer from '@/components/player/SpectrumVisualizer';
 import PlaybackProgress from '@/components/player/PlaybackProgress';
 import { Music, SkipBack, Play, Pause, SkipForward, Music2, Volume2, ListMusic } from 'lucide-react';
 
 export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }: { lyricsOpen: boolean, onToggleLyrics: () => void, onToggleQueue: () => void }) {
+  const immersiveOpen = useUiStore((s) => s.immersiveOpen);
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const state = usePlayerStore((s) => s.state);
   const volume = usePlayerStore((s) => s.volume);
@@ -42,12 +44,14 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
       style={{ borderLeftWidth: 0, borderRightWidth: 0, borderBottomWidth: 0 }}
       aria-label="播放控制"
     >
-      {/* Spectrum background layer — isolated overflow-hidden wrapper */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
-        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 opacity-50 transition-opacity duration-700">
-          <SpectrumVisualizer width={centerWidth} height={60} />
+      {/* Spectrum background layer — skip entirely when immersive overlay covers the bar */}
+      {!immersiveOpen && (
+        <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 opacity-50 transition-opacity duration-700">
+            <SpectrumVisualizer width={centerWidth} height={60} />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Left: Track Info & Cover */}
       <div className="relative flex items-center w-1/4 min-w-[180px]">
@@ -143,9 +147,12 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
           </button>
         </div>
 
-        <div className="absolute inset-x-0 bottom-1">
-          <PlaybackProgress />
-        </div>
+        {/* Progress bar — skip RAF-driven interpolation when immersive overlay covers the bar */}
+        {!immersiveOpen && (
+          <div className="absolute inset-x-0 bottom-1">
+            <PlaybackProgress />
+          </div>
+        )}
       </div>
 
       {/* Right: Volume & Queue */}
