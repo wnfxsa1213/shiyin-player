@@ -18,6 +18,28 @@ A modern desktop music player built with **Rust + Tauri v2**, featuring dual mus
 - **明暗主题** — 深色 / 浅色主题切换
 - **结构化日志** — tracing 日志系统，按天滚动，支持 traceId 端到端链路追踪
 - **安全加固** — CSP 策略、域名白名单、Cookie 验证、输入校验
+- **智能推荐** — 本地混合重排序引擎（平台排名 + 艺术家偏好 + 新鲜度），基于隐式行为追踪构建用户画像
+- **沉浸模式** — 原生全屏沉浸式播放，隐藏系统标题栏，专注聆听体验
+- **私人 FM 电台** — 无限电台模式，队列剩余不足时自动补充，智能去重
+- **每日推荐** — 聚合双音源每日推荐，个性化重排序
+
+## 界面预览
+
+### 主界面
+
+![主界面](images/主界面.png)
+
+### 音乐搜索
+
+![音乐搜索](images/音乐搜索.png)
+
+### 每日推荐
+
+![每日推荐](images/每日推荐.png)
+
+### 沉浸模式
+
+![沉浸模式](images/沉浸模式.png)
 
 ## 技术栈
 
@@ -25,7 +47,7 @@ A modern desktop music player built with **Rust + Tauri v2**, featuring dual mus
 |------|------|
 | 框架 | Tauri v2 |
 | 前端 | React 18 + TypeScript + Tailwind CSS + Zustand |
-| 后端 | Rust (Cargo Workspace, 6 crates) |
+| 后端 | Rust (Cargo Workspace, 7 crates) |
 | 音频 | GStreamer (gstreamer-rs) |
 | 虚拟滚动 | @tanstack/react-virtual |
 | 持久化 | tauri-plugin-store + SQLite (rusqlite + r2d2) |
@@ -39,8 +61,8 @@ rust-music/
 │   ├── frontend/            # React 前端
 │   │   └── src/
 │   │       ├── components/    # UI 组件 (layout / player / common)
-│   │       ├── views/         # 页面 (Home / Search / Settings / PlaylistDetail)
-│   │       ├── store/         # Zustand stores (player / ui / visualizer / toast / playlist)
+│   │       ├── views/         # 页面 (Home / Search / Settings / PlaylistDetail / DailyRecommend)
+│   │       ├── store/         # Zustand stores (player / ui / visualizer / toast / playlist / fm / recommend)
 │   │       ├── hooks/         # 自定义 hooks (useDynamicTheme / useFocusTrap)
 │   │       └── lib/           # IPC 封装 / 设置持久化 / 工具函数
 │   └── src-tauri/           # Rust 后端
@@ -48,16 +70,17 @@ rust-music/
 │           ├── main.rs        # 应用入口与初始化
 │           ├── commands/      # Tauri IPC 命令
 │           ├── events.rs      # 播放器事件转发
-│           ├── db.rs          # SQLite 持久缓存
+│           ├── db.rs          # SQLite 持久缓存 + 行为追踪
 │           ├── logging.rs     # 日志系统初始化
 │           └── store.rs       # Cookie 持久化
 ├── crates/
-│   ├── core/                # 核心类型 (Track, PlayerState, MusicSource trait)
+│   ├── core/                # 核心类型 (Track, PlayerState, MusicSource trait, PlayEvent)
 │   ├── player/              # GStreamer 播放引擎 + 频谱分析
 │   ├── sources/             # 音源注册中心 (SourceRegistry)
 │   ├── netease/             # 网易云音乐 API (weapi 加密)
 │   ├── qqmusic/             # QQ 音乐 API (签名计算)
-│   └── cache/               # 内存 LRU 搜索缓存 (5min TTL)
+│   ├── cache/               # 内存 LRU 搜索缓存 (5min TTL)
+│   └── recommend/           # 本地推荐引擎 (用户画像 + 混合重排序)
 └── Cargo.toml               # Workspace 配置
 ```
 
@@ -103,6 +126,11 @@ cargo tauri build
 | `↑` / `↓` | 音量 +/- 5% |
 | `←` / `→` | 快退 / 快进 5 秒 |
 | `Ctrl+B` | 切换侧边栏 |
+
+## 后续计划
+
+- [ ] **增加音源** — 接入更多音乐平台（如咪咕音乐、酷狗音乐等），丰富曲库覆盖
+- [ ] **签到功能** — 支持网易云音乐和 QQ 音乐每日签到，自动领取积分/成长值
 
 ## License
 
