@@ -1,0 +1,1 @@
+{"id":"c8106dc1","date":"2026-03-16","summary":"feat(home): 首页电台入口绑定沉浸 FM","decisions":["将首页电台卡片从占位 toast 改为直接打开沉浸 FM 面板，复用 uiStore.setImmersiveOpen"],"bugs":[],"changes":{"files":["apps/rustplayer-tauri/frontend/src/views/HomeView.tsx"]},"risk":"low"}

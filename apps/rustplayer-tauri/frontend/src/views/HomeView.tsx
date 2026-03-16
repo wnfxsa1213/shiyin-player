@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { usePlayerStore } from '@/store/playerStore';
 import { usePlaylistStore } from '@/store/playlistStore';
 import { useToastStore } from '@/store/toastStore';
+import { useUiStore } from '@/store/uiStore';
 import CoverImage from '@/components/common/CoverImage';
 import { Clock, Heart, Compass, Radio, Play } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -49,7 +50,7 @@ export default function HomeView() {
         navigate('/search');
         break;
       case '电台':
-        toast('info', '即将推出');
+        useUiStore.getState().setImmersiveOpen(true);
         break;
     }
   };
