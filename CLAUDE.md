@@ -133,3 +133,13 @@ npm run build    # 生产构建
 - 无限电台：`autoReplenish()` 在队列剩余 <= 2 首时自动拉取，使用 `getRadioBatch` 排除当前队列中的曲目
 - 路由代码分割：`SettingsView`、`PlaylistDetailView`、`DailyRecommendView` 使用 `React.lazy()` 懒加载
 - QQ 音乐凭据刷新：`QqMusicClient` 在 401 错误时自动尝试 `try_refresh()`，成功后通过 `on_refresh` 回调持久化新凭据
+
+## .context 项目上下文
+
+> 项目使用 `.context/` 管理开发决策上下文。
+
+- 编码规范：`.context/prefs/coding-style.md`
+- 工作流规则：`.context/prefs/workflow.md`
+- 决策历史：`.context/history/commits.md`
+
+**规则**：修改代码前必读 prefs/，做决策时按 workflow.md 规则记录日志。

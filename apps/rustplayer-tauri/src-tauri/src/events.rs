@@ -50,6 +50,9 @@ pub fn spawn_event_forwarder(app: AppHandle, player: &Arc<Player>) {
                         PlayerEvent::Error { error } => {
                             ("player://error", app.emit("player://error", error.to_string()))
                         }
+                        PlayerEvent::Buffering { percent } => {
+                            ("player://buffering", app.emit("player://buffering", percent))
+                        }
                     };
                     if let Err(e) = emit_result {
                         log::warn!("failed to emit {channel}: {e}");
@@ -72,6 +75,7 @@ fn state_label(state: &PlayerState) -> &'static str {
         PlayerState::Loading { .. } => "loading",
         PlayerState::Playing { .. } => "playing",
         PlayerState::Paused { .. } => "paused",
+        PlayerState::Buffering { .. } => "buffering",
         PlayerState::Stopped => "stopped",
     }
 }

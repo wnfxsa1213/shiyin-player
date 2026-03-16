@@ -20,6 +20,7 @@ export default function PlaybackProgress() {
     let lastPosSec = -1;
     let lastPosStr = formatTime(0);
     let isPlaying = usePlayerStore.getState().state === 'playing';
+    let isBuffering = usePlayerStore.getState().state === 'buffering';
     const reducedMotionQuery = typeof window !== 'undefined'
       ? window.matchMedia('(prefers-reduced-motion: reduce)')
       : null;
@@ -67,6 +68,7 @@ export default function PlaybackProgress() {
           state.emittedAtMs === prevState.emittedAtMs) return;
 
       isPlaying = state.state === 'playing';
+      isBuffering = state.state === 'buffering';
       lastServerPos = state.positionMs;
       // Only regenerate duration string when duration actually changes
       if (state.durationMs !== lastDur) {
@@ -103,6 +105,13 @@ export default function PlaybackProgress() {
     const tick = () => {
       rafId = requestAnimationFrame(tick);
       if (isDraggingRef.current) return;
+
+      // During buffering, freeze the progress bar at the last known position
+      // to prevent the RAF interpolation from advancing past the actual playback.
+      if (isBuffering) {
+        syncProgressUi(lastServerPos, lastDur);
+        return;
+      }
 
       const now = performance.now();
       const elapsed = isPlaying ? now - lastServerTime : 0;

@@ -170,6 +170,10 @@ export function onPlayerSpectrum(cb: (data: { magnitudes: number[] }) => void): 
   return listen<{ magnitudes: number[] }>('player://spectrum', (e) => cb(e.payload));
 }
 
+export function onPlayerBuffering(cb: (percent: number) => void): Promise<UnlistenFn> {
+  return listen<number>('player://buffering', (e) => cb(e.payload));
+}
+
 export function onLoginSuccess(cb: (source: MusicSource) => void): Promise<UnlistenFn> {
   return listen<MusicSource>('login://success', (e) => cb(e.payload));
 }

@@ -78,6 +78,8 @@ struct Engine {
     state_mismatch_since: Option<std::time::Instant>,
     /// Pre-allocated spectrum buffer — avoids ~15 heap allocations per second.
     spectrum_buf: Vec<f32>,
+    /// Tracks when buffering started for timeout protection.
+    buffering_since: Option<std::time::Instant>,
 }
 
 fn engine_loop(
@@ -101,6 +103,7 @@ fn engine_loop(
             last_progress_emit: None,
             state_mismatch_since: None,
             spectrum_buf: Vec::with_capacity(64),
+            buffering_since: None,
         };
         let mut ticker = tokio::time::interval(Duration::from_millis(33));
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -296,19 +299,55 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
                         if let Err(e) = p.set_state(gst::State::Paused) {
                             log::warn!("failed to pause pipeline during buffering: {e}");
                         }
+                        // Only enter Buffering state from Playing or Loading (don't override user Pause).
+                        if matches!(eng.state, PlayerState::Playing { .. } | PlayerState::Loading { .. }) {
+                            if let Some(track) = eng.current_track.clone() {
+                                eng.state = PlayerState::Buffering { track, percent };
+                                emit(tx, PlayerEvent::Buffering { percent });
+                                emit(tx, PlayerEvent::StateChanged { state: eng.state.clone() });
+                            }
+                            if eng.buffering_since.is_none() {
+                                eng.buffering_since = Some(std::time::Instant::now());
+                            }
+                        }
                         log::debug!("buffering: {percent}%");
                     } else {
+                        eng.buffering_since = None;
                         // Resume playback when buffer is full — covers both Loading
-                        // (first play) and Playing (mid-stream rebuffer) states.
-                        if matches!(eng.state, PlayerState::Loading { .. } | PlayerState::Playing { .. }) {
+                        // (first play), Playing, and Buffering (mid-stream rebuffer) states.
+                        if matches!(eng.state, PlayerState::Loading { .. } | PlayerState::Playing { .. } | PlayerState::Buffering { .. }) {
                             if let Err(e) = p.set_state(gst::State::Playing) {
                                 log::warn!("failed to resume pipeline after buffering: {e}");
+                            }
+                            // Restore Playing state after buffering completes.
+                            if matches!(eng.state, PlayerState::Buffering { .. }) {
+                                if let Some(track) = eng.current_track.clone() {
+                                    let position_ms = pos_ms(p);
+                                    eng.state = PlayerState::Playing { track, position_ms };
+                                    emit(tx, PlayerEvent::StateChanged { state: eng.state.clone() });
+                                }
                             }
                         }
                         log::debug!("buffering complete");
                     }
                 }
                 _ => {}
+            }
+        }
+    }
+
+    // Buffering timeout protection: if buffering exceeds 30s, treat as unrecoverable.
+    const BUFFERING_TIMEOUT: Duration = Duration::from_secs(30);
+    if matches!(eng.state, PlayerState::Buffering { .. }) {
+        if let Some(start) = eng.buffering_since {
+            if start.elapsed() >= BUFFERING_TIMEOUT {
+                log::error!("buffering timeout >30s, tearing down pipeline");
+                emit(tx, PlayerEvent::Error {
+                    error: PlayerError::Stream("buffering timeout".into()),
+                });
+                teardown(eng);
+                set_state(eng, PlayerState::Stopped, tx);
+                return;
             }
         }
     }
@@ -391,6 +430,9 @@ fn build_pipeline(stream: &StreamInfo) -> Result<(gst::Pipeline, gst::Element), 
     // Enable buffering for HTTP streams — uridecodebin will emit Buffering messages
     // on the bus so the engine can pause/resume during network stalls.
     src.set_property("use-buffering", true);
+    // Increase buffer capacity for unstable networks (default ~2MB is too small).
+    src.set_property("buffer-size", 8_i32 * 1024 * 1024); // 8 MB
+    src.set_property("buffer-duration", 10_i64 * 1_000_000_000); // 10 seconds
 
     let convert = make("audioconvert", "convert")?;
     let resample = make("audioresample", "resample")?;
@@ -456,6 +498,7 @@ fn teardown(eng: &mut Engine) {
     // Reset time-based tracking to avoid stale state leaking to next track
     eng.last_progress_emit = None;
     eng.state_mismatch_since = None;
+    eng.buffering_since = None;
 }
 
 fn set_state(eng: &mut Engine, state: PlayerState, tx: &broadcast::Sender<PlayerEvent>) {

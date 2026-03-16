@@ -69,6 +69,7 @@ pub enum PlayerState {
     Loading { track: Arc<Track> },
     Playing { track: Arc<Track>, position_ms: u64 },
     Paused { track: Arc<Track>, position_ms: u64 },
+    Buffering { track: Arc<Track>, percent: i32 },
     Stopped,
 }
 
@@ -90,6 +91,7 @@ pub enum PlayerEvent {
     Progress { position_ms: u64, duration_ms: u64 },
     Spectrum { magnitudes: Arc<[f32]> },
     Error { error: PlayerError },
+    Buffering { percent: i32 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

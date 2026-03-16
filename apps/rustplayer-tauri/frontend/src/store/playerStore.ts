@@ -15,7 +15,7 @@ export interface Track {
   mediaMid?: string;
 }
 
-type PlayerState = 'idle' | 'loading' | 'playing' | 'paused' | 'stopped';
+type PlayerState = 'idle' | 'loading' | 'playing' | 'paused' | 'stopped' | 'buffering';
 export type PlayMode = 'sequence' | 'repeat-one' | 'shuffle';
 
 interface PlayerStore {
@@ -26,6 +26,7 @@ interface PlayerStore {
   /** Unix epoch ms when the backend emitted the most recent progress event. */
   emittedAtMs: number;
   volume: number;
+  bufferingPercent: number;
   queue: Track[];
   queueIndex: number;
   playMode: PlayMode;
@@ -42,6 +43,7 @@ interface PlayerStore {
   removeFromQueue: (index: number) => void;
   clearQueue: () => void;
   setPlayMode: (mode: PlayMode) => void;
+  setBuffering: (percent: number) => void;
   playFromQueue: (index: number) => void;
   playNext: () => void;
   playPrev: () => void;
@@ -142,6 +144,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   durationMs: 0,
   emittedAtMs: 0,
   volume: 1,
+  bufferingPercent: 0,
   queue: [],
   queueIndex: -1,
   playMode: 'sequence',
@@ -196,6 +199,10 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     set({ queue: newQueue, queueIndex: newIndex });
   },
   clearQueue: () => { flushPlayEvent(); ++playSeq; set({ queue: [], queueIndex: -1, shuffleOrder: [], currentTrack: null, state: 'idle' }); },
+  setBuffering: (percent) => {
+    onPlayerStateChangeForTracking('loading');
+    set({ state: 'buffering', bufferingPercent: percent });
+  },
   setPlayMode: (mode) => set((state) => ({
     playMode: mode,
     shuffleOrder: mode === 'shuffle' && state.queue.length > 0

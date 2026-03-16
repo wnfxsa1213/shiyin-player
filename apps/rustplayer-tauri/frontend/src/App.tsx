@@ -6,7 +6,7 @@ import { useVisualizerStore, spectrumDataRef } from '@/store/visualizerStore';
 import { useToastStore } from '@/store/toastStore';
 import { usePlaylistStore } from '@/store/playlistStore';
 import { loadSetting } from '@/lib/settings';
-import { ipc, onPlayerState, onPlayerProgress, onPlayerError, onPlayerSpectrum, onLoginSuccess, onLoginTimeout } from '@/lib/ipc';
+import { ipc, onPlayerState, onPlayerProgress, onPlayerError, onPlayerSpectrum, onPlayerBuffering, onLoginSuccess, onLoginTimeout } from '@/lib/ipc';
 import { sanitizeError } from '@/lib/errorMessages';
 import { useDynamicTheme } from '@/hooks/useDynamicTheme';
 import { usePlaylistAutoRefresh } from '@/hooks/usePlaylistAutoRefresh';
@@ -57,6 +57,10 @@ export default function App() {
   // Tracks whether the most recent player stop was caused by an error.
   // Used to prevent the stopped-event handler from retrying a failing track.
   const playerErrorRef = useRef(false);
+  // Retry state for transient playback errors (network glitches).
+  const retryCountRef = useRef(0);
+  const lastPositionRef = useRef(0);
+  const MAX_PLAYBACK_RETRIES = 2;
 
   // 挂载全局动态主题萃取钩子
   useDynamicTheme();
@@ -136,8 +140,14 @@ export default function App() {
     Promise.all([
       onPlayerState((state) => {
         if (!active) return;
-        if (state === 'playing') usePlayerStore.getState().play();
+        if (state === 'playing') {
+          retryCountRef.current = 0;
+          usePlayerStore.getState().play();
+        }
         else if (state === 'paused') usePlayerStore.getState().pause();
+        else if (state === 'buffering') {
+          // Buffering percent is handled by onPlayerBuffering; state label triggers UI update.
+        }
         else if (state === 'stopped') {
           // Always flush the current track's play event when playback stops
           flushPlayEvent();
@@ -152,10 +162,32 @@ export default function App() {
       }),
       onPlayerProgress(({ positionMs, durationMs, emittedAtMs }) => {
         if (!active) return;
+        lastPositionRef.current = positionMs;
         usePlayerStore.getState().updateProgress(positionMs, durationMs, emittedAtMs);
       }),
       onPlayerError((err) => {
         if (!active) return;
+        const { currentTrack } = usePlayerStore.getState();
+
+        // Retry current track on transient errors (network glitches).
+        if (retryCountRef.current < MAX_PLAYBACK_RETRIES && currentTrack) {
+          retryCountRef.current += 1;
+          addToast('info', `网络波动，正在重试播放… (${retryCountRef.current}/${MAX_PLAYBACK_RETRIES})`);
+          const trackToRetry = currentTrack;
+          const resumePos = lastPositionRef.current;
+
+          ipc.playTrack(trackToRetry)
+            .then(() => { if (resumePos > 0) return ipc.seek(resumePos); })
+            .catch((retryErr) => {
+              addToast('error', `重试失败: ${sanitizeError(retryErr)}`);
+            });
+
+          // Prevent the upcoming stopped event from triggering playNext.
+          playerErrorRef.current = true;
+          return;
+        }
+
+        // Retries exhausted — show error, let stopped handler decide.
         addToast('error', sanitizeError(err));
         playerErrorRef.current = true;
       }),
@@ -165,6 +197,10 @@ export default function App() {
         const len = Math.min(magnitudes.length, arr.length);
         for (let i = 0; i < len; i++) arr[i] = magnitudes[i];
         for (let i = len; i < arr.length; i++) arr[i] = 0;
+      }),
+      onPlayerBuffering((percent) => {
+        if (!active) return;
+        usePlayerStore.getState().setBuffering(percent);
       }),
       onLoginSuccess((source) => {
         if (!active) return;
