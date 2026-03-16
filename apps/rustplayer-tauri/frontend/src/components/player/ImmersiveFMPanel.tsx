@@ -1,5 +1,4 @@
 import { useEffect, useState, useRef } from 'react';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useAutoHide } from '@/hooks/useAutoHide';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
 import ImmersiveBackground from '@/components/player/ImmersiveBackground';
@@ -20,16 +19,6 @@ export default function ImmersiveFMPanel({ isOpen, onClose }: Props) {
   const { visible: controlsVisible, onMouseMove, onMouseDown } = useAutoHide(3000);
 
   useFocusTrap(panelRef, isOpen, onClose);
-
-  // Enter native fullscreen when immersive mode opens, exit when it closes
-  useEffect(() => {
-    const win = getCurrentWindow();
-    if (isOpen) {
-      win.setFullscreen(true).catch(console.error);
-    } else {
-      win.setFullscreen(false).catch(console.error);
-    }
-  }, [isOpen]);
 
   // Update size on resize — debounced to avoid rapid canvas teardown/rebuild during fullscreen transitions
   useEffect(() => {
