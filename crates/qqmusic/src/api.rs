@@ -207,83 +207,67 @@ pub async fn lyrics(
     http: &reqwest::Client,
     track_id: &str,
 ) -> Result<Vec<LyricsLine>, SourceError> {
-    // Retry up to 2 times on network errors and transient business errors
-    let mut last_error = None;
-    for attempt in 0..2 {
-        if attempt > 0 {
-            log::debug!("qqmusic lyrics: retry attempt {attempt} for track {track_id}");
-            let jitter = rand::random::<u64>() % 150;
-            tokio::time::sleep(tokio::time::Duration::from_millis(150 + jitter)).await;
-        }
+    // Frontend invokeWithTrace already implements unified retries; keep backend single-attempt.
+    let res = http
+        .get("https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg")
+        .query(&[("songmid", track_id), ("format", "json"), ("nobase64", "1")])
+        .header("Referer", "https://y.qq.com/")
+        .send()
+        .await
+        .map_err(|e| SourceError::Network(e.to_string()))?;
 
-        let res = match http
-            .get("https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg")
-            .query(&[("songmid", track_id), ("format", "json"), ("nobase64", "1")])
-            .header("Referer", "https://y.qq.com/")
-            .send()
-            .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                last_error = Some(SourceError::Network(e.to_string()));
-                continue;
-            }
-        };
-
-        if !res.status().is_success() {
-            last_error = Some(SourceError::Network(format!("http {}", res.status())));
-            continue;
-        }
-
-        let value: Value = match res.json().await {
-            Ok(v) => v,
-            Err(e) => {
-                last_error = Some(SourceError::InvalidResponse(e.to_string()));
-                continue;
-            }
-        };
-
-        // Validate business code (QQ Music API returns code field for errors)
-        // Use as_i64() with string-to-number fallback since the API may return codes as strings
-        let code = value.get("code").and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).unwrap_or(0);
-        let retcode = value.get("retcode").and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).unwrap_or(0);
-        let subcode = value.get("subcode").and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).unwrap_or(0);
-
-        if code != 0 || retcode != 0 || subcode != 0 {
-            log::warn!(
-                "qqmusic lyrics: API error for track {track_id}: code={code}, retcode={retcode}, subcode={subcode}"
-            );
-            // Deterministic auth/param errors: return immediately, retry won't help.
-            // Check all three code fields — any one indicating auth failure is definitive.
-            let is_auth_error = [code, retcode, subcode].iter().any(|c| matches!(c, -1310 | -100 | -200));
-            if is_auth_error {
-                return Err(SourceError::Unauthorized);
-            }
-            // Transient or unknown errors: allow retry loop to continue
-            last_error = Some(SourceError::InvalidResponse(
-                format!("API error code={code}, retcode={retcode}, subcode={subcode}")
-            ));
-            continue;
-        }
-
-        let lrc = value.get("lyric").and_then(|v| v.as_str()).unwrap_or("");
-        let trans = value.get("trans").and_then(|v| v.as_str()).unwrap_or("");
-
-        log::debug!(
-            "qqmusic lyrics: track {track_id} - lyric_len={}, trans_len={}, code={code}",
-            lrc.len(), trans.len()
-        );
-
-        if lrc.is_empty() {
-            log::debug!("qqmusic lyrics: no lyric content for track {track_id}");
-        }
-        if !trans.is_empty() {
-            log::debug!("qqmusic lyrics: found translation lyrics for track {track_id}");
-        }
-        return Ok(parse_lyrics(lrc, trans));
+    if !res.status().is_success() {
+        return Err(SourceError::Network(format!("http {}", res.status())));
     }
 
-    Err(last_error.unwrap_or_else(|| SourceError::Network("all retry attempts failed".into())))
+    let value: Value = res.json().await.map_err(|e| SourceError::InvalidResponse(e.to_string()))?;
+
+    // Validate business code (QQ Music API returns code field for errors)
+    // Use as_i64() with string-to-number fallback since the API may return codes as strings
+    let code = value
+        .get("code")
+        .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+        .unwrap_or(0);
+    let retcode = value
+        .get("retcode")
+        .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+        .unwrap_or(0);
+    let subcode = value
+        .get("subcode")
+        .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+        .unwrap_or(0);
+
+    if code != 0 || retcode != 0 || subcode != 0 {
+        log::warn!("qqmusic lyrics: API error for track {track_id}: code={code}, retcode={retcode}, subcode={subcode}");
+        // Deterministic auth/param errors: return immediately, retry won't help.
+        // Check all three code fields — any one indicating auth failure is definitive.
+        let is_auth_error = [code, retcode, subcode]
+            .iter()
+            .any(|c| matches!(c, -1310 | -100 | -200));
+        if is_auth_error {
+            return Err(SourceError::Unauthorized);
+        }
+        return Err(SourceError::InvalidResponse(format!(
+            "API error code={code}, retcode={retcode}, subcode={subcode}"
+        )));
+    }
+
+    let lrc = value.get("lyric").and_then(|v| v.as_str()).unwrap_or("");
+    let trans = value.get("trans").and_then(|v| v.as_str()).unwrap_or("");
+
+    log::debug!(
+        "qqmusic lyrics: track {track_id} - lyric_len={}, trans_len={}, code={code}",
+        lrc.len(),
+        trans.len()
+    );
+
+    if lrc.is_empty() {
+        log::debug!("qqmusic lyrics: no lyric content for track {track_id}");
+    }
+    if !trans.is_empty() {
+        log::debug!("qqmusic lyrics: found translation lyrics for track {track_id}");
+    }
+    Ok(parse_lyrics(lrc, trans))
 }
 
 pub async fn daily_recommend(

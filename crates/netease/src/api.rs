@@ -109,80 +109,35 @@ pub async fn lyrics(
 ) -> Result<Vec<LyricsLine>, SourceError> {
     log::debug!("netease lyrics: fetching track_id={track_id}");
 
-    // Retry up to 2 times on network errors
-    let mut last_error = None;
-    for attempt in 0..2 {
-        if attempt > 0 {
-            log::debug!("netease lyrics: retry attempt {attempt} for track {track_id}");
-            let jitter = rand::random::<u64>() % 150;
-            tokio::time::sleep(tokio::time::Duration::from_millis(150 + jitter)).await;
+    let id: i64 = track_id
+        .parse()
+        .map_err(|_| SourceError::InvalidResponse("invalid track id".into()))?;
+
+    let payload = json!({
+        "id": id,
+        "lv": -1,
+        "tv": -1,
+        "kv": -1,
+        "rv": -1,
+    });
+    let value = weapi_post(http, base_url, "/weapi/song/lyric", payload, cookie).await?;
+
+    // Distinguish "no lyrics" from normal lyrics
+    let lrc_str = match value.pointer("/lrc/lyric").and_then(|v| v.as_str()) {
+        Some(s) if !s.trim().is_empty() => s,
+        _ => {
+            log::debug!("netease lyrics: no lrc content for track {track_id}");
+            return Ok(Vec::new());
         }
+    };
+    let tlyric_str = value
+        .pointer("/tlyric/lyric")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
 
-        let url = format!("{base_url}/api/song/lyric");
-        let mut req = http
-            .get(url)
-            .query(&[("id", track_id), ("lv", "1"), ("tv", "1"), ("kv", "1"), ("rv", "1")]);
-        if let Some(c) = cookie {
-            req = req.header(COOKIE, c);
-        }
-
-        let res = match req.send().await {
-            Ok(r) => r,
-            Err(e) => {
-                last_error = Some(SourceError::Network(e.to_string()));
-                continue;
-            }
-        };
-
-        if !res.status().is_success() {
-            last_error = Some(SourceError::Network(format!("http {}", res.status())));
-            continue;
-        }
-
-        let value: Value = match res.json().await {
-            Ok(v) => v,
-            Err(e) => {
-                last_error = Some(SourceError::InvalidResponse(e.to_string()));
-                continue;
-            }
-        };
-
-        // Check API business error code (consistent with weapi_post)
-        if let Some(code) = value.get("code").and_then(|v| v.as_i64()) {
-            if code == 50000005 || code == -462 {
-                log::warn!("netease lyrics: unauthorized (code {code}) for track {track_id}");
-                return Err(SourceError::Unauthorized);
-            }
-            if code != 200 {
-                log::warn!("netease lyrics: api error code {code} for track {track_id}");
-                return Err(SourceError::InvalidResponse(
-                    format!("netease lyrics code {code}"),
-                ));
-            }
-        } else {
-            log::warn!("netease lyrics: response missing 'code' field for track {track_id}");
-            return Err(SourceError::InvalidResponse("response missing 'code' field".into()));
-        }
-
-        // Distinguish "no lyrics" from normal lyrics
-        let lrc_str = match value.pointer("/lrc/lyric").and_then(|v| v.as_str()) {
-            Some(s) if !s.trim().is_empty() => s,
-            _ => {
-                log::debug!("netease lyrics: no lrc content for track {track_id}");
-                return Ok(Vec::new());
-            }
-        };
-        let tlyric_str = value
-            .pointer("/tlyric/lyric")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
-        let lines = parse_lyrics(lrc_str, tlyric_str);
-        log::debug!("netease lyrics: parsed {} lines for track {track_id}", lines.len());
-        return Ok(lines);
-    }
-
-    Err(last_error.unwrap_or_else(|| SourceError::Network("all retry attempts failed".into())))
+    let lines = parse_lyrics(lrc_str, tlyric_str);
+    log::debug!("netease lyrics: parsed {} lines for track {track_id}", lines.len());
+    Ok(lines)
 }
 
 // --- Internal helpers ---
@@ -258,12 +213,20 @@ async fn weapi_post(
     }
     let value: Value = res.json().await.map_err(|e| SourceError::InvalidResponse(e.to_string()))?;
     if let Some(code) = value.get("code").and_then(|v| v.as_i64()) {
-        if code == 50000005 || code == -462 {
+        if code == -462 {
+            log::warn!("netease: rate limited (code -462) for {path}");
+            return Err(SourceError::RateLimited);
+        }
+        if code == 50000005 {
             return Err(SourceError::Unauthorized);
         }
         if code != 200 {
             return Err(SourceError::InvalidResponse(format!("code {code}")));
         }
+    } else {
+        return Err(SourceError::InvalidResponse(
+            "response missing 'code' field".into(),
+        ));
     }
     Ok(value)
 }
