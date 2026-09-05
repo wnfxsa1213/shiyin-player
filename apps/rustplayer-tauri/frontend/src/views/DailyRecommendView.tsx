@@ -15,7 +15,7 @@ export default function DailyRecommendView() {
   const navigate = useNavigate();
   const [anyLoggedIn, setAnyLoggedIn] = useState<boolean | null>(null);
   const [expanded, setExpanded] = useState(false);
-  const { personalized, topArtists, rediscover, loading, error, fetchRecommendations, lastFetchedAt } = useRecommendStore();
+  const { personalized, topArtists, rediscover, discovery, loading, error, fetchRecommendations } = useRecommendStore();
   const [refreshing, setRefreshing] = useState(false);
 
   // Check if any source is logged in
@@ -31,11 +31,11 @@ export default function DailyRecommendView() {
 
   // Fetch recommendations once logged in
   useEffect(() => {
-    if (anyLoggedIn === true && personalized.length === 0 && !loading) {
+    if (anyLoggedIn === true && discovery === null && !loading) {
       fetchRecommendations();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchRecommendations is stable (zustand)
-  }, [anyLoggedIn, personalized.length, loading]);
+  }, [anyLoggedIn, discovery, loading]);
 
   const handlePlayAll = () => {
     if (!personalized.length) return;
@@ -55,10 +55,8 @@ export default function DailyRecommendView() {
   };
 
   const handleRefresh = async () => {
-    const cooldownRemaining = 30_000 - (Date.now() - lastFetchedAt);
-    if (cooldownRemaining > 0) return;
     setRefreshing(true);
-    await fetchRecommendations();
+    await fetchRecommendations(true);
     setRefreshing(false);
   };
 
@@ -70,9 +68,15 @@ export default function DailyRecommendView() {
 
   const showSkeleton = loading || anyLoggedIn === null;
   const showNotLoggedIn = !showSkeleton && anyLoggedIn === false;
-  const showError = !showSkeleton && anyLoggedIn === true && !!error && personalized.length === 0;
-  const showData = !showSkeleton && personalized.length > 0;
-  const showEmpty = !showSkeleton && anyLoggedIn === true && !error && !loading && personalized.length === 0;
+  const hasRediscover = rediscover.length > 0;
+  const hasDiscoveryContent = personalized.length > 0 || hasRediscover;
+  const showError = !showSkeleton && anyLoggedIn === true && !!error && !hasDiscoveryContent;
+  const showUnavailable = !showSkeleton && anyLoggedIn === true && discovery?.outcome === 'unavailable';
+  const showData = !showSkeleton && discovery !== null && discovery.outcome !== 'unavailable' && hasDiscoveryContent;
+  const showEmpty = !showSkeleton && anyLoggedIn === true && discovery?.outcome === 'empty' && !hasDiscoveryContent;
+  const availableSourceNames = discovery?.availableSources
+    .map((source) => source === 'netease' ? '网易云音乐' : 'QQ音乐')
+    .join(' / ') ?? '';
 
   // For the card preview, show first 8 tracks
   const previewTracks = personalized.slice(0, 8);
@@ -99,8 +103,16 @@ export default function DailyRecommendView() {
             {showData && (
               <>
                 <p className="text-xs text-[var(--text-tertiary)]">
-                  {personalized.length} 首精选歌曲 · 双音源混合
+                  {personalized.length > 0
+                    ? `${personalized.length} 首精选歌曲 · 当前来自：${availableSourceNames}`
+                    : hasRediscover ? '今天暂无新精选，但可重温经典' : '今天暂无新精选'}
                 </p>
+                {discovery?.outcome === 'degraded' && (
+                  <p className="text-xs text-amber-600" role="status">
+                    部分音源暂不可用，当前来自：{availableSourceNames}
+                  </p>
+                )}
+                {personalized.length > 0 && (
                 <div className="flex gap-3 mt-1">
                   <button
                     onClick={handlePlayAll}
@@ -129,6 +141,7 @@ export default function DailyRecommendView() {
                     <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
                   </button>
                 </div>
+                )}
               </>
             )}
           </div>
@@ -172,6 +185,7 @@ export default function DailyRecommendView() {
       {showData && (
         <div className="px-8 space-y-8 animate-fade-in-up">
           {/* Section 1: Personalized picks */}
+          {personalized.length > 0 && (
           <section>
             <div className="flex items-center gap-2 mb-4">
               <Sparkles size={18} className="text-[var(--accent)]" />
@@ -205,6 +219,7 @@ export default function DailyRecommendView() {
               </>
             )}
           </section>
+          )}
 
           {/* Section 2: Recommended artists */}
           {topArtists.length > 0 && (
@@ -238,8 +253,22 @@ export default function DailyRecommendView() {
         </div>
       )}
 
+      {/* Music sources did not provide a result. */}
+      {showUnavailable && (
+        <div className="text-center py-16 animate-fade-in-up">
+          <CalendarDays size={64} strokeWidth={1} className="text-[var(--text-tertiary)] mx-auto mb-4 opacity-50" aria-hidden="true" />
+          <p className="text-[var(--text-tertiary)] mb-4">暂时无法获取推荐，请稍后重试</p>
+          <button
+            onClick={() => fetchRecommendations(true)}
+            className="px-4 py-2 bg-[var(--bg-secondary)] text-[var(--text-primary)] rounded-lg text-sm hover:bg-[var(--bg-hover)] transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+          >
+            重试
+          </button>
+        </div>
+      )}
+
       {/* Error state */}
-      {showError && (
+      {showError && !showUnavailable && (
         <div className="text-center py-16 animate-fade-in-up">
           <CalendarDays size={64} strokeWidth={1} className="text-[var(--text-tertiary)] mx-auto mb-4 opacity-50" aria-hidden="true" />
           <p className="text-[var(--text-tertiary)] mb-4">推荐歌曲加载失败</p>

@@ -167,6 +167,35 @@ pub struct RecommendResult {
     pub personalized: Vec<Track>,
     pub top_artists: Vec<ArtistPreference>,
     pub rediscover: Vec<Track>,
+    pub discovery: DiscoveryStatus,
+}
+
+/// The availability of a music discovery request after every eligible source responds.
+///
+/// `Empty` means every responding source had no usable candidate. `Unavailable` means
+/// no eligible source produced a response, so callers can explain the failure directly.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveryStatus {
+    pub outcome: DiscoveryOutcome,
+    pub available_sources: Vec<MusicSourceId>,
+    pub unavailable_sources: Vec<MusicSourceId>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DiscoveryOutcome {
+    Complete,
+    Degraded,
+    Empty,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RadioBatchResult {
+    pub tracks: Vec<Track>,
+    pub discovery: DiscoveryStatus,
 }
 
 // --- Errors ---

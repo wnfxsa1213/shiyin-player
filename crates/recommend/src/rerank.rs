@@ -16,36 +16,56 @@ struct ScoredTrack {
     score: f64,
 }
 
+/// A candidate song with its rank inside the source that supplied it.
+///
+/// `platform_rank` is independent from the cross-source mix order. This lets callers
+/// randomize source interleaving without turning the platform signal into random noise.
+#[derive(Debug, Clone)]
+pub struct RecommendationCandidate {
+    pub track: Track,
+    pub platform_rank: f64,
+}
+
 /// Re-rank platform recommendation tracks using local user preferences.
 ///
-/// # Arguments
-/// * `tracks` - Platform-recommended tracks (from both sources, merged).
-/// * `profile` - User preference profile built from play history.
-/// * `recent_ids` - Set of (track_id, source_key) played in the last 24 hours.
-///
-/// # Returns
-/// Re-ranked track list with preferred artists boosted and recently-played
-/// tracks penalized. A best-effort diversity constraint limits consecutive
-/// tracks from the same artist to `MAX_CONSECUTIVE_SAME_ARTIST`.
+/// This compatibility entry point treats the supplied order as one source's platform
+/// order. Cross-source callers should use [`rerank_candidates`] so each source keeps
+/// its own platform signal.
 pub fn rerank(
     tracks: Vec<Track>,
     profile: &UserProfile,
     recent_ids: &HashSet<(String, String)>,
 ) -> Vec<Track> {
-    if tracks.is_empty() {
-        return tracks;
-    }
-
     let total = tracks.len() as f64;
-    let mut scored: Vec<ScoredTrack> = tracks
+    let candidates = tracks
         .into_iter()
         .enumerate()
-        .map(|(i, track)| {
-            // 1. Platform rank score: first item gets 1.0, last gets ~0.0
-            let rank_score = (total - i as f64) / total;
+        .map(|(index, track)| RecommendationCandidate {
+            track,
+            platform_rank: (total - index as f64) / total,
+        })
+        .collect();
+    rerank_candidates(candidates, profile, recent_ids)
+}
 
-            // 2. Artist preference score: 0.0 if unknown, up to 1.0 for top artist
-            let normalized_name = normalize_artist(&track.artist);
+/// Re-rank candidates while preserving each source's original platform rank.
+///
+/// Callers may randomize the candidate order before invoking this function. Stable
+/// ordering then uses that mixed order only as a tie-breaker; it never changes the
+/// platform-rank part of a score.
+pub fn rerank_candidates(
+    candidates: Vec<RecommendationCandidate>,
+    profile: &UserProfile,
+    recent_ids: &HashSet<(String, String)>,
+) -> Vec<Track> {
+    let mut scored: Vec<ScoredTrack> = candidates
+        .into_iter()
+        .map(|candidate| {
+            // 1. Platform rank: supplied by the source before cross-source mixing.
+            let rank_score = candidate.platform_rank;
+
+            // 2. Artist preference score: 0.0 if unknown, up to 1.0 for top artist.
+            let normalized_name = normalize_artist(&candidate.track.artist);
             let artist_score = profile
                 .artist_scores
                 .get(&normalized_name)
@@ -53,23 +73,21 @@ pub fn rerank(
                 .unwrap_or(0.0)
                 / profile.max_artist_score;
 
-            // 3. Freshness score: 1.0 if not recently played, 0.0 if played in last 24h
-            let source_key = track.source.storage_key();
-            let freshness_key = (track.id.clone(), source_key.to_owned());
+            // 3. Freshness score: 1.0 if not recently played, 0.0 if played in last 24h.
+            let source_key = candidate.track.source.storage_key();
+            let freshness_key = (candidate.track.id.clone(), source_key.to_owned());
             let freshness_score = if recent_ids.contains(&freshness_key) { 0.0 } else { 1.0 };
 
             let score = WEIGHT_PLATFORM_RANK * rank_score
                 + WEIGHT_ARTIST_PREF * artist_score
                 + WEIGHT_FRESHNESS * freshness_score;
 
-            ScoredTrack { track, score }
+            ScoredTrack { track: candidate.track, score }
         })
         .collect();
 
-    // Sort by score descending (stable sort preserves platform order for equal scores)
+    // Stable sort preserves the caller's random cross-source mix for equal scores.
     scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-
-    // Apply best-effort diversity constraint
     apply_diversity(scored)
 }
 
@@ -207,6 +225,22 @@ mod tests {
         let result = rerank(tracks, &profile, &recent);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].id, "1");
+    }
+
+    #[test]
+    fn test_rerank_candidates_uses_source_rank_not_mix_order() {
+        let profile = make_profile(&[]);
+        let recent = HashSet::new();
+        let tracks = rerank_candidates(
+            vec![
+                RecommendationCandidate { track: make_track("low", "Artist B"), platform_rank: 0.1 },
+                RecommendationCandidate { track: make_track("high", "Artist A"), platform_rank: 1.0 },
+            ],
+            &profile,
+            &recent,
+        );
+
+        assert_eq!(tracks[0].id, "high");
     }
 
     #[test]

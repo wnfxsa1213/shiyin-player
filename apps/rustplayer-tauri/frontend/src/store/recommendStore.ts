@@ -1,15 +1,16 @@
 import { create } from 'zustand';
-import { ipc, type ArtistPreference, type RecommendResult } from '@/lib/ipc';
+import { ipc, type ArtistPreference, type MusicDiscoveryStatus, type RecommendResult } from '@/lib/ipc';
 import type { Track } from '@/store/playerStore';
 
 interface RecommendStore {
   personalized: Track[];
   topArtists: ArtistPreference[];
   rediscover: Track[];
+  discovery: MusicDiscoveryStatus | null;
   loading: boolean;
   error: string | null;
   lastFetchedAt: number;
-  fetchRecommendations: () => Promise<void>;
+  fetchRecommendations: (force?: boolean) => Promise<void>;
 }
 
 const REFRESH_COOLDOWN_MS = 30_000; // 30 seconds
@@ -18,14 +19,15 @@ export const useRecommendStore = create<RecommendStore>((set, get) => ({
   personalized: [],
   topArtists: [],
   rediscover: [],
+  discovery: null,
   loading: false,
   error: null,
   lastFetchedAt: 0,
 
-  fetchRecommendations: async () => {
+  fetchRecommendations: async (force = false) => {
     const { loading, lastFetchedAt } = get();
     if (loading) return;
-    if (Date.now() - lastFetchedAt < REFRESH_COOLDOWN_MS) return;
+    if (!force && Date.now() - lastFetchedAt < REFRESH_COOLDOWN_MS) return;
 
     set({ loading: true, error: null });
     try {
@@ -34,6 +36,7 @@ export const useRecommendStore = create<RecommendStore>((set, get) => ({
         personalized: result.personalized,
         topArtists: result.topArtists,
         rediscover: result.rediscover,
+        discovery: result.discovery,
         loading: false,
         lastFetchedAt: Date.now(),
       });

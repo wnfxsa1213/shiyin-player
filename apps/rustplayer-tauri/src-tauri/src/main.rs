@@ -4,6 +4,7 @@ mod commands;
 mod db;
 mod events;
 mod logging;
+mod recommendation_assembly;
 mod store;
 mod trace_ctx;
 
@@ -173,7 +174,12 @@ fn main() {
                 std::process::exit(1);
             });
             let database = Arc::new(database);
+            let recommendation_assembly = Arc::new(recommendation_assembly::RecommendationAssembly::new(
+                registry.clone(),
+                database.clone(),
+            ));
             app.manage(database.clone());
+            app.manage(recommendation_assembly);
 
             // Periodic cache cleanup (hourly, with immediate first run)
             let db_for_cleanup = database.clone();

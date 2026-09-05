@@ -113,6 +113,7 @@ export function flushPlayEvent() {
 
 // --- Auto-replenish: infinite radio mode ---
 let replenishInProgress = false;
+let reportedRadioDegradation = '';
 
 /** When the queue is running low, fetch more songs from the backend. */
 function autoReplenish() {
@@ -124,9 +125,20 @@ function autoReplenish() {
   replenishInProgress = true;
   const excludeKeys = queue.map((t) => `${t.source}:${t.id}`);
   ipc.getRadioBatch(excludeKeys)
-    .then((newTracks) => {
-      if (newTracks.length > 0) {
-        usePlayerStore.getState().addToQueue(newTracks);
+    .then(({ tracks, discovery }) => {
+      if (discovery.outcome === 'degraded') {
+        const sources = discovery.availableSources
+          .map((source) => source === 'netease' ? '网易云音乐' : 'QQ音乐')
+          .join(' / ');
+        if (sources && sources !== reportedRadioDegradation) {
+          reportedRadioDegradation = sources;
+          useToastStore.getState().addToast('info', `部分音源暂不可用，当前来自：${sources}`);
+        }
+      } else if (discovery.outcome === 'complete') {
+        reportedRadioDegradation = '';
+      }
+      if (tracks.length > 0) {
+        usePlayerStore.getState().addToQueue(tracks);
       }
     })
     .catch(() => {

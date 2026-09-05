@@ -33,6 +33,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"]
 futures-util = "0.3"
 bytes = "1"
 
+[dev-dependencies]
+async-trait = "0.1"
+
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }
 gio = "0.18"

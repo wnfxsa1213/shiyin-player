@@ -90,6 +90,18 @@ export interface RecommendResult {
   personalized: Track[];
   topArtists: ArtistPreference[];
   rediscover: Track[];
+  discovery: MusicDiscoveryStatus;
+}
+
+export interface RadioBatchResult {
+  tracks: Track[];
+  discovery: MusicDiscoveryStatus;
+}
+
+export interface MusicDiscoveryStatus {
+  outcome: 'complete' | 'degraded' | 'empty' | 'unavailable';
+  availableSources: MusicSource[];
+  unavailableSources: MusicSource[];
 }
 
 export const ipc = {
@@ -142,7 +154,7 @@ export const ipc = {
     invokeWithTrace<RecommendResult>('get_smart_recommend'),
 
   getRadioBatch: (excludeKeys: string[]) =>
-    invokeWithTrace<Track[]>('get_radio_batch', { excludeKeys }),
+    invokeWithTrace<RadioBatchResult>('get_radio_batch', { excludeKeys }),
 
   extractCoverColor: (url: string) =>
     invokeWithTrace<[number, number, number]>('extract_cover_color', { url }),

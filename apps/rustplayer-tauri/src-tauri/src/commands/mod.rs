@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::collections::HashSet;
 use std::time::Duration;
 use std::net::IpAddr;
 use serde::Serialize;
@@ -899,226 +898,21 @@ pub async fn record_play_event(
 #[tauri::command]
 pub async fn get_smart_recommend(
     trace_id: Option<String>,
-    registry: State<'_, Arc<SourceRegistry>>,
-    db: State<'_, Arc<Db>>,
+    assembly: State<'_, Arc<crate::recommendation_assembly::RecommendationAssembly>>,
 ) -> Result<RecommendResult, IpcError> {
     run_with_trace("get_smart_recommend", trace_id, async {
-        let all_sources = registry.all().to_vec();
-
-        // 1. Fetch platform recommendations from all logged-in sources in parallel.
-        // Use indexed futures to preserve deterministic per-source ordering
-        // (JoinSet returns by completion order, which would make rank_score
-        // depend on network latency and bias toward faster sources).
-        let logged_in_sources: Vec<_> = all_sources.iter()
-            .filter(|s| s.is_logged_in())
-            .cloned()
-            .collect();
-        let mut source_results: Vec<(usize, Vec<Track>)> = Vec::new();
-        let mut join_set = tokio::task::JoinSet::new();
-        for (idx, src) in logged_in_sources.iter().enumerate() {
-            let src = Arc::clone(src);
-            join_set.spawn(async move {
-                let tracks = match tokio::time::timeout(
-                    std::time::Duration::from_secs(15),
-                    src.get_daily_recommend(),
-                ).await {
-                    Ok(Ok(tracks)) => tracks,
-                    Ok(Err(e)) => {
-                        tracing::warn!(source = ?src.id(), error = ?e, "daily recommend fetch failed");
-                        Vec::new()
-                    }
-                    Err(_) => {
-                        tracing::warn!(source = ?src.id(), "daily recommend timed out");
-                        Vec::new()
-                    }
-                };
-                (idx, tracks)
-            });
-        }
-        while let Some(result) = join_set.join_next().await {
-            if let Ok(pair) = result {
-                source_results.push(pair);
-            }
-        }
-        // Sort by source index to restore deterministic ordering
-        source_results.sort_by_key(|(idx, _)| *idx);
-        let mut platform_tracks: Vec<Track> = Vec::new();
-        for (_, tracks) in source_results {
-            platform_tracks.extend(tracks);
-        }
-
-        // 2. Query local behavior data (on blocking thread)
-        let db_arc = db.inner().clone();
-        let (artist_stats, recent_ids, stale_tracks, event_count) = {
-            let db = db_arc.clone();
-            tauri::async_runtime::spawn_blocking(move || -> Result<_, String> {
-                let stats = db.get_artist_stats(90, 50)?;
-                let recent = db.get_recent_track_ids(24)?;
-                let stale = db.get_stale_tracks(30, 8)?;
-                let count = db.get_play_event_count()?;
-                Ok((stats, recent, stale, count))
-            })
-            .await
-            .map_err(|e| IpcError::Internal(e.to_string()))?
-            .map_err(IpcError::Internal)?
-        };
-
-        // 3. Build user profile and re-rank (only if enough data)
-        let personalized = if event_count >= 10 {
-            let profile = rustplayer_recommend::build_profile(&artist_stats);
-            rustplayer_recommend::rerank(platform_tracks, &profile, &recent_ids)
-        } else {
-            // Not enough data yet, return platform order as-is
-            platform_tracks
-        };
-
-        // 4. Build supplementary recommendations
-        let top_artists = rustplayer_recommend::suggest_artists(&artist_stats, 10);
-        let rediscover = rustplayer_recommend::pick_rediscover(stale_tracks, 8);
-
-        // 5. Purge old events (fire-and-forget, 180 days retention)
-        let db_cleanup = db_arc;
-        tokio::spawn(async move {
-            let _ = tauri::async_runtime::spawn_blocking(move || {
-                if let Err(e) = db_cleanup.purge_old_events(180) {
-                    tracing::warn!("purge old events failed: {e}");
-                }
-            }).await;
-        });
-
-        Ok(RecommendResult {
-            personalized,
-            top_artists,
-            rediscover,
-        })
+        assembly.smart_recommend().await.map_err(IpcError::Internal)
     }).await
 }
 
-/// Fetch a batch of new tracks for continuous playback ("radio mode").
-/// Combines Personal FM + random playlist songs, re-ranked by user profile.
-/// `exclude_keys` prevents returning songs already in the current queue.
-/// Each key is formatted as "source:id" (e.g. "netease:12345") for cross-source safety.
 #[tauri::command]
 pub async fn get_radio_batch(
     exclude_keys: Vec<String>,
     trace_id: Option<String>,
-    registry: State<'_, Arc<SourceRegistry>>,
-    db: State<'_, Arc<Db>>,
-) -> Result<Vec<Track>, IpcError> {
+    assembly: State<'_, Arc<crate::recommendation_assembly::RecommendationAssembly>>,
+) -> Result<rustplayer_core::RadioBatchResult, IpcError> {
     run_with_trace("get_radio_batch", trace_id, async {
-        let all_sources = registry.all().to_vec();
-        // S1: cap exclude list to prevent memory amplification from abnormal input
-        let exclude_set: HashSet<String> = exclude_keys.into_iter().take(2000).collect();
-
-        // 1. Fetch from Personal FM (returns different songs each call)
-        let mut candidates: Vec<Track> = Vec::new();
-        let mut join_set = tokio::task::JoinSet::new();
-        for src in &all_sources {
-            if !src.is_logged_in() {
-                continue;
-            }
-            let src = Arc::clone(src);
-            join_set.spawn(async move {
-                match tokio::time::timeout(
-                    std::time::Duration::from_secs(10),
-                    src.get_personal_fm(),
-                ).await {
-                    Ok(Ok(tracks)) => tracks,
-                    Ok(Err(e)) => {
-                        tracing::warn!(source = ?src.id(), error = ?e, "personal FM fetch failed");
-                        Vec::new()
-                    }
-                    Err(_) => {
-                        tracing::warn!(source = ?src.id(), "personal FM timed out");
-                        Vec::new()
-                    }
-                }
-            });
-        }
-        while let Some(result) = join_set.join_next().await {
-            if let Ok(tracks) = result {
-                candidates.extend(tracks);
-            }
-        }
-
-        // 2. Supplement with random songs from user playlists if FM returned few results
-        // M4: only load from one source to limit memory, and cap total candidates at 200
-        if candidates.len() < 5 {
-            // Pick the first logged-in source only
-            if let Some(src) = all_sources.iter().find(|s| s.is_logged_in()) {
-                let src = Arc::clone(src);
-                let playlist_tracks: Vec<Track> = match tokio::time::timeout(
-                    std::time::Duration::from_secs(10),
-                    src.get_user_playlists(),
-                ).await {
-                    Ok(Ok(playlists)) => {
-                        if let Some(pl) = playlists.first() {
-                            match tokio::time::timeout(
-                                std::time::Duration::from_secs(10),
-                                src.get_playlist_detail(&pl.id),
-                            ).await {
-                                Ok(Ok(detail)) => detail.tracks,
-                                _ => Vec::new(),
-                            }
-                        } else {
-                            Vec::new()
-                        }
-                    }
-                    _ => Vec::new(),
-                };
-                // Shuffle: take a pseudo-random slice of up to 10 tracks
-                let len = playlist_tracks.len();
-                if len > 0 {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as usize;
-                    let start = now % len;
-                    let end = (start + 10).min(len);
-                    candidates.extend(playlist_tracks[start..end].iter().cloned());
-                }
-            }
-        }
-
-        // Hard cap on total candidates to prevent memory blow-up
-        candidates.truncate(200);
-
-        // 3. Filter out excluded tracks (key = "source:id")
-        candidates.retain(|t| {
-            let key = format!("{}:{}", t.source.storage_key(), t.id);
-            !exclude_set.contains(&key)
-        });
-
-        // 4. Deduplicate by (id, source)
-        {
-            let mut seen = HashSet::new();
-            candidates.retain(|t| seen.insert((t.id.clone(), t.source)));
-        }
-
-        // 5. Re-rank using profile (consistent threshold with get_smart_recommend)
-        let db_arc = db.inner().clone();
-        let (artist_stats, recent_ids, event_count) = {
-            let db = db_arc;
-            tauri::async_runtime::spawn_blocking(move || -> Result<_, String> {
-                let stats = db.get_artist_stats(90, 50)?;
-                let recent = db.get_recent_track_ids(24)?;
-                let count = db.get_play_event_count()?;
-                Ok((stats, recent, count))
-            })
-            .await
-            .map_err(|e| IpcError::Internal(e.to_string()))?
-            .map_err(IpcError::Internal)?
-        };
-
-        let reranked = if event_count >= 10 && !artist_stats.is_empty() {
-            let profile = rustplayer_recommend::build_profile(&artist_stats);
-            rustplayer_recommend::rerank(candidates, &profile, &recent_ids)
-        } else {
-            candidates
-        };
-
-        // Return up to 10 tracks
-        Ok(reranked.into_iter().take(10).collect())
+        assembly.radio_batch(exclude_keys).await.map_err(IpcError::Internal)
     }).await
 }
 
@@ -1744,4 +1538,3 @@ pub async fn extract_cover_color(
         Ok(hsl)
     }).await
 }
-
