@@ -1,8 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { usePlayerStore } from '@/store/playerStore';
+import { useSceneEnvironment } from '@/store/sceneEnvironmentStore';
 import { formatTime } from '@/lib/utils';
 
-export default function PlaybackProgress() {
+export default function PlaybackProgress({ active = true }: { active?: boolean }) {
+  const visible = useSceneEnvironment(state => state.visible);
+  const reducedMotion = useSceneEnvironment(state => state.reducedMotion);
   const timeSpanRef = useRef<HTMLSpanElement>(null);
   const durationSpanRef = useRef<HTMLSpanElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -11,139 +14,75 @@ export default function PlaybackProgress() {
   const draggingPlaybackIdRef = useRef<number | null>(null);
 
   useEffect(() => {
+    if (!active || !visible) return;
     let rafId: number | undefined;
-    // Local interpolation state — updated by store subscription, read by RAF loop.
-    let lastServerPos = usePlayerStore.getState().positionMs;
-    let lastServerTime = performance.now();
-    let lastDur = usePlayerStore.getState().durationMs;
-    let lastDurStr = formatTime(lastDur);
-    let lastPosSec = -1;
-    let lastPosStr = formatTime(0);
-    let isPlaying = usePlayerStore.getState().state === 'playing';
-    let isBuffering = usePlayerStore.getState().state === 'buffering';
-    const reducedMotionQuery = typeof window !== 'undefined'
-      ? window.matchMedia('(prefers-reduced-motion: reduce)')
-      : null;
-    const prefersReducedMotion = reducedMotionQuery?.matches ?? false;
-
-    const syncDurationUi = (duration: number) => {
-      if (durationSpanRef.current) {
-        durationSpanRef.current.textContent = lastDurStr;
+    let anchor = performance.now();
+    let player = usePlayerStore.getState();
+    let lastSecond = -1, lastDuration = -1;
+    const paint = (position: number) => {
+      const duration = player.durationMs;
+      if (lastDuration !== duration) {
+        lastDuration = duration;
+        if (durationSpanRef.current) durationSpanRef.current.textContent = formatTime(duration);
+        if (inputRef.current) inputRef.current.max = String(duration || 100);
       }
-      if (inputRef.current) {
-        inputRef.current.max = (duration || 100).toString();
-      }
-    };
-
-    const syncProgressUi = (position: number, duration: number) => {
-      const clampedPos = duration > 0 ? Math.min(position, duration) : position;
-      const max = duration || 100;
-      const pct = max > 0 ? (clampedPos / max) * 100 : 0;
-
-      syncDurationUi(duration);
-
-      if (timeSpanRef.current) {
-        const sec = Math.floor(clampedPos / 1000);
-        if (sec !== lastPosSec) {
-          lastPosSec = sec;
-          lastPosStr = formatTime(clampedPos);
-        }
-        timeSpanRef.current.textContent = lastPosStr;
-      }
-      if (inputRef.current) {
-        inputRef.current.value = clampedPos.toString();
-        inputRef.current.style.setProperty('--progress', `${pct}%`);
-      }
-    };
-
-    syncProgressUi(lastServerPos, lastDur);
-
-    // Subscribe to store for authoritative position/duration updates (~5Hz from backend).
-    // Only react to progress-relevant fields — avoids resetting interpolation
-    // anchors when unrelated fields (volume, queue, playMode) change.
-    const unsubscribe = usePlayerStore.subscribe((state, prevState) => {
-      if (state.state === prevState.state &&
-          state.positionMs === prevState.positionMs &&
-          state.durationMs === prevState.durationMs &&
-          state.emittedAtMs === prevState.emittedAtMs) return;
-
-      isPlaying = state.state === 'playing';
-      isBuffering = state.state === 'buffering';
-      lastServerPos = state.positionMs;
-      // Only regenerate duration string when duration actually changes
-      if (state.durationMs !== lastDur) {
-        lastDur = state.durationMs;
-        lastDurStr = formatTime(lastDur);
-        lastPosSec = -1; // Force fresh position string on track change
-      }
-
-      // Only apply IPC latency compensation when emittedAtMs actually changed
-      // (i.e., this update came from a real backend progress event).
-      // For local state changes (play/pause/seek), use current time to avoid
-      // stale timestamps causing progress bar jumps.
-      if (state.emittedAtMs && state.emittedAtMs !== prevState.emittedAtMs) {
-        const ipcLatency = Math.max(0, Date.now() - state.emittedAtMs);
-        lastServerTime = performance.now() - ipcLatency;
-      } else {
-        lastServerTime = performance.now();
-      }
-
-      if (prefersReducedMotion) {
-        if (!isDraggingRef.current) {
-          syncProgressUi(lastServerPos, lastDur);
-        } else {
-          syncDurationUi(lastDur);
-        }
-        return;
-      }
-
-      syncDurationUi(lastDur);
-    });
-
-    // RAF loop for smooth 60fps progress bar interpolation.
-    // Between backend updates, we locally extrapolate position assuming 1x playback rate.
-    const tick = () => {
-      rafId = requestAnimationFrame(tick);
       if (isDraggingRef.current) return;
-
-      // During buffering, freeze the progress bar at the last known position
-      // to prevent the RAF interpolation from advancing past the actual playback.
-      if (isBuffering) {
-        syncProgressUi(lastServerPos, lastDur);
-        return;
+      const clamped = Math.max(0, duration > 0 ? Math.min(position, duration) : position);
+      const second = Math.floor(clamped / 1000);
+      if (second !== lastSecond && timeSpanRef.current) {
+        lastSecond = second; timeSpanRef.current.textContent = formatTime(clamped);
       }
-
-      const now = performance.now();
-      const elapsed = isPlaying ? now - lastServerTime : 0;
-      const pos = Math.min(lastServerPos + elapsed, lastDur);
-
-      syncProgressUi(pos, lastDur);
-    };
-
-    if (!prefersReducedMotion) {
-      rafId = requestAnimationFrame(tick);
-    }
-
-    return () => {
-      if (rafId !== undefined) {
-        cancelAnimationFrame(rafId);
+      if (inputRef.current) {
+        inputRef.current.value = String(clamped);
+        inputRef.current.style.setProperty('--progress', `${clamped / (duration || 100) * 100}%`);
       }
-      unsubscribe();
     };
-  }, []);
+    const tick = () => {
+      rafId = undefined;
+      paint(player.positionMs + (player.state === 'playing' ? performance.now() - anchor : 0));
+      if (player.state === 'playing' && !reducedMotion) rafId = requestAnimationFrame(tick);
+    };
+    const unsubscribe = usePlayerStore.subscribe((state, previous) => {
+      if (state.state === previous.state && state.positionMs === previous.positionMs
+        && state.durationMs === previous.durationMs && state.emittedAtMs === previous.emittedAtMs) return;
+      player = state;
+      const latency = state.emittedAtMs && state.emittedAtMs !== previous.emittedAtMs
+        ? Math.min(1000, Math.max(0, Date.now() - state.emittedAtMs)) : 0;
+      anchor = performance.now() - latency;
+      if (rafId !== undefined) cancelAnimationFrame(rafId);
+      rafId = undefined;
+      tick();
+    });
+    tick();
+    return () => { if (rafId !== undefined) cancelAnimationFrame(rafId); unsubscribe(); };
+  }, [active, visible, reducedMotion]);
 
   useEffect(() => {
     const handlePointerUp = () => {
       if (!isDraggingRef.current) return;
-      isDraggingRef.current = false;
-      void usePlayerStore.getState().seek(draggingValueRef.current, draggingPlaybackIdRef.current);
+      const player = usePlayerStore.getState();
+      if (player.playbackId !== draggingPlaybackIdRef.current) cancelDrag();
+      else isDraggingRef.current = false;
+      void player.seek(draggingValueRef.current, draggingPlaybackIdRef.current);
     };
 
     window.addEventListener('pointerup', handlePointerUp);
-    window.addEventListener('pointercancel', handlePointerUp);
+    const cancelDrag = () => {
+      if (!isDraggingRef.current) return;
+      isDraggingRef.current = false;
+      const { positionMs, durationMs } = usePlayerStore.getState();
+      if (inputRef.current) {
+        inputRef.current.value = String(positionMs);
+        inputRef.current.style.setProperty('--progress', `${positionMs / (durationMs || 100) * 100}%`);
+      }
+      if (timeSpanRef.current) timeSpanRef.current.textContent = formatTime(positionMs);
+    };
+    window.addEventListener('pointercancel', cancelDrag);
+    window.addEventListener('blur', cancelDrag);
     return () => {
       window.removeEventListener('pointerup', handlePointerUp);
-      window.removeEventListener('pointercancel', handlePointerUp);
+      window.removeEventListener('pointercancel', cancelDrag);
+      window.removeEventListener('blur', cancelDrag);
     };
   }, []);
 

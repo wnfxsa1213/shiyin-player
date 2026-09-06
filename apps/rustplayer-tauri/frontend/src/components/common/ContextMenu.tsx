@@ -23,7 +23,7 @@ export default function ContextMenu({ x, y, track, onClose }: Props) {
 
   useEffect(() => {
     const handle = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent && e.key === 'Escape') { onClose(); return; }
+      if (e instanceof KeyboardEvent && e.key === 'Escape') { e.preventDefault(); onClose(); return; }
       if (e instanceof MouseEvent && ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
     document.addEventListener('mousedown', handle);

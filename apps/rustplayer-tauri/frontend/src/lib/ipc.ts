@@ -1,7 +1,9 @@
-import { invoke } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { Track } from '@/store/playerStore';
 import type { PlaybackEvent } from '@/lib/playbackLifecycle';
+import type { SceneAsset } from '@/lib/scenes/model';
 
 export type MusicSource = 'netease' | 'qqmusic';
 
@@ -106,6 +108,19 @@ export interface MusicDiscoveryStatus {
 }
 
 export const ipc = {
+  listSceneBackgrounds: () => invokeWithTrace<SceneAsset[]>('list_scene_backgrounds', undefined, false),
+  deleteSceneBackground: (assetId: string) => invokeWithTrace<void>('delete_scene_background', { assetId }, false),
+  sceneAssetUrl: (path: string) => convertFileSrc(path, 'scene'),
+  importSceneBackground: async (file: File): Promise<SceneAsset> => {
+    const traceId = newTraceId();
+    try {
+      if (!file.size || file.size > 20 * 1024 * 1024) throw { kind: 'invalid_input', message: '请选择 20 MB 以内的图片' };
+      return await invoke<SceneAsset>('import_scene_background', await file.arrayBuffer(), {
+        headers: { 'x-trace-id': traceId, 'x-file-name': encodeURIComponent(file.name) },
+      });
+    } catch (error) { throw wrapInvokeError(error, traceId); }
+  },
+
   searchMusic: (query: string, source?: MusicSource) =>
     invokeWithTrace<Track[]>('search_music', { query, source }),
 
@@ -174,8 +189,8 @@ export function onPlaybackEvent(cb: (event: PlaybackEvent) => void): Promise<Unl
   return listen<PlaybackEvent>('player://event', (event) => cb(event.payload));
 }
 
-export function onPlayerSpectrum(cb: (data: { magnitudes: number[] }) => void): Promise<UnlistenFn> {
-  return listen<{ magnitudes: number[] }>('player://spectrum', (e) => cb(e.payload));
+export function onPlayerSpectrum(cb: (data: { playbackId: number; emittedAtMs: number; magnitudes: number[] }) => void): Promise<UnlistenFn> {
+  return listen<{ playbackId: number; emittedAtMs: number; magnitudes: number[] }>('player://spectrum', (e) => cb(e.payload));
 }
 
 export function onLoginSuccess(cb: (source: MusicSource) => void): Promise<UnlistenFn> {
@@ -184,4 +199,17 @@ export function onLoginSuccess(cb: (source: MusicSource) => void): Promise<Unlis
 
 export function onLoginTimeout(cb: (source: MusicSource) => void): Promise<UnlistenFn> {
   return listen<MusicSource>('login://timeout', (e) => cb(e.payload));
+}
+
+export async function isPlayerWindowVisible(): Promise<boolean> {
+  const window = getCurrentWindow();
+  const [visible, minimized] = await Promise.all([window.isVisible(), window.isMinimized()]);
+  return visible && !minimized;
+}
+
+export async function onPlayerWindowChanged(cb: () => void): Promise<UnlistenFn> {
+  const window = getCurrentWindow();
+  const results = await Promise.allSettled([window.onFocusChanged(cb), window.onResized(cb)]);
+  const cleanups = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : []);
+  return () => cleanups.forEach(cleanup => cleanup());
 }

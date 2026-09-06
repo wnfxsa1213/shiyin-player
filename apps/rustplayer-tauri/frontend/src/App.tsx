@@ -17,12 +17,16 @@ import ImmersiveFMPanel from '@/components/player/ImmersiveFMPanel';
 import QueuePanel from '@/components/player/QueuePanel';
 import ToastContainer from '@/components/common/ToastContainer';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
+import SceneBackground from '@/components/scenes/SceneBackground';
+import { startSceneRuntime } from '@/lib/scenes/runtime';
+import '@/styles/scenes.css';
 
 // Route-level code splitting — SettingsView and PlaylistDetailView are
 // infrequently accessed; lazy-loading them reduces the initial JS bundle.
 const SettingsView = lazy(() => import('@/views/SettingsView'));
 const PlaylistDetailView = lazy(() => import('@/views/PlaylistDetailView'));
 const DailyRecommendView = lazy(() => import('@/views/DailyRecommendView'));
+const ScenesView = lazy(() => import('@/views/ScenesView'));
 
 /** Declarative ARIA live region that announces playback state and track changes to screen readers. */
 function PlayerAnnouncer() {
@@ -57,6 +61,8 @@ export default function App() {
   useDynamicTheme();
   // 歌单自动刷新（启动 + 30 分钟定时 + 页面恢复可见）
   usePlaylistAutoRefresh();
+  useEffect(startSceneRuntime, []);
+  useEffect(() => { if (immersiveOpen) setQueueOpen(false); }, [immersiveOpen]);
 
   // 将前端运行时错误落盘到后端日志（release 下也能排查）
   useEffect(() => {
@@ -131,12 +137,16 @@ export default function App() {
       onPlaybackEvent((event) => {
         if (active) usePlayerStore.getState().handlePlaybackEvent(event);
       }),
-      onPlayerSpectrum(({ magnitudes }) => {
+      onPlayerSpectrum(({ playbackId, emittedAtMs, magnitudes }) => {
         if (!active) return;
+        const listening = usePlayerStore.getState().listening;
+        if (listening.state !== 'playing' || listening.playbackId !== playbackId || Date.now() - emittedAtMs > 1000) return;
         const arr = spectrumDataRef.current;
         const len = Math.min(magnitudes.length, arr.length);
         for (let i = 0; i < len; i++) arr[i] = magnitudes[i];
         for (let i = len; i < arr.length; i++) arr[i] = 0;
+        spectrumDataRef.receivedAt = performance.now();
+        spectrumDataRef.playbackId = playbackId;
       }),
       onLoginSuccess((source) => {
         if (!active) return;
@@ -173,8 +183,8 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.target instanceof HTMLElement && e.target.isContentEditable) return;
+      if (e.defaultPrevented) return;
+      if (e.target instanceof HTMLElement && e.target.closest('input, textarea, select, button, a, [role="menu"], [contenteditable="true"]')) return;
       const st = usePlayerStore.getState();
       switch (e.code) {
         case 'Space':
@@ -224,9 +234,11 @@ export default function App() {
     <MemoryRouter>
       <a href="#main-content" className="sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:top-4 focus-visible:left-4 focus-visible:z-[9999] focus-visible:p-4 focus-visible:bg-accent focus-visible:text-white focus-visible:rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent">跳转到主内容</a>
       <PlayerAnnouncer />
-      <div className="flex h-screen bg-bg-base text-text-primary overflow-hidden pb-24">
+      <div className="flex h-screen bg-bg-base text-text-primary overflow-hidden pb-20">
         <Sidebar />
-        <main id="main-content" className="relative flex-1 overflow-y-auto bg-bg-base" tabIndex={-1}>
+        <div className="relative flex-1 min-w-0 overflow-hidden">
+          <SceneBackground />
+        <main id="main-content" className="relative h-full overflow-y-auto" tabIndex={-1}>
           <ErrorBoundary>
             <Suspense fallback={<RouteFallback />}>
               <Routes>
@@ -235,13 +247,15 @@ export default function App() {
                 <Route path="/settings" element={<SettingsView />} />
                 <Route path="/playlist/:source/:id" element={<PlaylistDetailView />} />
                 <Route path="/daily" element={<DailyRecommendView />} />
+                <Route path="/scenes" element={<ScenesView />} />
               </Routes>
             </Suspense>
           </ErrorBoundary>
           <ImmersiveFMPanel isOpen={immersiveOpen} onClose={() => setImmersiveOpen(false)} />
           <QueuePanel isOpen={queueOpen} onClose={() => setQueueOpen(false)} />
         </main>
-        <PlayerBar lyricsOpen={immersiveOpen} onToggleLyrics={() => setImmersiveOpen(!immersiveOpen)} onToggleQueue={() => setQueueOpen(!queueOpen)} />
+        </div>
+        <PlayerBar lyricsOpen={immersiveOpen} onToggleLyrics={() => setImmersiveOpen(!immersiveOpen)} onToggleQueue={() => { setImmersiveOpen(false); setQueueOpen(!queueOpen); }} />
       </div>
       <ToastContainer />
     </MemoryRouter>

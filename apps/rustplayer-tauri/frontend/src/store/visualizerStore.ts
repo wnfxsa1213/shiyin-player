@@ -21,7 +21,7 @@ export const COLOR_PRESETS: ColorPreset[] = [
  * Written by the IPC spectrum event callback, read by SpectrumVisualizer's RAF loop.
  * Bypasses Zustand entirely to avoid triggering ~15fps store updates and React re-renders.
  */
-export const spectrumDataRef = { current: new Float32Array(64) };
+export const spectrumDataRef = { current: new Float32Array(64), receivedAt: 0, playbackId: null as number | null };
 
 export type VisualizationMode = 'bars' | 'circle' | 'wave';
 

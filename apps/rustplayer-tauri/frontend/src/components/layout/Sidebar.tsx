@@ -2,12 +2,13 @@ import { NavLink } from 'react-router-dom';
 import { useUiStore } from '@/store/uiStore';
 import { usePlaylistStore } from '@/store/playlistStore';
 import CoverImage from '@/components/common/CoverImage';
-import { Home, Search, Settings, PanelLeftClose, PanelLeftOpen, CalendarDays, Radio, type LucideIcon } from 'lucide-react';
+import { Home, Search, Settings, PanelLeftClose, PanelLeftOpen, CalendarDays, Radio, Sparkles, type LucideIcon } from 'lucide-react';
 
 const navItems: { path: string; label: string; icon: LucideIcon }[] = [
   { path: '/', label: '首页', icon: Home },
   { path: '/search', label: '搜索', icon: Search },
   { path: '/daily', label: '每日推荐', icon: CalendarDays },
+  { path: '/scenes', label: '视觉场景', icon: Sparkles },
   { path: '/settings', label: '设置', icon: Settings },
 ];
 
@@ -19,7 +20,7 @@ export default function Sidebar() {
 
   return (
     <nav
-      className={`${collapsed ? 'w-16' : 'w-56'} bg-bg-primary/80 glass flex-shrink-0 flex flex-col border-r border-border-primary`}
+      className={`${collapsed ? 'w-16' : 'w-56'} bg-bg-primary flex-shrink-0 flex flex-col border-r border-border-primary`}
       aria-label="主导航"
     >
       <div className="flex items-center gap-3 px-4 py-5">

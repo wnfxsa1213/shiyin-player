@@ -60,9 +60,13 @@ Tauri v2 桌面应用的 Rust 后端入口。负责初始化播放引擎、注�
 | Event | Payload | 说明 |
 |-------|---------|------|
 | `player://event` | 带 type、playbackId 的判别联合 | 状态 / 进度 / 缓冲 / 错误 / 自然结束；字段以 `events.rs` 序列化和前端 PlaybackEvent 为准 |
-| `player://spectrum` | { magnitudes: number[] } | 频谱数据（~15fps） |
+| `player://spectrum` | { playbackId, emittedAtMs, magnitudes } | 频谱数据（~15fps），采集时间来自播放器线程 |
 | `login://success` | MusicSourceId | 登录成功 |
 | `login://timeout` | MusicSourceId | 登录超时 |
+
+### 背景素材
+
+`commands/scenes.rs` 提供导入、列举与移除，`scene_assets.rs` 拥有应用目录中的素材及尺寸、容量约束。导入通过原始二进制 IPC 传输，traceId 与文件名放在请求头；耗时解码和文件处理交给阻塞工作线程。`scene` 自定义协议只提供验证过的素材文件名，不暴露任意本地路径。修改这些边界时，同步检查 [视觉场景设计](../../../docs/design/visual-scenes-v1.md) 与 [验证记录](../../../docs/design/visual-scenes-validation.md)。
 
 ## 关键依赖与配置
 

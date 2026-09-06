@@ -13,6 +13,8 @@ use crate::db::Db;
 use crate::trace_ctx;
 use tracing::Instrument;
 
+pub mod scenes;
+
 /// Maximum message length accepted by client_log (16 KB).
 const CLIENT_LOG_MAX_LEN: usize = 16 * 1024;
 /// Rate limit: max client_log calls per minute.

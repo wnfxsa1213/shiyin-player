@@ -1,12 +1,15 @@
-import { useEffect, useState, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { useAutoHide } from '@/hooks/useAutoHide';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
-import ImmersiveBackground from '@/components/player/ImmersiveBackground';
+import { useNavigate } from 'react-router-dom';
+import { useSceneStore } from '@/store/sceneStore';
+import SceneSurface from '@/components/scenes/SceneSurface';
+import SceneRotationControls from '@/components/scenes/SceneRotationControls';
 import ImmersiveCover from '@/components/player/ImmersiveCover';
 import ImmersiveTrackInfo from '@/components/player/ImmersiveTrackInfo';
 import ImmersiveLyrics from '@/components/player/ImmersiveLyrics';
 import ImmersiveControls from '@/components/player/ImmersiveControls';
-import VizModeSwitcher from '@/components/player/VizModeSwitcher';
+
 
 interface Props {
   isOpen: boolean;
@@ -15,27 +18,12 @@ interface Props {
 
 export default function ImmersiveFMPanel({ isOpen, onClose }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ w: 800, h: 600 });
-  const { visible: controlsVisible, onMouseMove, onMouseDown } = useAutoHide(3000);
+  const scene = useSceneStore(state => state.current);
+  const navigate = useNavigate();
+  const [controlsFocused, setControlsFocused] = useState(false);
+  const { visible: controlsVisible, onMouseMove, onMouseDown } = useAutoHide(3000, isOpen);
 
   useFocusTrap(panelRef, isOpen, onClose);
-
-  // Update size on resize — debounced to avoid rapid canvas teardown/rebuild during fullscreen transitions
-  useEffect(() => {
-    if (!isOpen) return;
-    const update = () => setSize({ w: window.innerWidth, h: window.innerHeight });
-    update();
-    let timer: ReturnType<typeof setTimeout>;
-    const debouncedUpdate = () => {
-      clearTimeout(timer);
-      timer = setTimeout(update, 100);
-    };
-    window.addEventListener('resize', debouncedUpdate);
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener('resize', debouncedUpdate);
-    };
-  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -48,11 +36,12 @@ export default function ImmersiveFMPanel({ isOpen, onClose }: Props) {
       tabIndex={-1}
       onMouseMove={onMouseMove}
       onMouseDown={onMouseDown}
+      onKeyDown={onMouseMove}
       className="fixed inset-0 z-[60] bg-black overflow-hidden animate-fade-in"
-      style={{ cursor: controlsVisible ? undefined : 'none' }}
+      style={{ cursor: controlsVisible || controlsFocused ? undefined : 'none' }}
     >
       {/* Background: visualizer + particles */}
-      <ImmersiveBackground width={size.w} height={size.h} />
+      <SceneSurface scene={scene} />
 
       {/* Main content: cover + track info on left, lyrics on right */}
       <div className="relative z-10 flex h-full">
@@ -60,10 +49,8 @@ export default function ImmersiveFMPanel({ isOpen, onClose }: Props) {
         <div className="w-1/2 min-w-0 flex flex-col items-center justify-center p-6 lg:p-12">
           <ImmersiveCover />
           <ImmersiveTrackInfo />
-          {/* Viz mode switcher under track info */}
-          <div className="mt-6">
-            <VizModeSwitcher />
-          </div>
+          <SceneRotationControls compact />
+          <button className="mt-3 text-xs text-white/70 hover:text-white rounded p-2 focus-visible:ring-2 focus-visible:ring-accent" onClick={() => { onClose(); navigate('/scenes'); }}>打开视觉场景</button>
         </div>
 
         {/* Right side: lyrics */}
@@ -73,7 +60,7 @@ export default function ImmersiveFMPanel({ isOpen, onClose }: Props) {
       </div>
 
       {/* Bottom controls overlay */}
-      <ImmersiveControls visible={controlsVisible} onClose={onClose} />
+      <ImmersiveControls visible={controlsVisible || controlsFocused} onClose={onClose} onFocusChange={setControlsFocused} />
     </div>
   );
 }

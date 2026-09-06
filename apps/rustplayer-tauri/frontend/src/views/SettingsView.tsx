@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { LogIn, Loader2, CheckCircle, Info, ChevronRight } from 'lucide-react';
 import { useUiStore } from '@/store/uiStore';
-import { useVisualizerStore, COLOR_PRESETS } from '@/store/visualizerStore';
+import { useVisualizerStore } from '@/store/visualizerStore';
 import { useToastStore } from '@/store/toastStore';
 import { sanitizeError } from '@/lib/errorMessages';
 import { ipc, onLoginSuccess, onLoginTimeout, type MusicSource } from '@/lib/ipc';
@@ -23,8 +24,7 @@ export default function SettingsView() {
   const cookieInputRef = useRef<HTMLInputElement>(null);
 
   const {
-    enabled, showParticles, colors,
-    setEnabled, setShowParticles, setColors, applyPreset,
+    enabled, showParticles, setEnabled, setShowParticles,
   } = useVisualizerStore();
 
   const loginStatus = loginStatusMap[source];
@@ -124,65 +124,17 @@ export default function SettingsView() {
         </div>
       </section>
 
-      {/* Visualizer settings */}
       <section className="mb-6 bg-bg-secondary rounded-xl p-5">
-        <h2 className="text-base font-semibold mb-4 pb-2 border-b border-border-secondary">可视化</h2>
-
+        <h2 className="text-base font-semibold mb-4 pb-2 border-b border-border-secondary">视觉场景</h2>
         <div className="flex items-center justify-between mb-4">
-          <span className="text-text-secondary text-sm">启用可视化</span>
-          <button
-            onClick={() => setEnabled(!enabled)}
-            className={`w-11 h-6 rounded-full transition-colors duration-200 cursor-pointer relative focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none ${enabled ? 'bg-accent' : 'bg-bg-hover'}`}
-            role="switch" aria-checked={enabled} aria-label="启用可视化"
-          >
-            <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${enabled ? 'translate-x-5' : ''}`} />
+          <div><span className="text-text-secondary text-sm">动态粒子</span><p className="text-text-tertiary text-xs mt-1">自动调整画质，暂停和隐藏时停止流动</p></div>
+          <button onClick={() => { const next = !(enabled && showParticles); setEnabled(next); setShowParticles(next); }}
+            className={`w-11 h-6 rounded-full transition-colors cursor-pointer relative focus-visible:ring-2 focus-visible:ring-accent ${enabled && showParticles ? 'bg-accent' : 'bg-bg-hover'}`}
+            role="switch" aria-checked={enabled && showParticles} aria-label="动态粒子">
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${enabled && showParticles ? 'translate-x-5' : ''}`} />
           </button>
         </div>
-
-        <div className="flex items-center justify-between mb-4">
-          <span className="text-text-secondary text-sm">粒子效果</span>
-          <button
-            onClick={() => setShowParticles(!showParticles)}
-            className={`w-11 h-6 rounded-full transition-colors duration-200 cursor-pointer relative focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none ${showParticles ? 'bg-accent' : 'bg-bg-hover'}`}
-            role="switch" aria-checked={showParticles} aria-label="粒子效果"
-          >
-            <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${showParticles ? 'translate-x-5' : ''}`} />
-          </button>
-        </div>
-
-        <div className="mb-4">
-          <span className="text-text-secondary text-sm block mb-2">预设配色</span>
-          <div className="flex gap-2">
-            {COLOR_PRESETS.map((p) => (
-              <button
-                key={p.name}
-                onClick={() => applyPreset(p.name)}
-                className="w-8 h-8 rounded-full border-2 transition-[transform,border-color] duration-200 cursor-pointer hover:scale-110 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-                style={{ background: `linear-gradient(135deg, ${p.primary}, ${p.secondary})`, borderColor: colors.primary === p.primary ? 'var(--accent)' : 'transparent' }}
-                aria-label={p.name}
-                title={p.name}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <span className="text-text-secondary text-sm block mb-2">自定义颜色</span>
-          <div className="flex gap-4">
-            {(['primary', 'secondary', 'particle'] as const).map((key) => (
-              <label key={key} className="flex items-center gap-2 text-xs text-text-tertiary">
-                <input
-                  type="color"
-                  name={`visualizer-color-${key}`}
-                  value={colors[key]}
-                  onChange={(e) => setColors({ ...colors, [key]: e.target.value })}
-                  className="w-7 h-7 rounded border-0 cursor-pointer bg-transparent focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-                />
-                {key === 'primary' ? '主色' : key === 'secondary' ? '副色' : '粒子'}
-              </label>
-            ))}
-          </div>
-        </div>
+        <Link to="/scenes" className="flex items-center justify-between text-sm text-accent py-2 rounded focus-visible:ring-2 focus-visible:ring-accent">选择背景、特效与自己的搭配<ChevronRight size={16} /></Link>
       </section>
 
       <section className="bg-bg-secondary rounded-xl p-5">

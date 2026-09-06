@@ -28,6 +28,12 @@ npm --prefix apps/rustplayer-tauri/frontend test
 - `crates/core/src/lib.rs` 验证播放命令与事件信封的 camelCase 字段序列化和反序列化。
 - `src-tauri/src/events.rs` 验证前后端事件字段与自然结束/普通停止的区别。
 
+## 视觉场景回归
+
+运行前端 `npm test` 与 `npm run build`，以及 Rust `cargo test --workspace`。当前已缓存环境可附加 `--locked --offline`。场景测试通过工厂接口、真实页面和可控时钟覆盖草稿隔离、应用竞态、持久化顺序、素材引用、取消解码、轮换与窗口恢复；进度条测试验证隐藏/暂停停帧及取消拖动。后端覆盖导入格式、尺寸、去重、失败清理、受限资源读取和频谱字段。
+
+真实 Tauri、WebKitGTK 与深浅主题检查方法、结果和设备范围见 [视觉场景验证记录](docs/design/visual-scenes-validation.md)。新增效果或改变画质预算时，同时检查背景帧时长与交互响应；场景单位测试不能替代该检查。
+
 ## 后端测试建议 (Rust)
 
 ### 1. QQ 音乐 API 错误处理 (`crates/qqmusic/src/api.rs`)

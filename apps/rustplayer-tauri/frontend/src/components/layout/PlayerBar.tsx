@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { usePlayerStore } from '@/store/playerStore';
 import { useUiStore } from '@/store/uiStore';
-import SpectrumVisualizer from '@/components/player/SpectrumVisualizer';
 import PlaybackProgress from '@/components/player/PlaybackProgress';
-import { Music, SkipBack, Play, Pause, SkipForward, Music2, Volume2, ListMusic } from 'lucide-react';
+import { Music, SkipBack, Play, Pause, SkipForward, Music2, Volume2, ListMusic, Sparkles } from 'lucide-react';
 
 export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }: { lyricsOpen: boolean, onToggleLyrics: () => void, onToggleQueue: () => void }) {
   const immersiveOpen = useUiStore((s) => s.immersiveOpen);
@@ -15,20 +15,10 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
   const hasQueue = usePlayerStore((s) => s.queue.length > 0);
   const [coverFailed, setCoverFailed] = useState(false);
 
-  const centerRef = useRef<HTMLDivElement>(null);
-  const [centerWidth, setCenterWidth] = useState(600);
-
   // Reset cover error state when track changes
   useEffect(() => {
     setCoverFailed(false);
   }, [currentTrack?.id, currentTrack?.source]);
-
-  useEffect(() => {
-    if (!centerRef.current) return;
-    const obs = new ResizeObserver(([e]) => setCenterWidth(e.contentRect.width));
-    obs.observe(centerRef.current);
-    return () => obs.disconnect();
-  }, []);
 
   const handleVolume = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value);
@@ -39,19 +29,10 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
 
   return (
     <footer
-      className="h-20 bg-bg-primary/80 glass flex-shrink-0 fixed bottom-0 w-full z-50 border-t border-border-primary flex items-center justify-between px-6 transition-[background-color,border-color] duration-700"
+      className="h-20 bg-bg-primary flex-shrink-0 fixed bottom-0 w-full z-50 border-t border-border-primary flex items-center justify-between px-6"
       style={{ borderLeftWidth: 0, borderRightWidth: 0, borderBottomWidth: 0 }}
       aria-label="播放控制"
     >
-      {/* Spectrum background layer — skip entirely when immersive overlay covers the bar */}
-      {!immersiveOpen && (
-        <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
-          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 opacity-50 transition-opacity duration-700">
-            <SpectrumVisualizer width={centerWidth} height={60} />
-          </div>
-        </div>
-      )}
-
       {/* Left: Track Info & Cover */}
       <div className="relative flex items-center w-1/4 min-w-[180px]">
         {currentTrack ? (
@@ -99,7 +80,7 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
 
       {/* Center: Controls & Progress
           进度条绝对定位到底部，避免双行内容把主控制按钮整体顶偏 */}
-      <div ref={centerRef} className="relative flex h-full w-1/2 max-w-2xl flex-col items-center justify-center">
+      <div className="relative flex h-full w-1/2 max-w-2xl flex-col items-center justify-center">
         <div className="relative z-10 flex items-center gap-6">
           <button
             onClick={() => hasQueue && usePlayerStore.getState().playPrev()}
@@ -156,6 +137,7 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
 
       {/* Right: Volume & Queue */}
       <div className="relative flex items-center justify-end w-1/4 min-w-[180px] gap-3">
+        <Link to="/scenes" className="text-text-secondary hover:text-text-primary p-1 rounded focus-visible:ring-2 focus-visible:ring-accent" aria-label="打开视觉场景"><Sparkles size={18} strokeWidth={1.5} /></Link>
         <button onClick={onToggleQueue} className="text-text-secondary hover:text-text-primary transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none rounded p-1" aria-label="播放队列">
           <ListMusic size={20} strokeWidth={1.5} />
         </button>

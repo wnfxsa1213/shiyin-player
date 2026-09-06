@@ -1,21 +1,28 @@
 import PlaybackProgress from '@/components/player/PlaybackProgress';
 import FMControlBar from '@/components/player/FMControlBar';
 import { X } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 
 interface Props {
   visible: boolean;
   onClose: () => void;
+  onFocusChange: (focused: boolean) => void;
 }
 
-export default function ImmersiveControls({ visible, onClose }: Props) {
+export default function ImmersiveControls({ visible, onClose, onFocusChange }: Props) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (ref.current) ref.current.inert = !visible; }, [visible]);
   return (
     <div
+      ref={ref}
       className={`fixed bottom-0 left-0 right-0 z-[70] transition-all duration-300 ${
         visible
           ? 'translate-y-0 opacity-100'
           : 'translate-y-full opacity-0 pointer-events-none'
       }`}
       aria-hidden={!visible}
+      onFocusCapture={() => onFocusChange(true)}
+      onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) onFocusChange(false); }}
     >
       <div className="bg-black/50 border-t border-white/10 px-8 py-4">
         <div className="mx-auto flex max-w-5xl flex-col gap-3">
@@ -36,7 +43,7 @@ export default function ImmersiveControls({ visible, onClose }: Props) {
 
           {/* Progress bar */}
           <div className="[&_span]:text-white/60 [&_input]:accent-white">
-            <PlaybackProgress />
+            <PlaybackProgress active={visible} />
           </div>
         </div>
       </div>

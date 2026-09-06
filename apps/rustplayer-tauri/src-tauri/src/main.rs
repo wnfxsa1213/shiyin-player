@@ -5,6 +5,7 @@ mod db;
 mod events;
 mod logging;
 mod recommendation_assembly;
+mod scene_assets;
 mod store;
 mod trace_ctx;
 
@@ -22,6 +23,21 @@ fn main() {
     let ctx = tauri::generate_context!();
 
     tauri::Builder::default()
+        .register_asynchronous_uri_scheme_protocol("scene", |context, request, responder| {
+            let assets = context.app_handle().state::<Arc<scene_assets::SceneAssets>>().inner().clone();
+            let filename = request.uri().path().trim_start_matches('/').to_owned();
+            tauri::async_runtime::spawn_blocking(move || {
+                let response = match assets.read_image(&filename) {
+                    Ok(bytes) => tauri::http::Response::builder().status(200)
+                        .header("Content-Type", "image/webp")
+                        .header("Cache-Control", "public, max-age=31536000, immutable")
+                        .body(bytes).unwrap(),
+                    Err(_) => tauri::http::Response::builder().status(404)
+                        .header("Cache-Control", "no-store").body(Vec::new()).unwrap(),
+                };
+                responder.respond(response);
+            });
+        })
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
@@ -45,6 +61,9 @@ fn main() {
             commands::get_radio_batch,
             commands::extract_cover_color,
             commands::client_log,
+            commands::scenes::import_scene_background,
+            commands::scenes::list_scene_backgrounds,
+            commands::scenes::delete_scene_background,
         ])
         .setup(|app| {
             // Resolve app data dir first; logging needs it for file output.
@@ -57,6 +76,8 @@ fn main() {
                 eprintln!("failed to initialize logging: {e}");
                 std::process::exit(1);
             });
+
+            app.manage(Arc::new(scene_assets::SceneAssets::new(&app_data_dir)));
 
             let player = Arc::new(Player::new().unwrap_or_else(|e| {
                 tracing::error!("failed to initialize audio player: {e}");

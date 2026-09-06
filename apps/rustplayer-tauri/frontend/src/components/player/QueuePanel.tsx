@@ -46,7 +46,7 @@ export default function QueuePanel({ isOpen, onClose }: Props) {
       aria-label="播放队列"
       aria-modal="true"
       tabIndex={-1}
-      className="fixed right-0 top-0 bottom-20 w-80 z-40 bg-bg-primary/95 glass border-l border-border-primary flex flex-col animate-slide-in-right overscroll-contain"
+      className="fixed right-0 top-0 bottom-20 w-80 z-40 bg-bg-primary border-l border-border-primary flex flex-col animate-slide-in-right overscroll-contain"
     >      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border-secondary">
         <h2 className="text-sm font-semibold">播放队列 ({queue.length})</h2>

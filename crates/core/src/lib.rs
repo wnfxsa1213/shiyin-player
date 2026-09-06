@@ -8,6 +8,18 @@ use thiserror::Error;
 pub type TrackId = String;
 pub type PlaybackId = u64;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneAsset {
+    pub id: String,
+    pub name: String,
+    pub display_path: String,
+    pub thumbnail_path: String,
+    pub width: u32,
+    pub height: u32,
+    pub byte_size: u64,
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MusicSourceId {
@@ -96,7 +108,7 @@ pub struct PlayerEventEnvelope {
 pub enum PlayerEvent {
     StateChanged { state: PlayerState },
     Progress { position_ms: u64, duration_ms: u64 },
-    Spectrum { magnitudes: Arc<[f32]> },
+    Spectrum { magnitudes: Arc<[f32]>, emitted_at_ms: u64 },
     Error { error: PlayerError },
     Buffering { percent: i32 },
     Ended,

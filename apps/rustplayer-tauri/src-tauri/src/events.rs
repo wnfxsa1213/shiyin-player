@@ -36,7 +36,10 @@ enum PlaybackPayload {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct SpectrumPayload {
+    playback_id: PlaybackId,
+    emitted_at_ms: u64,
     magnitudes: Arc<[f32]>,
 }
 
@@ -88,9 +91,13 @@ pub fn spawn_event_forwarder(app: AppHandle, player: &Arc<Player>) {
                 Ok(envelope) => {
                     // Keep spectrum outside the lifecycle state and preserve its allocation profile.
                     let (channel, result) = match envelope.event {
-                        PlayerEvent::Spectrum { magnitudes } => (
+                        PlayerEvent::Spectrum { magnitudes, emitted_at_ms } => (
                             "player://spectrum",
-                            app.emit("player://spectrum", SpectrumPayload { magnitudes }),
+                            app.emit("player://spectrum", SpectrumPayload {
+                                playback_id: envelope.playback_id,
+                                emitted_at_ms,
+                                magnitudes,
+                            }),
                         ),
                         _ => match playback_payload(envelope) {
                             Some(payload) => {
@@ -126,6 +133,12 @@ fn state_label(state: &PlayerState) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spectrum_payload_carries_attempt_and_capture_time_in_camel_case() {
+        let spectrum = SpectrumPayload { playback_id: 42, emitted_at_ms: 12345, magnitudes: Arc::from([0.0_f32, 0.5]) };
+        assert_eq!(serde_json::to_value(spectrum).unwrap(), serde_json::json!({"playbackId": 42, "emittedAtMs": 12345, "magnitudes": [0.0, 0.5]}));
+    }
 
     #[test]
     fn playback_payload_preserves_id_and_distinguishes_end_from_stop() {

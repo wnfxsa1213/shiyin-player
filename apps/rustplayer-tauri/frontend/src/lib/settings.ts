@@ -1,10 +1,10 @@
 import { load, type Store } from '@tauri-apps/plugin-store';
 
-let store: Store | null = null;
+let store: Promise<Store> | null = null;
 
 async function getStore() {
   if (!store) {
-    store = await load('settings.json');
+    store = load('settings.json').catch(error => { store = null; throw error; });
   }
   return store;
 }

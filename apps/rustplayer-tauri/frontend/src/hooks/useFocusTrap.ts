@@ -8,6 +8,8 @@ export function useFocusTrap(
   onClose?: () => void,
 ) {
   const previousFocus = useRef<HTMLElement | null>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
 
   useEffect(() => {
     if (!isActive || !ref.current) return;
@@ -23,15 +25,16 @@ export function useFocusTrap(
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && onClose) {
+      if (e.defaultPrevented) return;
+      if (e.key === 'Escape' && closeRef.current) {
         e.preventDefault();
-        onClose();
+        closeRef.current();
         return;
       }
 
       if (e.key !== 'Tab' || !ref.current) return;
 
-      const focusableEls = ref.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+      const focusableEls = Array.from(ref.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(element => !element.closest('[inert], [aria-hidden="true"]'));
       if (focusableEls.length === 0) return;
 
       const first = focusableEls[0];
@@ -59,5 +62,5 @@ export function useFocusTrap(
         previousFocus.current.focus();
       }
     };
-  }, [isActive, ref, onClose]);
+  }, [isActive, ref]);
 }

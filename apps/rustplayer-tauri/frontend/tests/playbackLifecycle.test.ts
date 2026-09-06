@@ -39,6 +39,38 @@ function fixture() {
   return { store, engine, record, radio, notify, notifyDiscovery, emit, state, progress, play, tick: (ms: number) => { time += ms; } };
 }
 
+describe('可消费的实际播放事实', () => {
+  it('首次实际 Playing 才给出逻辑身份，暂停、缓冲与重试保持身份', async () => {
+    const f = fixture(); f.store.getState().addToQueue([track('A')]);
+    await f.store.getState().playFromQueue(0);
+    const attempt = f.store.getState().playbackId!;
+    expect(f.store.getState().listening.sessionId).toBeNull();
+    f.state(attempt, 'loading'); expect(f.store.getState().listening.sessionId).toBeNull();
+    f.state(attempt, 'playing'); const session = f.store.getState().listening.sessionId;
+    expect(session).not.toBeNull();
+    f.state(attempt, 'paused'); expect(f.store.getState().listening).toMatchObject({ sessionId: session, state: 'paused' });
+    f.state(attempt, 'playing'); f.emit({ type: 'buffering', playbackId: attempt, percent: 10 });
+    expect(f.store.getState().listening).toMatchObject({ sessionId: session, state: 'buffering' });
+    f.state(attempt, 'playing'); f.emit({ type: 'error', playbackId: attempt, message: 'retry' });
+    const retry = f.store.getState().playbackId!; expect(retry).not.toBe(attempt);
+    f.state(retry, 'playing'); expect(f.store.getState().listening).toMatchObject({ sessionId: session, playbackId: retry, state: 'playing' });
+    const stable = f.store.getState().listening; f.progress(retry, 1000); expect(f.store.getState().listening).toBe(stable);
+  });
+  it('加载意图不冒充实际曲目，单曲循环重开产生新身份，清队列清理事实', async () => {
+    const f = fixture(); f.store.getState().addToQueue([track('A'), track('B')]);
+    const first = await f.play(); const session = f.store.getState().listening.sessionId;
+    await f.store.getState().playFromQueue(1);
+    expect(f.store.getState().currentTrack?.id).toBe('B');
+    expect(f.store.getState().listening.track?.id).toBe('A');
+    const next = f.store.getState().playbackId!; f.state(next, 'playing');
+    const second = f.store.getState().listening.sessionId; expect(second).not.toBe(session);
+    f.state(first, 'playing'); expect(f.store.getState().listening.sessionId).toBe(second);
+    f.store.getState().setPlayMode('repeat-one'); f.emit({ type: 'ended', playbackId: next });
+    f.state(f.store.getState().playbackId!, 'playing'); expect(f.store.getState().listening.sessionId).not.toBe(second);
+    await f.store.getState().clearQueue(); expect(f.store.getState().listening).toEqual({ sessionId: null, playbackId: null, track: null, state: 'idle' });
+  });
+});
+
 describe('请求与后端事件', () => {
   it('快速切歌后忽略旧请求失败和全部旧事件', async () => {
     const f = fixture(), pending = deferred<void>();

@@ -115,7 +115,7 @@ npm run build    # 生产构建
 - 错误处理：Rust 端使用 thiserror 派生错误类型，统一映射为 IpcError（结构化 JSON），前端通过 `sanitizeError()` 转换为用户友好消息
 - 序列化：Rust 使用 serde camelCase 与前端 TypeScript 对齐
 - 日志规范：所有 IPC command 通过 `run_with_trace()` 包装，自动记录 traceId 和执行结果
-- 性能规范：频谱数据通过 `spectrumDataRef`（共享 Float32Array）绕过 Zustand 避免 ~15fps 重渲染；播放进度条使用 RAF 60fps 本地插值；沉浸模式 Canvas 以 75% 分辨率渲染、30fps 帧限
+- 性能规范：频谱通过 `spectrumDataRef` 绕过高频 React 更新；播放进度仅在可见且播放中插值；场景绘制根据可见性、播放事实和自动质量预算调度，规则见视觉场景设计文档
 
 ## AI 使用指引
 
@@ -131,6 +131,7 @@ npm run build    # 生产构建
 - 播放请求、重试、回滚、行为计时与队列推进由 `frontend/src/lib/playbackLifecycle.ts` 统一负责；`playerStore.ts` 装配生产依赖，控件和快捷键调用 store 动作
 - 推荐引擎：`get_smart_recommend` 聚合双音源每日推荐后通过 `recommend` crate 重排序，需要至少 10 条播放事件才启用个性化排序
 - 修改播放请求、后端事件、重试或行为计时时，先读 `docs/design/playback-lifecycle.md`；修改后运行 `TESTING.md` 中的生命周期回归测试
+- 修改视觉场景、背景素材、音乐跟随或轮换时，先读 `docs/design/visual-scenes-v1.md` 的实现边界；验证方式及已测性能范围见 `docs/design/visual-scenes-validation.md`
 - 无限电台：生命周期 module 在队列剩余 <= 2 首时拉取 `getRadioBatch`；清队列会让旧补曲结果失效
 - 路由代码分割：`SettingsView`、`PlaylistDetailView`、`DailyRecommendView` 使用 `React.lazy()` 懒加载
 - QQ 音乐凭据刷新：`QqMusicClient` 在 401 错误时自动尝试 `try_refresh()`，成功后通过 `on_refresh` 回调持久化新凭据

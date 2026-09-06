@@ -473,6 +473,7 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEventEnvelope>) 
                                     eng.playback_id,
                                     PlayerEvent::Spectrum {
                                         magnitudes: Arc::from(eng.spectrum_buf.as_slice()),
+                                        emitted_at_ms: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64,
                                     },
                                 );
                             }

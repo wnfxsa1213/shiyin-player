@@ -182,12 +182,11 @@ src/
 
 ### 沉浸模式
 
-- 入口：点击底栏封面或按 Escape 关闭
-- 布局：左侧封面+曲目信息+可视化切换，右侧虚拟滚动歌词
-- 背景：全屏 Canvas 可视化（25% 不透明度）
-- 控制栏：3 秒无操作自动隐藏（鼠标移动/点击时显示），含 FM 控制按钮和进度条
-- 封面：circle 模式时旋转动画（`animate-cover-rotate`），播放暂停时动画暂停
-- GPU 优化：Canvas 以 75% 分辨率渲染、30fps 帧限、MutationObserver 监听 accent 色变化代替 RAF 内 getComputedStyle
+- 背景由 `components/scenes/SceneSurface.tsx` 渲染，与主界面共享 `sceneStore.current`；旧 `FullscreenVisualizer`、`SpectrumVisualizer` 不在当前可达播放界面运行。
+- 场景库由 `/scenes` 路由懒加载。候选草稿属于页面，应用与素材持久化属于 `lib/scenes/sceneStore.ts`，生产依赖在 `store/sceneStore.ts` 装配。
+- 场景调度只消费生命周期的 `listening` 事实；`listening.sessionId` 在首次实际播放后可用，重试保留、单曲循环重建。频谱仍通过共享数组读取，携带播放尝试和采集时间以丢弃迟到信号。
+- 修改背景导入、轮换、绘制质量或预览状态时，阅读 [场景设计](../../../docs/design/visual-scenes-v1.md) 的实现边界，并运行 [验证记录](../../../docs/design/visual-scenes-validation.md) 中相应检查。
+- 控制栏在鼠标、键盘操作后显示，焦点位于栏内时保持可见；隐藏控件不可聚焦，进度插值停止。主播放栏、队列采用实色背景。
 
 ### 键盘快捷键
 

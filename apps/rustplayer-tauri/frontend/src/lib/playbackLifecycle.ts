@@ -56,6 +56,7 @@ export interface PlayerStore {
   playMode: PlayMode;
   shuffleOrder: number[];
   recentTracks: Track[];
+  listening: { sessionId: number | null; playbackId: number | null; track: Track | null; state: PlayerState };
   togglePlayback(): Promise<void>;
   seek(positionMs: number, expectedPlaybackId?: number | null): Promise<void>;
   setVolume(volume: number): void;
@@ -72,6 +73,7 @@ export interface PlayerStore {
 }
 
 interface ListeningSession {
+  id: number;
   track: Track;
   state: PlayerState;
   positionMs: number;
@@ -112,6 +114,7 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
   const attempts = new Map<number, Attempt>();
   let enginePlaybackId = 0;
   let lastId = 0;
+  let lastSessionId = 0;
   let queueRevision = 0;
   let refill: object | null = null;
   let disposed = false;
@@ -123,6 +126,19 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
   const nextId = () => (lastId = Math.max(lastId + 1, Math.floor(now()) * 1000));
   const error = (prefix: string, cause: unknown) => deps.notify('error', `${prefix}: ${deps.errorMessage(cause)}`);
   const current = (attempt: Attempt) => !disposed && target === attempt && !attempt.terminal;
+
+  function syncListening() {
+    const session = audible?.session;
+    const next = {
+      sessionId: session?.startedAt != null ? session.id : null,
+      playbackId: audible?.id ?? null,
+      track: session?.track ?? null,
+      state: audible?.terminal ? 'stopped' as const : session?.state ?? 'idle' as const,
+    };
+    const previous = store.getState().listening;
+    if (previous.sessionId !== next.sessionId || previous.playbackId !== next.playbackId
+      || previous.track !== next.track || previous.state !== next.state) store.setState({ listening: next });
+  }
 
   function trackTime(session: ListeningSession, state: PlayerState) {
     if (state === 'playing') {
@@ -304,6 +320,7 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
       }
     } catch (cause) {
       await failed(attempt, cause, false);
+      syncListening();
       if (target !== attempt && audible !== attempt) attempts.delete(attempt.id);
     }
   }
@@ -315,6 +332,7 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
     if (!automatic) failureRound = null;
     store.setState({ queueIndex: index });
     await startAttempt({
+      id: ++lastSessionId,
       track, state: 'loading', positionMs: 0, durationMs: track.durationMs,
       startedAt: null, playingSince: null, playedMs: 0, reported: false,
       retries: 0, committed: false, desiredPaused: false, automatic,
@@ -344,6 +362,7 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
     if (event.type === 'error') {
       if (foreground) void failed(attempt, event.message, true);
       else { attempt.terminal = true; finish(session); if (audible === attempt) audible = null; }
+      syncListening();
       return;
     }
     switch (event.type) {
@@ -379,6 +398,7 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
     if (syncPause && !attempt.terminal && session.state !== 'stopped') {
       void applyPaused(attempt, target ?? attempt);
     }
+    syncListening();
   }
 
   async function clearQueue(): Promise<void> {
@@ -395,6 +415,7 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
     failureRound = null;
     store.setState({
       queue: [], queueIndex: -1, shuffleOrder: [], currentTrack: null, playbackId: null,
+      listening: { sessionId: null, playbackId: null, track: null, state: 'idle' },
       state: 'idle', positionMs: 0, durationMs: 0, emittedAtMs: 0, bufferingPercent: 0,
       playWhenReady: false,
     });
@@ -407,6 +428,7 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
     playWhenReady: false,
     emittedAtMs: 0, volume: 1, bufferingPercent: 0,
     queue: [], queueIndex: -1, playMode: 'sequence', shuffleOrder: [], recentTracks: [],
+    listening: { sessionId: null, playbackId: null, track: null, state: 'idle' },
     handlePlaybackEvent,
     playFromQueue: index => select(index),
     playNext: () => select(nextIndex(1)),
