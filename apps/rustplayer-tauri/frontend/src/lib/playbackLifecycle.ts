@@ -115,7 +115,9 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
   let queueRevision = 0;
   let refill: object | null = null;
   let disposed = false;
-  const failedTracks = new Set<string>();
+  let pauseIntent: { throughId: number; paused: boolean } | null = null;
+  // Freeze eligible tracks at the first failure, then remove each exhausted track.
+  let failureRound: Set<string> | null = null;
 
   // Epoch microseconds leave ample room between reloads, while each instance is monotonic.
   const nextId = () => (lastId = Math.max(lastId + 1, Math.floor(now()) * 1000));
@@ -151,7 +153,10 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
   }
 
   function accept(attempt: Attempt) {
-    if (attempt.committed) return;
+    if (attempt.committed) return false;
+    // A control also owns loads that were already in flight when the user issued it.
+    const inheritedIntent = pauseIntent && attempt.id <= pauseIntent.throughId ? pauseIntent : null;
+    if (inheritedIntent) attempt.session.desiredPaused = inheritedIntent.paused;
     if (audible && audible.session !== attempt.session) finish(audible.session);
     enginePlaybackId = attempt.id;
     attempt.committed = true;
@@ -173,6 +178,7 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
       });
     }
     for (const id of attempts.keys()) { if (id < attempt.id) attempts.delete(id); }
+    return inheritedIntent !== null;
   }
 
   function shuffled(length: number): number[] {
@@ -238,6 +244,9 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
     attempt.terminal = true;
     const session = attempt.session;
     if (engineFailure) { accept(attempt); trackTime(session, 'stopped'); }
+    if (session.committed || session.automatic) {
+      failureRound ??= new Set(store.getState().queue.map(keyOf));
+    }
     const kind = cause && typeof cause === 'object' && 'kind' in cause ? cause.kind : undefined;
     const retryable = engineFailure || kind === 'network' || kind === 'rate_limited' || kind === 'internal';
     if (retryable && session.retries < MAX_RETRIES) {
@@ -254,14 +263,14 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
     finish(session);
     if (audible?.session === session) audible = null;
     store.setState({ state: 'stopped', playWhenReady: false, bufferingPercent: 0, emittedAtMs: 0 });
-    failedTracks.add(keyOf(session.track));
+    failureRound?.delete(keyOf(session.track));
     const { queue, queueIndex, playMode, shuffleOrder } = store.getState();
     if (playMode === 'repeat-one' || queue.length <= 1) return;
     const order = playMode === 'shuffle' ? shuffleOrder : queue.map((_, index) => index);
     const offset = order.indexOf(queueIndex);
     for (let step = 1; step <= order.length; step++) {
       const index = order[(offset + step + order.length) % order.length];
-      if (queue[index] && !failedTracks.has(keyOf(queue[index]))) {
+      if (queue[index] && failureRound?.has(keyOf(queue[index]))) {
         await select(index, true);
         return;
       }
@@ -283,7 +292,7 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
       playWhenReady: !session.desiredPaused,
       positionMs: position, durationMs: session.durationMs, emittedAtMs: 0, bufferingPercent: 0,
     });
-    if (session.retries === 0) replenish();
+    if (session.retries === 0 && !failureRound) replenish();
     try {
       await deps.engine.playTrack(session.track, attempt.id, position, paused);
       if (!current(attempt)) return;
@@ -303,7 +312,7 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
     if (disposed) return;
     const track = store.getState().queue[index];
     if (!track) return;
-    if (!automatic) failedTracks.clear();
+    if (!automatic) failureRound = null;
     store.setState({ queueIndex: index });
     await startAttempt({
       track, state: 'loading', positionMs: 0, durationMs: track.durationMs,
@@ -330,7 +339,7 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
     const attempt = attempts.get(event.playbackId);
     if (!attempt || attempt.terminal || event.playbackId < enginePlaybackId) return;
     const session = attempt.session;
-    accept(attempt);
+    const syncPause = accept(attempt);
     const foreground = target === attempt;
     if (event.type === 'error') {
       if (foreground) void failed(attempt, event.message, true);
@@ -351,7 +360,7 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
         if (event.state === 'stopped') finish(session);
         break;
       case 'progress':
-        if (attempt.pendingSeek) return;
+        if (attempt.pendingSeek) break;
         session.positionMs = event.positionMs;
         if (event.durationMs > 0) session.durationMs = event.durationMs;
         if (foreground) store.setState({ positionMs: session.positionMs, durationMs: session.durationMs, emittedAtMs: event.emittedAtMs });
@@ -364,8 +373,11 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
         attempt.terminal = true;
         finish(session);
         if (audible === attempt) audible = null;
-        if (foreground) { failedTracks.clear(); void select(nextIndex(1), true); }
+        if (foreground) { failureRound = null; void select(nextIndex(1), true); }
         break;
+    }
+    if (syncPause && !attempt.terminal && session.state !== 'stopped') {
+      void applyPaused(attempt, target ?? attempt);
     }
   }
 
@@ -379,7 +391,8 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
     target = null;
     audible = null;
     attempts.clear();
-    failedTracks.clear();
+    pauseIntent = null;
+    failureRound = null;
     store.setState({
       queue: [], queueIndex: -1, shuffleOrder: [], currentTrack: null, playbackId: null,
       state: 'idle', positionMs: 0, durationMs: 0, emittedAtMs: 0, bufferingPercent: 0,
@@ -405,6 +418,7 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
       if (!target || target.terminal || get().state === 'stopped') { await select(get().queueIndex); return; }
       const attempt = target;
       attempt.session.desiredPaused = !attempt.session.desiredPaused;
+      pauseIntent = { throughId: lastId, paused: attempt.session.desiredPaused };
       set({ playWhenReady: !attempt.session.desiredPaused });
       const controls: Promise<void>[] = [];
       if (attempt.committed || attempt.enqueued) controls.push(applyPaused(attempt));

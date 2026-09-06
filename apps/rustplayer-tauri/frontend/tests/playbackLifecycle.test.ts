@@ -174,6 +174,35 @@ describe('重试与控制', () => {
     expect(f.engine.setPlaybackPaused).toHaveBeenLastCalledWith(id, false);
   });
 
+  it.each(['before', 'after'])('迟到接管在回滚 %s 到达时仍执行用户的暂停意图', async ordering => {
+    const f = fixture();
+    f.store.getState().addToQueue(['A', 'B', 'C', 'D'].map(track));
+    const oldId = await f.play();
+    await f.store.getState().playFromQueue(1);
+    const middleId = f.store.getState().playbackId!;
+    const pending = deferred<void>();
+    f.engine.playTrack.mockReturnValueOnce(pending.promise);
+    const selection = f.store.getState().playFromQueue(2);
+    await f.store.getState().togglePlayback();
+    f.state(oldId, 'paused');
+    const middleStarts = () => { f.state(middleId, 'loading'); f.state(middleId, 'playing'); };
+    if (ordering === 'before') middleStarts();
+    pending.reject({ kind: 'unauthorized', message: 'C failed' });
+    await selection;
+    if (ordering === 'after') middleStarts();
+
+    expect(f.engine.setPlaybackPaused).toHaveBeenCalledWith(middleId, true);
+    expect(f.store.getState()).toMatchObject({ currentTrack: { id: 'B' }, playbackId: middleId, playWhenReady: false });
+    f.state(middleId, 'paused');
+    await f.store.getState().togglePlayback();
+    expect(f.engine.setPlaybackPaused).toHaveBeenLastCalledWith(middleId, false);
+    await f.store.getState().togglePlayback();
+    // A later explicit song selection starts normally; the earlier pause only owns in-flight loads.
+    const newId = await f.play(3);
+    expect(f.store.getState().playWhenReady).toBe(true);
+    expect(f.engine.setPlaybackPaused).not.toHaveBeenCalledWith(newId, true);
+  });
+
   it('拒绝旧拖动，旧 seek 失败不回滚新歌曲', async () => {
     const f = fixture(); f.store.getState().addToQueue([track('A'), track('B')]); const id = await f.play();
     const seek = deferred<void>(); f.engine.seek.mockReturnValueOnce(seek.promise); const request = f.store.getState().seek(20_000);
@@ -213,6 +242,33 @@ describe('重试与控制', () => {
     f.engine.playTrack.mockRejectedValue({ kind: 'network', message: 'offline' }); f.emit({ type: 'error', playbackId: id, message: 'offline' });
     await vi.waitFor(() => expect(f.store.getState().state).toBe('stopped'));
     expect(f.engine.playTrack).toHaveBeenCalledTimes(9); expect(f.store.getState().currentTrack?.id).toBe('C');
+  });
+
+  it.each(['sequence', 'shuffle'] as const)('%s 模式下迟到补曲不扩大失败轮次，手动播放可恢复补曲', async mode => {
+    const f = fixture(), pendingBatch = deferred<RadioBatchResult>();
+    let batch = 0;
+    f.radio.mockImplementation(async () => ({
+      ...empty(), tracks: [track(`extra-${++batch}`)],
+    })).mockReturnValueOnce(pendingBatch.promise);
+    f.store.getState().addToQueue(['A', 'B', 'C'].map(track));
+    f.store.getState().setPlayMode(mode);
+    const id = await f.play();
+    f.engine.playTrack.mockImplementation(async () => {
+      // Bound the broken implementation so an endless microtask loop cannot hang the suite.
+      if (f.engine.playTrack.mock.calls.length > 18) return new Promise<void>(() => {});
+      throw { kind: 'network', message: 'stream server unavailable' };
+    });
+    f.emit({ type: 'error', playbackId: id, message: 'stream server unavailable' });
+    pendingBatch.resolve({ ...empty(), tracks: [track('late-refill')] });
+    await vi.waitFor(() => expect(f.store.getState().state).toBe('stopped'));
+
+    expect(f.store.getState().queue.map(item => item.id)).toContain('late-refill');
+    expect(f.engine.playTrack.mock.calls.map(([song]) => song.id).sort()).toEqual(['A', 'A', 'A', 'B', 'B', 'B', 'C', 'C', 'C']);
+    expect(f.radio).toHaveBeenCalledTimes(1);
+    f.engine.playTrack.mockResolvedValue(undefined);
+    await f.play(3);
+    expect(f.store.getState().state).toBe('playing');
+    expect(f.radio).toHaveBeenCalledTimes(2);
   });
 });
 

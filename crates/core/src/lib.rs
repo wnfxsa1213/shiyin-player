@@ -75,6 +75,7 @@ pub enum PlayerState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all_fields = "camelCase")]
 pub enum PlayerCommand {
     Load { playback_id: PlaybackId, track: Track, stream: StreamInfo, position_ms: u64, paused: bool },
     SetPaused { playback_id: PlaybackId, paused: bool },
@@ -84,6 +85,7 @@ pub enum PlayerCommand {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PlayerEventEnvelope {
     pub playback_id: PlaybackId,
     pub event: PlayerEvent,
@@ -293,4 +295,23 @@ pub trait MusicSource: Send + Sync {
     }
     fn logout(&self) {}
     fn is_logged_in(&self) -> bool { false }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn playback_command_and_envelope_fields_round_trip_as_camel_case() {
+        let command_json = serde_json::json!({ "Seek": { "playbackId": 42, "positionMs": 0 } });
+        let command: PlayerCommand = serde_json::from_value(command_json.clone()).unwrap();
+        assert!(matches!(command, PlayerCommand::Seek { playback_id: 42, position_ms: 0 }));
+        assert_eq!(serde_json::to_value(command).unwrap(), command_json);
+
+        let envelope_json = serde_json::json!({ "playbackId": 42, "event": { "event": "ended" } });
+        let envelope: PlayerEventEnvelope = serde_json::from_value(envelope_json.clone()).unwrap();
+        assert_eq!(envelope.playback_id, 42);
+        assert!(matches!(envelope.event, PlayerEvent::Ended));
+        assert_eq!(serde_json::to_value(envelope).unwrap(), envelope_json);
+    }
 }

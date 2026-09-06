@@ -249,7 +249,7 @@ fn handle_cmd(
             eng.playback_id = playback_id;
             eng.desired_playing = !paused;
             eng.initializing = true;
-            eng.initial_seek = Some(position_ms);
+            eng.initial_seek = (position_ms > 0).then_some(position_ms);
             eng.buffering_percent = 100;
             let track = Arc::new(track);
             eng.current_track = Some(Arc::clone(&track));
@@ -359,7 +359,8 @@ fn finish_initial_load(
     eng: &mut Engine,
     tx: &broadcast::Sender<PlayerEventEnvelope>,
 ) -> Result<(), PlayerError> {
-    if let Some(position) = eng.initial_seek.take().filter(|position| *position > 0) {
+    // None means no pending seek; an explicit user seek to zero must still run.
+    if let Some(position) = eng.initial_seek.take() {
         seek_pipeline(eng, position)?;
         return Ok(());
     }
@@ -427,15 +428,7 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEventEnvelope>) 
                     } else {
                         log::error!("gstreamer pipeline error: {detail}");
                     }
-                    emit(
-                        tx,
-                        eng.playback_id,
-                        PlayerEvent::Error {
-                            error: PlayerError::Pipeline(detail),
-                        },
-                    );
-                    teardown(eng);
-                    set_state(eng, PlayerState::Stopped, tx);
+                    fail_playback(eng, tx, PlayerError::Pipeline(detail));
                     return;
                 }
                 gst::MessageView::Eos(_) => {
@@ -538,15 +531,7 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEventEnvelope>) 
         if let Some(start) = eng.buffering_since {
             if start.elapsed() >= BUFFERING_TIMEOUT {
                 log::error!("buffering timeout >30s, tearing down pipeline");
-                emit(
-                    tx,
-                    eng.playback_id,
-                    PlayerEvent::Error {
-                        error: PlayerError::Stream("buffering timeout".into()),
-                    },
-                );
-                teardown(eng);
-                set_state(eng, PlayerState::Stopped, tx);
+                fail_playback(eng, tx, PlayerError::Stream("buffering timeout".into()));
                 return;
             }
         }
@@ -560,15 +545,7 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEventEnvelope>) 
         // Immediately handle critical state change failures
         if state_change_result.is_err() {
             log::error!("pipeline state query failed: {:?}", state_change_result);
-            emit(
-                tx,
-                eng.playback_id,
-                PlayerEvent::Error {
-                    error: PlayerError::Pipeline("state query failure".into()),
-                },
-            );
-            teardown(eng);
-            set_state(eng, PlayerState::Stopped, tx);
+            fail_playback(eng, tx, PlayerError::Pipeline("state query failure".into()));
             return;
         }
 
@@ -583,18 +560,11 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEventEnvelope>) 
                     "pipeline state mismatch persisted >100ms: expected Playing, got {:?}",
                     current_state
                 );
-                emit(
+                fail_playback(
+                    eng,
                     tx,
-                    eng.playback_id,
-                    PlayerEvent::Error {
-                        error: PlayerError::Pipeline(format!(
-                            "unexpected state: {:?}",
-                            current_state
-                        )),
-                    },
+                    PlayerError::Pipeline(format!("unexpected state: {:?}", current_state)),
                 );
-                teardown(eng);
-                set_state(eng, PlayerState::Stopped, tx);
                 return;
             }
         } else {
@@ -847,6 +817,100 @@ mod tests {
                     state: PlayerState::Paused { .. }
                 }
             )
+    }
+
+    #[test]
+    fn seek_to_zero_during_initial_restore_overrides_the_resume_position() {
+        gst::init().unwrap();
+        let audio = AudioFixture::new();
+        let (tx, mut events) = broadcast::channel(256);
+        let mut eng = Engine {
+            playback_id: 0,
+            latest_request: Arc::new(AtomicU64::new(1)),
+            volume: 1.0,
+            desired_playing: false,
+            initializing: false,
+            initial_seek: None,
+            seeking: false,
+            buffering_percent: 100,
+            audio_sink: "fakesink",
+            pipeline: None,
+            volume_elem: None,
+            state: PlayerState::Idle,
+            current_track: None,
+            loading_since: None,
+            last_progress_emit: None,
+            state_mismatch_since: None,
+            spectrum_buf: Vec::with_capacity(64),
+            buffering_since: None,
+        };
+        handle_cmd(
+            &mut eng,
+            PlayerCommand::Load {
+                playback_id: 1,
+                track: track(),
+                stream: audio.stream(),
+                position_ms: 1000,
+                paused: true,
+            },
+            &tx,
+        )
+        .unwrap();
+        let pipeline = eng.pipeline.clone().unwrap();
+        let bus = pipeline.bus().unwrap();
+        // Stop at the first real AsyncDone so a user command can arrive while restoration is pending.
+        loop {
+            let message = bus
+                .timed_pop(gst::ClockTime::from_seconds(5))
+                .expect("preroll completes");
+            match message.view() {
+                gst::MessageView::AsyncDone(_) => break,
+                gst::MessageView::Error(error) => panic!("preroll failed: {error:?}"),
+                _ => {}
+            }
+        }
+        finish_initial_load(&mut eng, &tx).unwrap();
+        handle_cmd(
+            &mut eng,
+            PlayerCommand::Seek {
+                playback_id: 1,
+                position_ms: 0,
+            },
+            &tx,
+        )
+        .unwrap();
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while eng.initializing && std::time::Instant::now() < deadline {
+            tick_progress(&mut eng, &tx);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let position = pos_ms(&pipeline);
+        let state = eng.state.clone();
+        teardown(&mut eng);
+        assert!(
+            position < 50,
+            "user requested 0ms but pipeline stopped at {position}ms"
+        );
+        assert!(matches!(state, PlayerState::Paused { position_ms, .. } if position_ms < 50));
+        let mut saw_paused = false;
+        while let Ok(event) = events.try_recv() {
+            assert_eq!(event.playback_id, 1);
+            match event.event {
+                PlayerEvent::StateChanged {
+                    state: PlayerState::Paused { position_ms, .. },
+                } => {
+                    assert!(
+                        position_ms < 50,
+                        "paused event reported an obsolete position"
+                    );
+                    saw_paused = true;
+                }
+                PlayerEvent::Error { error } => panic!("unexpected playback failure: {error}"),
+                _ => {}
+            }
+        }
+        assert!(saw_paused);
     }
 
     #[tokio::test]

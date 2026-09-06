@@ -23,8 +23,9 @@ cargo test --workspace
 npm --prefix apps/rustplayer-tauri/frontend test
 ```
 
-- `frontend/tests/playbackLifecycle.test.ts` 通过生命周期 interface 覆盖请求竞态、引擎接管前后的回滚、重试预算、自然结束、单曲循环、暂停/跳转、行为计时和队列失效。
-- `crates/player/src/lib.rs` 使用本地 WAV 和 GStreamer `fakesink` 验证请求代次、旧控制隔离、暂停加载、断点恢复与真实结束事件，不依赖音源账号或声卡。
+- `frontend/tests/playbackLifecycle.test.ts` 通过生命周期 interface 覆盖请求竞态、引擎接管前后的回滚、重试预算、自然结束、单曲循环、暂停/跳转、行为计时和队列失效；包含迟到接管在失败回滚前后保留暂停，以及顺序/随机模式下迟到补曲不扩大失败轮次、手动播放恢复补曲。
+- `crates/player/src/lib.rs` 使用本地 WAV 和 GStreamer `fakesink` 验证请求代次、旧控制隔离、暂停加载、断点恢复与真实结束事件；通过控制真实管线完成事件的处理顺序，验证恢复期间跳回 0 秒覆盖原始进度，不依赖音源账号或声卡。
+- `crates/core/src/lib.rs` 验证播放命令与事件信封的 camelCase 字段序列化和反序列化。
 - `src-tauri/src/events.rs` 验证前后端事件字段与自然结束/普通停止的区别。
 
 ## 后端测试建议 (Rust)
