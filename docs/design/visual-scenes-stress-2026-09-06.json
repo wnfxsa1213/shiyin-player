@@ -1,0 +1,840 @@
+{
+  "date": "2026-09-06",
+  "productCommit": "71319a19493a58d3d2aa7f1f6e1be432a2d7a806",
+  "hardware": {
+    "cpu": "Intel Core Ultra 9 275HX",
+    "logicalCpus": 24,
+    "ramGiB": 30.773,
+    "gpus": [
+      "Intel Graphics 8086:7d67",
+      "NVIDIA RTX 5070 Laptop 10de:2d58"
+    ],
+    "desktop": "X11 / GNOME",
+    "displayModes": [
+      "2560x1600 @240Hz",
+      "2560x1440 @120Hz"
+    ],
+    "nvidiaDriver": "595.84"
+  },
+  "full": {
+    "outcome": {
+      "kind": "done",
+      "checks": 271,
+      "errors": [],
+      "changes": [
+        {
+          "phase": "main.queue-scroll",
+          "kind": "immersive",
+          "value": true
+        },
+        {
+          "phase": "settled.3",
+          "kind": "immersive",
+          "value": false
+        },
+        {
+          "phase": "library.preview-churn",
+          "kind": "immersive",
+          "value": true
+        },
+        {
+          "phase": "window.hide",
+          "kind": "visible",
+          "value": false
+        },
+        {
+          "phase": "hidden.0",
+          "kind": "visible",
+          "value": true
+        },
+        {
+          "phase": "window.hide",
+          "kind": "visible",
+          "value": false
+        },
+        {
+          "phase": "hidden.1",
+          "kind": "visible",
+          "value": true
+        },
+        {
+          "phase": "window.hide",
+          "kind": "visible",
+          "value": false
+        },
+        {
+          "phase": "hidden.2",
+          "kind": "visible",
+          "value": true
+        }
+      ],
+      "graphics": {
+        "vendor": "Apple Inc.",
+        "renderer": "Apple GPU",
+        "version": "WebGL 1.0"
+      },
+      "observedSeconds": 398.093
+    },
+    "results": [
+      {
+        "name": "idle.initial",
+        "seconds": 10.001,
+        "viewport": [
+          1200,
+          800
+        ],
+        "rafP95Ms": null,
+        "rafP99Ms": null,
+        "rafMaxMs": null,
+        "drawFps": 0,
+        "drawCallbackP95Ms": null,
+        "interactionP95Ms": null,
+        "quality": {
+          "none": 10
+        },
+        "focusedRatio": 1.0,
+        "signalFreshRatio": 0.0,
+        "cpuOneCoreMeanPercent": 11.886,
+        "pssMeanMiB": 210.287
+      },
+      {
+        "name": "images.import",
+        "seconds": 0.698,
+        "viewport": [
+          1200,
+          800
+        ],
+        "rafP95Ms": 18,
+        "rafP99Ms": 18,
+        "rafMaxMs": 18,
+        "drawFps": 0,
+        "drawCallbackP95Ms": null,
+        "interactionP95Ms": null,
+        "quality": {
+          "none": 1
+        },
+        "focusedRatio": 0.0,
+        "signalFreshRatio": 0.0,
+        "cpuOneCoreMeanPercent": null,
+        "pssMeanMiB": null
+      },
+      {
+        "name": "main.queue-scroll",
+        "seconds": 18.033,
+        "viewport": [
+          1200,
+          800
+        ],
+        "rafP95Ms": 19,
+        "rafP99Ms": 27,
+        "rafMaxMs": 35,
+        "drawFps": 20.684,
+        "drawCallbackP95Ms": 1.0,
+        "interactionP95Ms": null,
+        "quality": {
+          "1": 15,
+          "2": 2
+        },
+        "focusedRatio": 0.0,
+        "signalFreshRatio": 1.0,
+        "cpuOneCoreMeanPercent": 77.902,
+        "pssMeanMiB": 256.452
+      },
+      {
+        "name": "immersive.star",
+        "seconds": 8.149,
+        "viewport": [
+          1920,
+          1080
+        ],
+        "rafP95Ms": 34,
+        "rafP99Ms": 35,
+        "rafMaxMs": 39,
+        "drawFps": 20.371,
+        "drawCallbackP95Ms": 1.0,
+        "interactionP95Ms": 3,
+        "quality": {
+          "0": 8
+        },
+        "focusedRatio": 0.0,
+        "signalFreshRatio": 1.0,
+        "cpuOneCoreMeanPercent": 92.008,
+        "pssMeanMiB": 287.419
+      },
+      {
+        "name": "immersive.rain",
+        "seconds": 8.244,
+        "viewport": [
+          1920,
+          1080
+        ],
+        "rafP95Ms": 34,
+        "rafP99Ms": 37,
+        "rafMaxMs": 41,
+        "drawFps": 20.985,
+        "drawCallbackP95Ms": 1,
+        "interactionP95Ms": 4,
+        "quality": {
+          "0": 9
+        },
+        "focusedRatio": 0.0,
+        "signalFreshRatio": 1.0,
+        "cpuOneCoreMeanPercent": 92.432,
+        "pssMeanMiB": 288.586
+      },
+      {
+        "name": "immersive.snow",
+        "seconds": 8.157,
+        "viewport": [
+          1920,
+          1080
+        ],
+        "rafP95Ms": 34,
+        "rafP99Ms": 37,
+        "rafMaxMs": 46,
+        "drawFps": 20.473,
+        "drawCallbackP95Ms": 1,
+        "interactionP95Ms": 4,
+        "quality": {
+          "0": 9
+        },
+        "focusedRatio": 0.0,
+        "signalFreshRatio": 1.0,
+        "cpuOneCoreMeanPercent": 90.851,
+        "pssMeanMiB": 285.862
+      },
+      {
+        "name": "immersive.firefly",
+        "seconds": 8.183,
+        "viewport": [
+          1920,
+          1080
+        ],
+        "rafP95Ms": 35,
+        "rafP99Ms": 37,
+        "rafMaxMs": 48,
+        "drawFps": 20.53,
+        "drawCallbackP95Ms": 1.0,
+        "interactionP95Ms": 4,
+        "quality": {
+          "0": 8
+        },
+        "focusedRatio": 0.0,
+        "signalFreshRatio": 1.0,
+        "cpuOneCoreMeanPercent": 92.856,
+        "pssMeanMiB": 290.869
+      },
+      {
+        "name": "immersive.meteor",
+        "seconds": 8.218,
+        "viewport": [
+          1920,
+          1080
+        ],
+        "rafP95Ms": 36,
+        "rafP99Ms": 44,
+        "rafMaxMs": 51,
+        "drawFps": 20.443,
+        "drawCallbackP95Ms": 1,
+        "interactionP95Ms": 4,
+        "quality": {
+          "0": 8
+        },
+        "focusedRatio": 0.125,
+        "signalFreshRatio": 1.0,
+        "cpuOneCoreMeanPercent": 92.928,
+        "pssMeanMiB": 285.161
+      },
+      {
+        "name": "immersive.bubble",
+        "seconds": 8.227,
+        "viewport": [
+          1920,
+          1080
+        ],
+        "rafP95Ms": 37,
+        "rafP99Ms": 42,
+        "rafMaxMs": 48,
+        "drawFps": 20.421,
+        "drawCallbackP95Ms": 1.0,
+        "interactionP95Ms": 4,
+        "quality": {
+          "0": 8
+        },
+        "focusedRatio": 0.0,
+        "signalFreshRatio": 1.0,
+        "cpuOneCoreMeanPercent": 95.668,
+        "pssMeanMiB": 275.863
+      },
+      {
+        "name": "immersive.petal",
+        "seconds": 8.21,
+        "viewport": [
+          1920,
+          1080
+        ],
+        "rafP95Ms": 35,
+        "rafP99Ms": 41,
+        "rafMaxMs": 56,
+        "drawFps": 21.559,
+        "drawCallbackP95Ms": 1,
+        "interactionP95Ms": 3.0,
+        "quality": {
+          "0": 8
+        },
+        "focusedRatio": 0.0,
+        "signalFreshRatio": 1.0,
+        "cpuOneCoreMeanPercent": 94.674,
+        "pssMeanMiB": 275.765
+      },
+      {
+        "name": "immersive.pulse",
+        "seconds": 8.23,
+        "viewport": [
+          1920,
+          1080
+        ],
+        "rafP95Ms": 36,
+        "rafP99Ms": 40,
+        "rafMaxMs": 42,
+        "drawFps": 21.628,
+        "drawCallbackP95Ms": 1,
+        "interactionP95Ms": 3.0,
+        "quality": {
+          "0": 8
+        },
+        "focusedRatio": 0.0,
+        "signalFreshRatio": 1.0,
+        "cpuOneCoreMeanPercent": 96.04,
+        "pssMeanMiB": 286.118
+      },
+      {
+        "name": "immersive.large-image",
+        "seconds": 12.028,
+        "viewport": [
+          2560,
+          1440
+        ],
+        "rafP95Ms": 56,
+        "rafP99Ms": 65,
+        "rafMaxMs": 75,
+        "drawFps": 20.037,
+        "drawCallbackP95Ms": 1.0,
+        "interactionP95Ms": null,
+        "quality": {
+          "0": 12
+        },
+        "focusedRatio": 0.0,
+        "signalFreshRatio": 1.0,
+        "cpuOneCoreMeanPercent": 108.135,
+        "pssMeanMiB": 319.36
+      },
+      {
+        "name": "switches.1",
+        "seconds": 21.783,
+        "viewport": [
+          2560,
+          1440
+        ],
+        "rafP95Ms": 65,
+        "rafP99Ms": 71,
+        "rafMaxMs": 78,
+        "drawFps": 26.167,
+        "drawCallbackP95Ms": 1.0,
+        "interactionP95Ms": null,
+        "quality": {
+          "1": 21
+        },
+        "focusedRatio": 0.0,
+        "signalFreshRatio": 1.0,
+        "cpuOneCoreMeanPercent": 107.156,
+        "pssMeanMiB": 364.845
+      },
+      {
+        "name": "settled.1",
+        "seconds": 10.0,
+        "viewport": [
+          2560,
+          1440
+        ],
+        "rafP95Ms": null,
+        "rafP99Ms": null,
+        "rafMaxMs": null,
+        "drawFps": 0,
+        "drawCallbackP95Ms": null,
+        "interactionP95Ms": null,
+        "quality": {
+          "none": 10
+        },
+        "focusedRatio": 0.0,
+        "signalFreshRatio": 0.0,
+        "cpuOneCoreMeanPercent": 11.839,
+        "pssMeanMiB": 353.769
+      },
+      {
+        "name": "switches.2",
+        "seconds": 21.423,
+        "viewport": [
+          2560,
+          1440
+        ],
+        "rafP95Ms": 64,
+        "rafP99Ms": 69,
+        "rafMaxMs": 72,
+        "drawFps": 26.7,
+        "drawCallbackP95Ms": 1.0,
+        "interactionP95Ms": null,
+        "quality": {
+          "1": 21
+        },
+        "focusedRatio": 0.0,
+        "signalFreshRatio": 1.0,
+        "cpuOneCoreMeanPercent": 108.555,
+        "pssMeanMiB": 363.339
+      },
+      {
+        "name": "settled.2",
+        "seconds": 10.0,
+        "viewport": [
+          2560,
+          1440
+        ],
+        "rafP95Ms": null,
+        "rafP99Ms": null,
+        "rafMaxMs": null,
+        "drawFps": 0,
+        "drawCallbackP95Ms": null,
+        "interactionP95Ms": null,
+        "quality": {
+          "none": 10
+        },
+        "focusedRatio": 0.0,
+        "signalFreshRatio": 0.0,
+        "cpuOneCoreMeanPercent": 10.004,
+        "pssMeanMiB": 352.888
+      },
+      {
+        "name": "switches.3",
+        "seconds": 21.548,
+        "viewport": [
+          2560,
+          1440
+        ],
+        "rafP95Ms": 63,
+        "rafP99Ms": 67,
+        "rafMaxMs": 69,
+        "drawFps": 26.87,
+        "drawCallbackP95Ms": 1.0,
+        "interactionP95Ms": null,
+        "quality": {
+          "1": 21
+        },
+        "focusedRatio": 0.0,
+        "signalFreshRatio": 1.0,
+        "cpuOneCoreMeanPercent": 110.336,
+        "pssMeanMiB": 366.357
+      },
+      {
+        "name": "settled.3",
+        "seconds": 10.0,
+        "viewport": [
+          2560,
+          1440
+        ],
+        "rafP95Ms": null,
+        "rafP99Ms": null,
+        "rafMaxMs": null,
+        "drawFps": 0,
+        "drawCallbackP95Ms": null,
+        "interactionP95Ms": null,
+        "quality": {
+          "none": 10
+        },
+        "focusedRatio": 0.0,
+        "signalFreshRatio": 0.0,
+        "cpuOneCoreMeanPercent": 16.173,
+        "pssMeanMiB": 353.44
+      },
+      {
+        "name": "library.preview-churn",
+        "seconds": 8.385,
+        "viewport": [
+          1200,
+          800
+        ],
+        "rafP95Ms": 19,
+        "rafP99Ms": 22,
+        "rafMaxMs": 37,
+        "drawFps": 49.851,
+        "drawCallbackP95Ms": 1,
+        "interactionP95Ms": null,
+        "quality": {
+          "1": 8
+        },
+        "focusedRatio": 0.0,
+        "signalFreshRatio": 0.0,
+        "cpuOneCoreMeanPercent": 67.765,
+        "pssMeanMiB": 381.72
+      },
+      {
+        "name": "hidden.0",
+        "seconds": 1.5,
+        "viewport": [
+          1200,
+          800
+        ],
+        "rafP95Ms": null,
+        "rafP99Ms": null,
+        "rafMaxMs": null,
+        "drawFps": 0,
+        "drawCallbackP95Ms": null,
+        "interactionP95Ms": null,
+        "quality": {
+          "none": 1
+        },
+        "focusedRatio": 0.0,
+        "signalFreshRatio": 0.0,
+        "cpuOneCoreMeanPercent": 5.936,
+        "pssMeanMiB": 389.772
+      },
+      {
+        "name": "hidden.1",
+        "seconds": 1.5,
+        "viewport": [
+          1200,
+          800
+        ],
+        "rafP95Ms": null,
+        "rafP99Ms": null,
+        "rafMaxMs": null,
+        "drawFps": 0,
+        "drawCallbackP95Ms": null,
+        "interactionP95Ms": null,
+        "quality": {},
+        "focusedRatio": null,
+        "signalFreshRatio": null,
+        "cpuOneCoreMeanPercent": 1.068,
+        "pssMeanMiB": 381.757
+      },
+      {
+        "name": "hidden.2",
+        "seconds": 1.5,
+        "viewport": [
+          1200,
+          800
+        ],
+        "rafP95Ms": null,
+        "rafP99Ms": null,
+        "rafMaxMs": null,
+        "drawFps": 0,
+        "drawCallbackP95Ms": null,
+        "interactionP95Ms": null,
+        "quality": {
+          "none": 1
+        },
+        "focusedRatio": 0.0,
+        "signalFreshRatio": 0.0,
+        "cpuOneCoreMeanPercent": 28.88,
+        "pssMeanMiB": 383.12
+      },
+      {
+        "name": "idle.final",
+        "seconds": 15.001,
+        "viewport": [
+          1200,
+          800
+        ],
+        "rafP95Ms": null,
+        "rafP99Ms": null,
+        "rafMaxMs": null,
+        "drawFps": 0,
+        "drawCallbackP95Ms": null,
+        "interactionP95Ms": null,
+        "quality": {
+          "none": 15
+        },
+        "focusedRatio": 0.133,
+        "signalFreshRatio": 0.0,
+        "cpuOneCoreMeanPercent": 11.796,
+        "pssMeanMiB": 382.384
+      }
+    ]
+  },
+  "foregroundQuick": {
+    "outcome": {
+      "kind": "done",
+      "checks": 23,
+      "errors": [],
+      "changes": [
+        {
+          "phase": "main.queue-scroll",
+          "kind": "immersive",
+          "value": true
+        },
+        {
+          "phase": "settled.1",
+          "kind": "immersive",
+          "value": false
+        },
+        {
+          "phase": "library.preview-churn",
+          "kind": "immersive",
+          "value": true
+        },
+        {
+          "phase": "window.hide",
+          "kind": "visible",
+          "value": false
+        },
+        {
+          "phase": "hidden.0",
+          "kind": "visible",
+          "value": true
+        }
+      ],
+      "graphics": {
+        "vendor": "Apple Inc.",
+        "renderer": "Apple GPU",
+        "version": "WebGL 1.0"
+      },
+      "observedSeconds": 29.01
+    },
+    "results": [
+      {
+        "name": "idle.initial",
+        "seconds": 1.0,
+        "viewport": [
+          1200,
+          800
+        ],
+        "rafP95Ms": null,
+        "rafP99Ms": null,
+        "rafMaxMs": null,
+        "drawFps": 0,
+        "drawCallbackP95Ms": null,
+        "interactionP95Ms": null,
+        "quality": {
+          "none": 1
+        },
+        "focusedRatio": 1.0,
+        "signalFreshRatio": 0.0,
+        "cpuOneCoreMeanPercent": null,
+        "pssMeanMiB": null
+      },
+      {
+        "name": "images.import",
+        "seconds": 0.57,
+        "viewport": [
+          1200,
+          800
+        ],
+        "rafP95Ms": 18,
+        "rafP99Ms": 18,
+        "rafMaxMs": 18,
+        "drawFps": 0,
+        "drawCallbackP95Ms": null,
+        "interactionP95Ms": null,
+        "quality": {
+          "none": 1
+        },
+        "focusedRatio": 1.0,
+        "signalFreshRatio": 0.0,
+        "cpuOneCoreMeanPercent": null,
+        "pssMeanMiB": null
+      },
+      {
+        "name": "main.queue-scroll",
+        "seconds": 1.512,
+        "viewport": [
+          1200,
+          800
+        ],
+        "rafP95Ms": 17,
+        "rafP99Ms": 18,
+        "rafMaxMs": 24,
+        "drawFps": 24.471,
+        "drawCallbackP95Ms": 1,
+        "interactionP95Ms": null,
+        "quality": {
+          "1": 2
+        },
+        "focusedRatio": 1.0,
+        "signalFreshRatio": 1.0,
+        "cpuOneCoreMeanPercent": 88.016,
+        "pssMeanMiB": 238.979
+      },
+      {
+        "name": "immersive.star",
+        "seconds": 1.837,
+        "viewport": [
+          1920,
+          1080
+        ],
+        "rafP95Ms": 34,
+        "rafP99Ms": 36,
+        "rafMaxMs": 36,
+        "drawFps": 32.118,
+        "drawCallbackP95Ms": 1.0,
+        "interactionP95Ms": 3.0,
+        "quality": {
+          "1": 2
+        },
+        "focusedRatio": 1.0,
+        "signalFreshRatio": 1.0,
+        "cpuOneCoreMeanPercent": 95.732,
+        "pssMeanMiB": 262.582
+      },
+      {
+        "name": "immersive.firefly",
+        "seconds": 1.821,
+        "viewport": [
+          1920,
+          1080
+        ],
+        "rafP95Ms": 33,
+        "rafP99Ms": 34,
+        "rafMaxMs": 34,
+        "drawFps": 32.4,
+        "drawCallbackP95Ms": 1.0,
+        "interactionP95Ms": 3,
+        "quality": {
+          "1": 2
+        },
+        "focusedRatio": 1.0,
+        "signalFreshRatio": 1.0,
+        "cpuOneCoreMeanPercent": 102.309,
+        "pssMeanMiB": 267.854
+      },
+      {
+        "name": "immersive.large-image",
+        "seconds": 1.54,
+        "viewport": [
+          2560,
+          1440
+        ],
+        "rafP95Ms": 49,
+        "rafP99Ms": 59,
+        "rafMaxMs": 59,
+        "drawFps": 22.078,
+        "drawCallbackP95Ms": 1.0,
+        "interactionP95Ms": null,
+        "quality": {
+          "1": 1
+        },
+        "focusedRatio": 1.0,
+        "signalFreshRatio": 1.0,
+        "cpuOneCoreMeanPercent": 108.283,
+        "pssMeanMiB": 290.538
+      },
+      {
+        "name": "switches.1",
+        "seconds": 1.088,
+        "viewport": [
+          2560,
+          1440
+        ],
+        "rafP95Ms": 68,
+        "rafP99Ms": 68,
+        "rafMaxMs": 68,
+        "drawFps": 34.007,
+        "drawCallbackP95Ms": 1,
+        "interactionP95Ms": null,
+        "quality": {
+          "1": 1
+        },
+        "focusedRatio": 1.0,
+        "signalFreshRatio": 1.0,
+        "cpuOneCoreMeanPercent": 38.265,
+        "pssMeanMiB": 326.764
+      },
+      {
+        "name": "settled.1",
+        "seconds": 1.0,
+        "viewport": [
+          2560,
+          1440
+        ],
+        "rafP95Ms": null,
+        "rafP99Ms": null,
+        "rafMaxMs": null,
+        "drawFps": 0,
+        "drawCallbackP95Ms": null,
+        "interactionP95Ms": null,
+        "quality": {
+          "none": 1
+        },
+        "focusedRatio": 1.0,
+        "signalFreshRatio": 0.0,
+        "cpuOneCoreMeanPercent": 23.706,
+        "pssMeanMiB": 320.715
+      },
+      {
+        "name": "library.preview-churn",
+        "seconds": 0.996,
+        "viewport": [
+          1200,
+          800
+        ],
+        "rafP95Ms": 18,
+        "rafP99Ms": 18,
+        "rafMaxMs": 18,
+        "drawFps": 58.233,
+        "drawCallbackP95Ms": 1,
+        "interactionP95Ms": null,
+        "quality": {
+          "1": 1
+        },
+        "focusedRatio": 1.0,
+        "signalFreshRatio": 0.0,
+        "cpuOneCoreMeanPercent": null,
+        "pssMeanMiB": null
+      },
+      {
+        "name": "hidden.0",
+        "seconds": 0.7,
+        "viewport": [
+          1200,
+          800
+        ],
+        "rafP95Ms": null,
+        "rafP99Ms": null,
+        "rafMaxMs": null,
+        "drawFps": 0,
+        "drawCallbackP95Ms": null,
+        "interactionP95Ms": null,
+        "quality": {},
+        "focusedRatio": null,
+        "signalFreshRatio": null,
+        "cpuOneCoreMeanPercent": 35.416,
+        "pssMeanMiB": 328.663
+      },
+      {
+        "name": "idle.final",
+        "seconds": 1.0,
+        "viewport": [
+          1200,
+          800
+        ],
+        "rafP95Ms": null,
+        "rafP99Ms": null,
+        "rafMaxMs": null,
+        "drawFps": 0,
+        "drawCallbackP95Ms": null,
+        "interactionP95Ms": null,
+        "quality": {
+          "none": 1
+        },
+        "focusedRatio": 1.0,
+        "signalFreshRatio": 0.0,
+        "cpuOneCoreMeanPercent": 8.022,
+        "pssMeanMiB": 328.94
+      }
+    ]
+  },
+  "notes": [
+    "CPU 100% means one logical CPU.",
+    "Synthetic playback/spectrum/lyrics, real native asset/settings IPC.",
+    "WebGL vendor/renderer strings are not used for hardware identification.",
+    "Most full-run animation samples were unfocused; foregroundQuick records the focused short comparison."
+  ]
+}

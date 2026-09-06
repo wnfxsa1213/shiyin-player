@@ -8,6 +8,8 @@
 
 用户已确认 [视觉场景首版方案](design/visual-scenes-v1.md)，功能已在开发分支实现：预设优先、自适应随机轮换、自动质量调整、明显的强音乐跟随。开发机验证与待实机验收项见 [验证记录](design/visual-scenes-validation.md)。
 
+首版代码已提交为 `71319a1`。[当前电脑的发布构建压力测试](design/visual-scenes-stress-2026-09-06.md) 已完成，重复切换的内存趋势稳定，主要待改进项是高分辨率场景的长帧。
+
 | 事项 | 状态 | 说明 |
 | --- | --- | --- |
 | 推荐聚合 — Recommendation assembly | 已完成 | 已合并并推送至 master |
