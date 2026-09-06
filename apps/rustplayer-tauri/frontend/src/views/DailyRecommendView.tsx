@@ -112,37 +112,42 @@ export default function DailyRecommendView() {
                     部分音源暂不可用，当前来自：{availableSourceNames}
                   </p>
                 )}
-                {personalized.length > 0 && (
-                <div className="flex gap-3 mt-1">
-                  <button
-                    onClick={handlePlayAll}
-                    className="flex items-center gap-2 px-5 py-2 bg-gradient-accent text-white rounded-full
-                      text-sm font-medium hover:shadow-glow transition-shadow cursor-pointer
-                      focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent focus-visible:outline-none"
-                  >
-                    <Play size={16} fill="currentColor" /> 播放全部
-                  </button>
-                  <button
-                    onClick={handleShuffleAll}
-                    className="flex items-center gap-2 px-5 py-2 bg-[var(--bg-secondary)] text-[var(--text-primary)] rounded-full
-                      text-sm hover:bg-[var(--bg-hover)] transition-colors cursor-pointer
-                      focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-                  >
-                    <Shuffle size={16} strokeWidth={1.5} /> 随机播放
-                  </button>
-                  <button
-                    onClick={handleRefresh}
-                    disabled={refreshing}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-[var(--bg-secondary)] text-[var(--text-secondary)] rounded-full
-                      text-sm hover:bg-[var(--bg-hover)] transition-colors cursor-pointer disabled:opacity-50
-                      focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-                    title="刷新推荐"
-                  >
-                    <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-                  </button>
-                </div>
-                )}
               </>
+            )}
+            {(showData || showEmpty) && (
+              <div className="flex gap-3 mt-1">
+                {personalized.length > 0 && (
+                  <>
+                    <button
+                      onClick={handlePlayAll}
+                      className="flex items-center gap-2 px-5 py-2 bg-gradient-accent text-white rounded-full
+                        text-sm font-medium hover:shadow-glow transition-shadow cursor-pointer
+                        focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent focus-visible:outline-none"
+                    >
+                      <Play size={16} fill="currentColor" /> 播放全部
+                    </button>
+                    <button
+                      onClick={handleShuffleAll}
+                      className="flex items-center gap-2 px-5 py-2 bg-[var(--bg-secondary)] text-[var(--text-primary)] rounded-full
+                        text-sm hover:bg-[var(--bg-hover)] transition-colors cursor-pointer
+                        focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+                    >
+                      <Shuffle size={16} strokeWidth={1.5} /> 随机播放
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-[var(--bg-secondary)] text-[var(--text-secondary)] rounded-full
+                    text-sm hover:bg-[var(--bg-hover)] transition-colors cursor-pointer disabled:opacity-50
+                    focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+                  title="刷新推荐"
+                  aria-label="刷新推荐"
+                >
+                  <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+                </button>
+              </div>
             )}
           </div>
         </div>

@@ -172,8 +172,9 @@ pub struct RecommendResult {
 
 /// The availability of a music discovery request after every eligible source responds.
 ///
-/// `Empty` means every responding source had no usable candidate. `Unavailable` means
-/// no eligible source produced a response, so callers can explain the failure directly.
+/// `Empty` means every eligible source responded successfully, with no usable candidate
+/// remaining after filtering. `Unavailable` means there are no eligible sources, or no
+/// usable candidate remains while at least one source failed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiscoveryStatus {

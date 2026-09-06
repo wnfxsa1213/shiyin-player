@@ -2,6 +2,20 @@
 
 本文档记录了代码审查中发现的关键修复点，以及建议的测试覆盖方向。
 
+## 已有的音乐发现回归测试
+
+在项目根目录运行：
+
+```bash
+cargo test -p rustplayer-recommend -p rustplayer-tauri
+npm --prefix apps/rustplayer-tauri/frontend test
+npm --prefix apps/rustplayer-tauri/frontend run build
+```
+
+- 后端测试覆盖正常空结果、部分音源失败且无候选歌曲，以及队列排除后的失败状态。
+- 前端测试位于 `apps/rustplayer-tauri/frontend/tests/musicDiscovery.test.tsx`，使用 Vitest、React Testing Library 和 jsdom，模拟 Tauri IPC，执行真实页面和 Zustand store。
+- 前端回归覆盖空结果与仅有重温经典时的手动刷新、不可用结果的重试入口，以及 FM 播放和自动补曲共享降级通知去重、恢复后再次提示。
+
 ## 后端测试建议 (Rust)
 
 ### 1. QQ 音乐 API 错误处理 (`crates/qqmusic/src/api.rs`)

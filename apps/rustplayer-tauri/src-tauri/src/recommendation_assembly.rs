@@ -252,7 +252,7 @@ fn discovery_status(candidates: &[RecommendationCandidate], sources: &SourceColl
         .filter(|source| candidates.iter().any(|candidate| candidate.track.source == *source))
         .collect();
     let outcome = if candidates.is_empty() {
-        if sources.responded_sources.is_empty() {
+        if sources.responded_sources.is_empty() || !sources.unavailable_sources.is_empty() {
             DiscoveryOutcome::Unavailable
         } else {
             DiscoveryOutcome::Empty
@@ -404,7 +404,7 @@ mod tests {
     }
 
     #[test]
-    fn discovery_is_unavailable_only_without_any_source_response() {
+    fn discovery_without_candidates_requires_successful_source_responses() {
         let unavailable = discovery_status(&[], &SourceCollection::default());
         assert_eq!(unavailable.outcome, DiscoveryOutcome::Unavailable);
 
@@ -467,6 +467,49 @@ mod tests {
             source(MusicSourceId::Netease, Err(SourceError::Network("offline".into())), Ok(Vec::new())),
         ]).smart_recommend().await.expect("unavailable source result is explainable");
         assert_eq!(unavailable.discovery.outcome, DiscoveryOutcome::Unavailable);
+    }
+
+    #[tokio::test]
+    async fn smart_recommendation_reports_failure_when_other_source_is_empty() {
+        let result = test_assembly(vec![
+            source(MusicSourceId::Netease, Ok(Vec::new()), Ok(Vec::new())),
+            source(MusicSourceId::Qqmusic, Err(SourceError::Network("offline".into())), Ok(Vec::new())),
+        ]).smart_recommend().await.expect("partial failure returns an explainable result");
+
+        assert_eq!(result.discovery.outcome, DiscoveryOutcome::Unavailable);
+        assert_eq!(result.discovery.unavailable_sources, vec![MusicSourceId::Qqmusic]);
+        assert!(result.discovery.available_sources.is_empty());
+        assert!(result.personalized.is_empty());
+    }
+
+    #[tokio::test]
+    async fn radio_batch_reports_failure_when_other_source_is_empty_or_excluded() {
+        for tracks in [Vec::new(), vec![track("n1", MusicSourceId::Netease)]] {
+            let result = test_assembly(vec![
+                source(MusicSourceId::Netease, Ok(Vec::new()), Ok(tracks)),
+                source(MusicSourceId::Qqmusic, Ok(Vec::new()), Err(SourceError::Network("offline".into()))),
+            ]).radio_batch(vec!["netease:n1".into()]).await.expect("partial failure returns an explainable result");
+
+            assert_eq!(result.discovery.outcome, DiscoveryOutcome::Unavailable);
+            assert_eq!(result.discovery.unavailable_sources, vec![MusicSourceId::Qqmusic]);
+            assert!(result.discovery.available_sources.is_empty());
+            assert!(result.tracks.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn discovery_is_empty_when_both_sources_respond_without_tracks() {
+        let assembly = test_assembly(vec![
+            source(MusicSourceId::Netease, Ok(Vec::new()), Ok(Vec::new())),
+            source(MusicSourceId::Qqmusic, Ok(Vec::new()), Ok(Vec::new())),
+        ]);
+
+        let daily = assembly.smart_recommend().await.expect("normal empty daily result");
+        let radio = assembly.radio_batch(Vec::new()).await.expect("normal empty radio result");
+        assert_eq!(daily.discovery.outcome, DiscoveryOutcome::Empty);
+        assert_eq!(radio.discovery.outcome, DiscoveryOutcome::Empty);
+        assert!(daily.discovery.unavailable_sources.is_empty());
+        assert!(radio.discovery.unavailable_sources.is_empty());
     }
 
     #[tokio::test]

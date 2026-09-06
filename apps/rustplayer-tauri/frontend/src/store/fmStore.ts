@@ -3,6 +3,7 @@ import { ipc } from '@/lib/ipc';
 import { usePlayerStore, type Track } from '@/store/playerStore';
 import { useToastStore } from '@/store/toastStore';
 import { sanitizeError } from '@/lib/errorMessages';
+import { notifyRadioDiscovery } from '@/lib/radioNotifications';
 
 interface FmStore {
   fmQueue: Track[];
@@ -13,11 +14,6 @@ interface FmStore {
 }
 
 const FM_QUEUE_MIN = 2;
-let reportedDegradedSources = '';
-
-function sourceNames(sources: Array<'netease' | 'qqmusic'>): string {
-  return sources.map((source) => source === 'netease' ? '网易云音乐' : 'QQ音乐').join(' / ');
-}
 
 export const useFmStore = create<FmStore>((set, get) => ({
   fmQueue: [],
@@ -33,15 +29,7 @@ export const useFmStore = create<FmStore>((set, get) => ({
       const excludeKeys = [...new Set(knownTracks.map((track) => `${track.source}:${track.id}`))];
       const { tracks, discovery } = await ipc.getRadioBatch(excludeKeys);
 
-      if (discovery.outcome === 'degraded') {
-        const available = sourceNames(discovery.availableSources);
-        if (available && available !== reportedDegradedSources) {
-          reportedDegradedSources = available;
-          useToastStore.getState().addToast('info', `部分音源暂不可用，当前来自：${available}`);
-        }
-      } else if (discovery.outcome === 'complete') {
-        reportedDegradedSources = '';
-      }
+      notifyRadioDiscovery(discovery);
 
       if (discovery.outcome === 'unavailable') {
         useToastStore.getState().addToast('info', '暂时无法获取 FM 推荐，请稍后重试');
