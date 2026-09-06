@@ -55,11 +55,7 @@ export default function HomeView() {
     }
   };
   const handlePlayRecent = (track: typeof recentTracks[number]) => {
-    const store = usePlayerStore.getState();
-    store.addToQueue([track]);
-    const q = usePlayerStore.getState().queue;
-    const idx = q.findIndex((t) => t.id === track.id && t.source === track.source);
-    if (idx >= 0) store.playFromQueue(idx);
+    void usePlayerStore.getState().playTrack(track);
   };
 
   return (

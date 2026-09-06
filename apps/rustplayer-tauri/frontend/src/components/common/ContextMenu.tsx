@@ -12,56 +12,57 @@ interface Props {
 }
 
 const menuItems = [
-  { label: '播放', icon: Play, action: 'play' },
+  { label: '播放这首', icon: Play, action: 'play' },
   { label: '下一首播放', icon: ListEnd, action: 'insert-next' },
-  { label: '添加到队列', icon: ListPlus, action: 'add-queue' },
+  { label: '加入队列', icon: ListPlus, action: 'add-queue' },
   { label: '复制歌曲名', icon: Copy, action: 'copy' },
 ] as const;
 
 export default function ContextMenu({ x, y, track, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
 
   useEffect(() => {
-    const handle = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent && e.key === 'Escape') { e.preventDefault(); onClose(); return; }
-      if (e instanceof MouseEvent && ref.current && !ref.current.contains(e.target as Node)) onClose();
+    const previous = document.activeElement as HTMLElement | null;
+    const menu = ref.current;
+    const handle = (e: MouseEvent) => {
+      if (menu && !menu.contains(e.target as Node)) closeRef.current();
     };
     document.addEventListener('mousedown', handle);
-    document.addEventListener('keydown', handle);
     // Focus first menu item on mount
     const firstItem = ref.current?.querySelector<HTMLButtonElement>('[role="menuitem"]');
     firstItem?.focus();
     return () => {
       document.removeEventListener('mousedown', handle);
-      document.removeEventListener('keydown', handle);
+      if (previous?.isConnected && (menu?.contains(document.activeElement) || document.activeElement === document.body)) previous.focus();
     };
-  }, [onClose]);
+  }, []);
 
   // Viewport boundary check
   const style: React.CSSProperties = { position: 'fixed', zIndex: 9999 };
-  const menuW = 192, menuH = 176;
-  style.left = x + menuW > window.innerWidth ? x - menuW : x;
-  style.top = y + menuH > window.innerHeight ? y - menuH : y;
+  const menuW = 192, menuH = 184;
+  style.left = Math.max(8, Math.min(x, window.innerWidth - menuW - 8));
+  style.top = Math.max(8, Math.min(y, window.innerHeight - menuH - 8));
 
   const handleAction = (action: string) => {
     const store = usePlayerStore.getState();
     const toast = useToastStore.getState().addToast;
     switch (action) {
       case 'play': {
-        store.addToQueue([track]);
-        const q = usePlayerStore.getState().queue;
-        const idx = q.findIndex((t) => t.id === track.id && t.source === track.source);
-        if (idx >= 0) store.playFromQueue(idx);
+        void store.playTrack(track);
         break;
       }
       case 'insert-next':
-        store.insertNext(track);
-        toast('success', `「${track.name}」将在下一首播放`);
+        if (store.insertNext(track)) toast('success', `「${track.name}」将在下一首播放`);
+        else toast('info', `「${track.name}」已是当前歌曲`);
         break;
-      case 'add-queue':
+      case 'add-queue': {
+        const exists = store.queue.some(item => item.id === track.id && item.source === track.source);
         store.addToQueue([track]);
-        toast('success', `已添加「${track.name}」到队列`);
+        toast(exists ? 'info' : 'success', exists ? `「${track.name}」已在队列中` : `已加入「${track.name}」到队列`);
         break;
+      }
       case 'copy':
         navigator.clipboard.writeText(`${track.name} - ${track.artist}`).then(
           () => toast('info', '已复制到剪贴板'),
@@ -83,11 +84,18 @@ export default function ContextMenu({ x, y, track, onClose }: Props) {
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       items[(current - 1 + items.length) % items.length]?.focus();
+    } else if (e.key === 'Home' || e.key === 'End') {
+      e.preventDefault();
+      items[e.key === 'Home' ? 0 : items.length - 1]?.focus();
+    } else if (e.key === 'Escape' || e.key === 'Tab') {
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
     }
   };
 
   return createPortal(
-    <div ref={ref} role="menu" style={style} tabIndex={-1} onKeyDown={handleKeyDown}
+    <div ref={ref} role="menu" aria-label={`${track.name}的歌曲操作`} style={style} tabIndex={-1} onKeyDown={handleKeyDown}
       className="w-48 bg-bg-elevated rounded-xl shadow-xl border border-border-primary py-1 animate-scale-in origin-top-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
       {menuItems.map((item) => (

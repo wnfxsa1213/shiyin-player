@@ -1,5 +1,6 @@
 import PlaybackProgress from '@/components/player/PlaybackProgress';
 import FMControlBar from '@/components/player/FMControlBar';
+import PlaybackFailure from '@/components/player/PlaybackFailure';
 import { X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
@@ -24,6 +25,7 @@ export default function ImmersiveControls({ visible, onClose, onFocusChange }: P
       onFocusCapture={() => onFocusChange(true)}
       onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) onFocusChange(false); }}
     >
+      <div className="immersive-playback-feedback"><PlaybackFailure onAction={() => queueMicrotask(() => ref.current?.querySelector<HTMLButtonElement>('[aria-label="播放"], [aria-label="暂停"]')?.focus())} /></div>
       <div className="bg-black/50 border-t border-white/10 px-8 py-4">
         <div className="mx-auto flex max-w-5xl flex-col gap-3">
           {/* Controls row
@@ -40,7 +42,6 @@ export default function ImmersiveControls({ visible, onClose, onFocusChange }: P
               <X size={20} />
             </button>
           </div>
-
           {/* Progress bar */}
           <div className="[&_span]:text-white/60 [&_input]:accent-white">
             <PlaybackProgress active={visible} />

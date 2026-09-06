@@ -1,168 +1,151 @@
-import { useState, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { usePlayerStore, type PlayMode } from '@/store/playerStore';
-import { useFocusTrap } from '@/hooks/useFocusTrap';
-import { Repeat, Repeat1, Shuffle, X, Trash2 } from 'lucide-react';
+import { LocateFixed, ListMusic, Repeat, Repeat1, Shuffle, X, Trash2, Play } from 'lucide-react';
+import { usePlayerStore, type PlayMode, type Track } from '@/store/playerStore';
 
-interface Props {
-  isOpen: boolean;
-  onClose: () => void;
-}
-
-const modeIcons: { mode: PlayMode; icon: typeof Repeat; label: string }[] = [
+interface Props { isOpen: boolean; onClose(): void }
+const keyOf = (track: Track) => `${track.source}:${track.id}`;
+const modes: { mode: PlayMode; icon: typeof Repeat; label: string }[] = [
   { mode: 'sequence', icon: Repeat, label: '列表循环' },
   { mode: 'repeat-one', icon: Repeat1, label: '单曲循环' },
   { mode: 'shuffle', icon: Shuffle, label: '随机播放' },
 ];
 
 export default function QueuePanel({ isOpen, onClose }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const queue = usePlayerStore((s) => s.queue);
-  const queueIndex = usePlayerStore((s) => s.queueIndex);
-  const playMode = usePlayerStore((s) => s.playMode);
-  const playFromQueue = usePlayerStore((s) => s.playFromQueue);
-  const removeFromQueue = usePlayerStore((s) => s.removeFromQueue);
-  const clearQueue = usePlayerStore((s) => s.clearQueue);
-  const setPlayMode = usePlayerStore((s) => s.setPlayMode);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const clearRef = useRef<HTMLButtonElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const queue = usePlayerStore(s => s.queue);
+  const queueIndex = usePlayerStore(s => s.queueIndex);
+  const playMode = usePlayerStore(s => s.playMode);
+  const nextQueuedKey = usePlayerStore(s => s.nextQueuedKey);
+  const state = usePlayerStore(s => s.state);
+  const ready = usePlayerStore(s => s.playWhenReady);
   const [confirmClear, setConfirmClear] = useState(false);
-
+  const [pendingFocus, setPendingFocus] = useState<string | null>(null);
+  const [notice, setNotice] = useState('');
   const virtualizer = useVirtualizer({
-    count: queue.length,
+    count: queue.length, enabled: isOpen,
     getScrollElement: () => listRef.current,
-    estimateSize: () => 58,
-    overscan: 6,
-    getItemKey: (index) => `${queue[index]?.source}-${queue[index]?.id}-${index}`,
+    estimateSize: () => 64, overscan: 6,
+    getItemKey: index => keyOf(queue[index]),
   });
 
-  useFocusTrap(containerRef, isOpen, onClose);
+  const focusIndex = (index: number) => {
+    const track = queue[Math.max(0, Math.min(queue.length - 1, index))];
+    if (!track) { closeRef.current?.focus(); return; }
+    const target = queue.indexOf(track);
+    setPendingFocus(keyOf(track));
+    virtualizer.scrollToIndex(target, { align: 'auto' });
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    setConfirmClear(false); setNotice('');
+    closeRef.current?.focus();
+    const current = usePlayerStore.getState();
+    if (current.queue[current.queueIndex]) {
+      virtualizer.scrollToIndex(current.queueIndex, { align: 'center' });
+      setPendingFocus(keyOf(current.queue[current.queueIndex]));
+    }
+    return () => { if (previousFocus?.isConnected) previousFocus.focus(); };
+  }, [isOpen, virtualizer]);
+
+  // A requested row may not exist until the virtualizer has processed the scroll.
+  useLayoutEffect(() => {
+    if (!isOpen || !pendingFocus) return;
+    const button = Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>('[data-queue-play]') ?? [])
+      .find(item => item.dataset.queuePlay === pendingFocus);
+    if (button) { button.focus({ preventScroll: true }); setPendingFocus(null); }
+  });
+  useEffect(() => { if (confirmClear) confirmRef.current?.focus(); }, [confirmClear]);
 
   if (!isOpen) return null;
+  const currentLabel = state === 'loading' ? (ready ? '正在加载' : '等待就绪 · 已暂停')
+    : state === 'buffering' ? (ready ? '缓冲中' : '缓冲中 · 已暂停')
+    : state === 'playing' ? (ready ? '正在播放' : '正在暂停')
+    : state === 'paused' ? (ready ? '正在恢复' : '已暂停') : '当前选择 · 已停止';
 
   return (
-    <div
-      ref={containerRef}
-      role="dialog"
-      aria-label="播放队列"
-      aria-modal="true"
-      tabIndex={-1}
-      className="fixed right-0 top-0 bottom-20 w-80 z-40 bg-bg-primary border-l border-border-primary flex flex-col animate-slide-in-right overscroll-contain"
-    >      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border-secondary">
-        <h2 className="text-sm font-semibold">播放队列 ({queue.length})</h2>
-        <div className="flex items-center gap-1">
-          {confirmClear ? (
-            <>
-              <button
-                onClick={() => {
-                  clearQueue();
-                  setConfirmClear(false);
-                }}
-                className="px-2 py-1 rounded text-xs bg-error/20 text-error hover:bg-error/30 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-              >
-                确认
-              </button>
-              <button
-                onClick={() => setConfirmClear(false)}
-                className="px-2 py-1 rounded text-xs text-text-tertiary hover:text-text-primary transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-              >
-                取消
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={() => queue.length > 0 && setConfirmClear(true)}
-              className="p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-              aria-label="清空队列"
-            >
-              <Trash2 size={16} strokeWidth={1.5} />
-            </button>
-          )}
-          <button onClick={onClose} className="p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none" aria-label="关闭">
-            <X size={16} strokeWidth={1.5} />
-          </button>
-        </div>
+    <aside id="playback-queue" role="dialog" aria-label="播放队列" className="queue-panel"
+      onKeyDown={e => {
+        if (e.key === 'Escape') {
+          e.preventDefault(); e.stopPropagation();
+          if (confirmClear) { setConfirmClear(false); clearRef.current?.focus(); }
+          else onClose();
+        }
+      }}>
+      <div className="queue-heading">
+        <div><p className="queue-eyebrow">接下来听</p><h2>播放队列 <span>{queue.length}</span></h2></div>
+        <button ref={closeRef} onClick={onClose} className="player-icon-button" aria-label="关闭播放队列"><X size={19} /></button>
       </div>
-
-      {/* Play mode toggle */}
-      <div className="flex items-center gap-1 px-4 py-2 border-b border-border-secondary">
-        {modeIcons.map(({ mode, icon: Icon, label }) => (
-          <button
-            key={mode}
-            onClick={() => setPlayMode(mode)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-colors duration-200 cursor-pointer ${
-              playMode === mode
-                ? 'bg-accent-subtle text-accent font-medium'
-                : 'text-text-tertiary hover:text-text-primary hover:bg-bg-hover'
-            }`}
-            aria-label={label}
-            title={label}
-          >
-            <Icon size={14} strokeWidth={1.5} />
-            {label}
+      <div className="queue-modes" role="group" aria-label="播放模式">
+        {modes.map(({ mode, icon: Icon, label }) => (
+          <button key={mode} onClick={() => usePlayerStore.getState().setPlayMode(mode)} aria-pressed={playMode === mode} className={playMode === mode ? 'is-active' : ''}>
+            <Icon size={14} />{label}
           </button>
         ))}
       </div>
-      {/* Queue list */}
-      {queue.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center text-text-tertiary text-sm">
-          队列为空
+      <div className="queue-tools">
+        <button className="player-text-button" onClick={() => focusIndex(queueIndex)} disabled={queueIndex < 0}><LocateFixed size={14} />定位当前歌曲</button>
+        <button ref={clearRef} className="player-text-button" onClick={() => setConfirmClear(true)} disabled={!queue.length}><Trash2 size={14} />清空队列</button>
+      </div>
+      {confirmClear && (
+        <div className="queue-confirm">
+          <p>清空 {queue.length} 首歌曲并停止播放？</p>
+          <div className="flex gap-2">
+            <button ref={confirmRef} className="player-text-button" onClick={() => {
+              void usePlayerStore.getState().clearQueue(); setConfirmClear(false); setPendingFocus(null);
+              setNotice('队列已清空，播放已停止'); closeRef.current?.focus();
+            }}>清空并停止</button>
+            <button className="player-text-button" onClick={() => { setConfirmClear(false); clearRef.current?.focus(); }}>取消</button>
+          </div>
         </div>
+      )}
+      {queue.length === 0 ? (
+        <div className="queue-empty"><ListMusic size={32} strokeWidth={1.3} /><h3>让喜欢的歌排好队</h3><p>在歌曲的更多菜单中选择<br />“下一首播放”或“加入队列”</p></div>
       ) : (
-        <div
-          ref={listRef}
-          className="flex-1 overflow-y-auto min-h-0"
-          role="list"
-          aria-label="播放队列列表"
-        >
-          <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
-            {virtualizer.getVirtualItems().map((vItem) => {
-              const track = queue[vItem.index];
-              const isCurrent = vItem.index === queueIndex;
-
+        <div ref={listRef} className="queue-list" role="list" aria-label="播放队列列表"
+          onKeyDown={e => {
+            if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+            const button = (e.target as HTMLElement).closest<HTMLElement>('[data-queue-index]');
+            if (!button) return;
+            e.preventDefault(); e.stopPropagation();
+            const index = Number(button.dataset.queueIndex);
+            focusIndex(e.key === 'Home' ? 0 : e.key === 'End' ? queue.length - 1 : index + (e.key === 'ArrowDown' ? 1 : -1));
+          }}>
+          <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+            {virtualizer.getVirtualItems().map(item => {
+              const track = queue[item.index], isCurrent = item.index === queueIndex;
               return (
-                <div
-                  key={vItem.key}
-                  role="listitem"
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: `translateY(${vItem.start}px)`,
-                  }}
-                >
-                  <div
-                    className={`group flex items-center gap-3 px-4 py-2.5 transition-colors duration-150 ${
-                      isCurrent ? 'bg-accent-subtle' : 'hover:bg-bg-hover'
-                    }`}
-                  >
-                    <span className="w-6 text-xs text-text-tertiary text-center tabular-nums">
-                      {isCurrent ? <span className="text-accent">&#9835;</span> : vItem.index + 1}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => playFromQueue(vItem.index)}
-                      className="flex-1 min-w-0 text-left cursor-pointer bg-transparent border-0 p-0 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none rounded"
-                    >
-                      <div className={`text-sm truncate ${isCurrent ? 'text-accent font-medium' : ''}`} title={track.name}>{track.name}</div>
-                      <div className="text-xs text-text-tertiary truncate" title={track.artist}>{track.artist}</div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => removeFromQueue(vItem.index)}
-                      className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none p-1 rounded text-text-tertiary hover:text-error transition-[opacity,color] cursor-pointer"
-                      aria-label="移除"
-                    >
-                      <X size={14} strokeWidth={1.5} />
-                    </button>
-                  </div>
+                <div key={item.key} role="listitem" aria-posinset={item.index + 1} aria-setsize={queue.length}
+                  className={`queue-row ${isCurrent ? 'is-current' : ''}`} style={{ transform: `translateY(${item.start}px)` }}>
+                  <span className="queue-number" aria-hidden="true">{isCurrent ? <Play size={12} fill="currentColor" /> : item.index + 1}</span>
+                  <button data-queue-play={keyOf(track)} data-queue-index={item.index} className="queue-song"
+                    aria-label={`播放：${track.name}，${track.artist}`} aria-current={isCurrent ? 'true' : undefined}
+                    onClick={() => { void usePlayerStore.getState().playFromQueue(item.index); }}>
+                    <span className="queue-song-title" title={track.name}>{track.name}</span>
+                    <span className="queue-song-detail" title={track.artist}>{isCurrent ? `${currentLabel} · ` : nextQueuedKey === keyOf(track) ? '下一首 · ' : ''}{track.artist}</span>
+                  </button>
+                  <button data-queue-index={item.index} className="player-icon-button queue-remove" aria-label={`移除：${track.name}`}
+                    title={isCurrent ? '移除当前歌曲并播放下一首' : '从队列移除'} onClick={() => {
+                      const following = queue[item.index + 1] ?? queue[item.index - 1];
+                      usePlayerStore.getState().removeFromQueue(item.index);
+                      setNotice(queue.length === 1 ? '队列已清空，播放已停止' : `已移除「${track.name}」${isCurrent ? '，正在加载下一首' : ''}`);
+                      if (following) {
+                        setPendingFocus(keyOf(following));
+                        virtualizer.scrollToIndex(Math.min(item.index, queue.length - 2), { align: 'auto' });
+                      } else { setPendingFocus(null); closeRef.current?.focus(); }
+                    }}><X size={15} /></button>
                 </div>
               );
             })}
           </div>
         </div>
       )}
-    </div>
+      <div className="queue-footnote"><span role="status" aria-live="polite">{notice || '单击播放 · 移除当前歌曲会切换下一首'}</span><span>↑ ↓ 移动焦点 · Enter 播放 · Esc 关闭</span></div>
+    </aside>
   );
 }

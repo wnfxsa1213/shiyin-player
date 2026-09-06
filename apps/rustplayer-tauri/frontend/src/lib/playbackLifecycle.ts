@@ -51,6 +51,9 @@ export interface PlayerStore {
   emittedAtMs: number;
   volume: number;
   bufferingPercent: number;
+  retryCount: number;
+  playbackFailure: { track: Track; message: string } | null;
+  nextQueuedKey: string | null;
   queue: Track[];
   queueIndex: number;
   playMode: PlayMode;
@@ -61,11 +64,15 @@ export interface PlayerStore {
   seek(positionMs: number, expectedPlaybackId?: number | null): Promise<void>;
   setVolume(volume: number): void;
   addToQueue(tracks: Track[]): void;
-  insertNext(track: Track): void;
+  insertNext(track: Track): boolean;
   removeFromQueue(index: number): void;
   clearQueue(): Promise<void>;
   setPlayMode(mode: PlayMode): void;
   playFromQueue(index: number): Promise<void>;
+  playTrack(track: Track): Promise<void>;
+  playAll(tracks: Track[], mode?: 'sequence' | 'shuffle'): Promise<void>;
+  retryPlayback(): Promise<void>;
+  dismissPlaybackFailure(): void;
   playNext(): Promise<void>;
   playPrev(): Promise<void>;
   handlePlaybackEvent(event: PlaybackEvent): void;
@@ -189,6 +196,7 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
         currentTrack: attempt.session.track, playbackId: attempt.id,
         state: attempt.session.state, positionMs: attempt.session.positionMs,
         playWhenReady: !attempt.session.desiredPaused,
+        retryCount: attempt.session.retries,
         durationMs: attempt.session.durationMs, emittedAtMs: 0,
         queueIndex: store.getState().queue.findIndex(track => keyOf(track) === keyOf(attempt.session.track)),
       });
@@ -207,8 +215,13 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
   }
 
   function nextIndex(direction: 1 | -1): number {
-    const { queue, queueIndex, playMode, shuffleOrder } = store.getState();
+    const { queue, queueIndex, playMode, shuffleOrder, nextQueuedKey } = store.getState();
     if (!queue.length) return -1;
+    if (direction === 1 && nextQueuedKey) {
+      const queued = queue.findIndex(track => keyOf(track) === nextQueuedKey);
+      if (queued >= 0) return queued;
+    }
+    if (queueIndex < 0) return playMode === 'shuffle' ? shuffleOrder[0] ?? 0 : direction === 1 ? 0 : queue.length - 1;
     if (playMode === 'repeat-one' && queueIndex >= 0) return queueIndex;
     if (playMode === 'shuffle') {
       const offset = shuffleOrder.indexOf(queueIndex);
@@ -241,6 +254,7 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
         currentTrack: session.track, playbackId: previous.id, state: session.state,
         playWhenReady: !session.desiredPaused,
         positionMs: session.positionMs, durationMs: session.durationMs, emittedAtMs: 0,
+        retryCount: session.retries, bufferingPercent: 0,
         queueIndex: store.getState().queue.findIndex(track => keyOf(track) === keyOf(session.track)),
       });
     } else {
@@ -251,6 +265,7 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
         positionMs: attempt.previous?.session.positionMs ?? 0, durationMs: track?.durationMs ?? 0,
         queueIndex: track ? store.getState().queue.findIndex(item => keyOf(item) === keyOf(track)) : -1,
         emittedAtMs: 0,
+        retryCount: 0, bufferingPercent: 0,
       });
     }
   }
@@ -267,11 +282,10 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
     const retryable = engineFailure || kind === 'network' || kind === 'rate_limited' || kind === 'internal';
     if (retryable && session.retries < MAX_RETRIES) {
       session.retries++;
-      deps.notify('info', `播放中断，正在重试… (${session.retries}/${MAX_RETRIES})`);
       await startAttempt(session);
       return;
     }
-    error('播放失败', cause);
+    store.setState({ playbackFailure: { track: session.track, message: deps.errorMessage(cause) }, retryCount: 0 });
     if (!session.committed && !session.automatic) {
       restorePrevious(attempt);
       return;
@@ -307,6 +321,7 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
       currentTrack: session.track, playbackId: attempt.id, state: 'loading',
       playWhenReady: !session.desiredPaused,
       positionMs: position, durationMs: session.durationMs, emittedAtMs: 0, bufferingPercent: 0,
+      retryCount: session.retries,
     });
     if (session.retries === 0 && !failureRound) replenish();
     try {
@@ -330,7 +345,11 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
     const track = store.getState().queue[index];
     if (!track) return;
     if (!automatic) failureRound = null;
-    store.setState({ queueIndex: index });
+    store.setState(state => ({
+      queueIndex: index,
+      ...(!automatic ? { playbackFailure: null } : {}),
+      ...(state.nextQueuedKey === keyOf(track) ? { nextQueuedKey: null } : {}),
+    }));
     await startAttempt({
       id: ++lastSessionId,
       track, state: 'loading', positionMs: 0, durationMs: track.durationMs,
@@ -418,6 +437,7 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
       listening: { sessionId: null, playbackId: null, track: null, state: 'idle' },
       state: 'idle', positionMs: 0, durationMs: 0, emittedAtMs: 0, bufferingPercent: 0,
       playWhenReady: false,
+      playbackFailure: null, retryCount: 0, nextQueuedKey: null,
     });
     try { await deps.engine.stopPlayback(stopId); }
     catch (cause) { if (!disposed && lastId === stopId) error('停止播放失败', cause); }
@@ -427,16 +447,46 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
     currentTrack: null, playbackId: null, state: 'idle', positionMs: 0, durationMs: 0,
     playWhenReady: false,
     emittedAtMs: 0, volume: 1, bufferingPercent: 0,
+    playbackFailure: null, retryCount: 0, nextQueuedKey: null,
     queue: [], queueIndex: -1, playMode: 'sequence', shuffleOrder: [], recentTracks: [],
     listening: { sessionId: null, playbackId: null, track: null, state: 'idle' },
     handlePlaybackEvent,
-    playFromQueue: index => select(index),
+    playFromQueue: async index => {
+      if (disposed || !get().queue[index]) return;
+      if (index === get().queueIndex && target && !target.terminal && get().state !== 'stopped') {
+        set({ playbackFailure: null });
+        if (!get().playWhenReady) await get().togglePlayback();
+        return;
+      }
+      await select(index);
+    },
+    playTrack: async track => {
+      if (disposed) return;
+      get().addToQueue([track]);
+      await get().playFromQueue(get().queue.findIndex(item => keyOf(item) === keyOf(track)));
+    },
+    playAll: async (tracks, mode = 'sequence') => {
+      if (disposed || !tracks.length) return;
+      // Invalidate synchronously. Awaiting stop here would let an older click replace a newer choice.
+      void clearQueue();
+      get().addToQueue(tracks);
+      get().setPlayMode(mode);
+      await select(mode === 'shuffle' ? get().shuffleOrder[0] : 0);
+    },
+    retryPlayback: async () => {
+      const failure = get().playbackFailure;
+      if (!failure || disposed) return;
+      get().addToQueue([failure.track]);
+      await select(get().queue.findIndex(track => keyOf(track) === keyOf(failure.track)));
+    },
+    dismissPlaybackFailure: () => set({ playbackFailure: null }),
     playNext: () => select(nextIndex(1)),
     playPrev: () => select(nextIndex(-1)),
     clearQueue,
     shutdown: () => { if (!disposed) { disposed = true; void clearQueue(); } },
     togglePlayback: async () => {
-      if (disposed || !get().currentTrack) return;
+      if (disposed) return;
+      if (!get().currentTrack) { await select(0); return; }
       if (!target || target.terminal || get().state === 'stopped') { await select(get().queueIndex); return; }
       const attempt = target;
       attempt.session.desiredPaused = !attempt.session.desiredPaused;
@@ -489,18 +539,30 @@ export function createPlaybackLifecycle(deps: Dependencies): UseBoundStore<Store
         : state.shuffleOrder;
       return { queue, shuffleOrder };
     }),
-    insertNext: track => set(state => {
-      const queue = [...state.queue];
-      queue.splice(state.queueIndex >= 0 ? state.queueIndex + 1 : queue.length, 0, track);
-      return { queue, shuffleOrder: state.playMode === 'shuffle' ? shuffled(queue.length) : [] };
-    }),
+    insertNext: track => {
+      if (disposed) return false;
+      const state = get();
+      const currentTrack = state.queue[state.queueIndex];
+      if (currentTrack && keyOf(currentTrack) === keyOf(track)) return false;
+      const queue = state.queue.filter(item => keyOf(item) !== keyOf(track));
+      const queueIndex = currentTrack ? queue.findIndex(item => keyOf(item) === keyOf(currentTrack)) : -1;
+      queue.splice(queueIndex + 1, 0, track);
+      const indices = new Map(queue.map((item, index) => [keyOf(item), index]));
+      const order = state.shuffleOrder.map(index => state.queue[index]).filter(item => item && keyOf(item) !== keyOf(track));
+      const offset = currentTrack ? order.findIndex(item => keyOf(item) === keyOf(currentTrack)) + 1 : 0;
+      order.splice(offset, 0, track);
+      set({ queue, queueIndex, nextQueuedKey: keyOf(track), shuffleOrder: state.playMode === 'shuffle' ? order.map(item => indices.get(keyOf(item))!) : [] });
+      return true;
+    },
     removeFromQueue: index => {
       const state = get();
       if (index < 0 || index >= state.queue.length) return;
       if (state.queue.length === 1) { void clearQueue(); return; }
       const queue = state.queue.filter((_, item) => item !== index);
       const queueIndex = index < state.queueIndex ? state.queueIndex - 1 : state.queueIndex;
-      set({ queue, queueIndex, shuffleOrder: state.playMode === 'shuffle' ? shuffled(queue.length) : [] });
+      set({ queue, queueIndex, shuffleOrder: state.playMode === 'shuffle' ? shuffled(queue.length) : [],
+        ...(state.nextQueuedKey === keyOf(state.queue[index]) ? { nextQueuedKey: null } : {}),
+      });
       if (index === state.queueIndex) void select(index % queue.length);
     },
     setPlayMode: mode => set(state => ({ playMode: mode, shuffleOrder: mode === 'shuffle' ? shuffled(state.queue.length) : [] })),

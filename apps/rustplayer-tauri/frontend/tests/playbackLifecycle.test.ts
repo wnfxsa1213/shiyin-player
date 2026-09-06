@@ -305,6 +305,106 @@ describe('重试与控制', () => {
 });
 
 describe('行为与队列', () => {
+  it('播放单曲保留队列、去重，当前歌曲恢复暂停而不重新加载', async () => {
+    const f = fixture(); f.store.getState().addToQueue(['A', 'B'].map(track));
+    const id = await f.play();
+    await f.store.getState().playTrack(track('A'));
+    expect(f.engine.playTrack).toHaveBeenCalledTimes(1);
+    await f.store.getState().togglePlayback(); f.state(id, 'paused');
+    await f.store.getState().playTrack(track('A'));
+    expect(f.engine.setPlaybackPaused).toHaveBeenLastCalledWith(id, false);
+    expect(f.engine.playTrack).toHaveBeenCalledTimes(1);
+    await f.store.getState().playTrack(track('C'));
+    expect(f.store.getState().queue.map(item => item.id)).toEqual(['A', 'B', 'C']);
+    await f.store.getState().playTrack(track('B'));
+    expect(f.store.getState().queue.map(item => item.id)).toEqual(['A', 'B', 'C']);
+    expect(f.store.getState().currentTrack?.id).toBe('B');
+  });
+
+  it('播放全部立即替换队列，迟到停止结果不覆盖后一次选择', async () => {
+    const f = fixture(), stop = deferred<void>();
+    f.store.getState().addToQueue([track('old')]); await f.play();
+    f.engine.stopPlayback.mockReturnValueOnce(stop.promise);
+    f.store.getState().setPlayMode('repeat-one');
+    const first = f.store.getState().playAll(['A', 'B', 'A'].map(track));
+    expect(f.store.getState()).toMatchObject({ playMode: 'sequence', currentTrack: { id: 'A' } });
+    expect(f.store.getState().queue.map(item => item.id)).toEqual(['A', 'B']);
+    await f.store.getState().playAll(['C', 'D'].map(track), 'shuffle');
+    const selected = f.store.getState().playbackId;
+    stop.resolve(); await first;
+    expect(f.store.getState()).toMatchObject({ playMode: 'shuffle', playbackId: selected });
+    expect(f.store.getState().queue.map(item => item.id)).toEqual(['C', 'D']);
+    await f.store.getState().playAll([]);
+    expect(f.store.getState().playbackId).toBe(selected);
+  });
+
+  it.each(['sequence', 'shuffle', 'repeat-one'] as const)('%s 中指定下一首优先一次，移动已有项不重复也不改变当前曲目', async mode => {
+    const f = fixture(); f.store.getState().addToQueue(['A', 'B', 'C', 'D'].map(track));
+    f.store.getState().setPlayMode(mode); const id = await f.play(2);
+    expect(f.store.getState().insertNext(track('A'))).toBe(true);
+    expect(f.store.getState().queue.map(item => item.id)).toEqual(['B', 'C', 'A', 'D']);
+    expect(f.store.getState()).toMatchObject({ queueIndex: 1, currentTrack: { id: 'C' } });
+    f.emit({ type: 'ended', playbackId: id });
+    expect(f.store.getState()).toMatchObject({ currentTrack: { id: 'A' }, nextQueuedKey: null, playMode: mode });
+    const next = f.store.getState().playbackId!; f.state(next, 'playing');
+    f.emit({ type: 'ended', playbackId: next });
+    expect(f.store.getState().currentTrack?.id).toBe(mode === 'repeat-one' ? 'A' : 'D');
+  });
+
+  it('空队列可以先安排下一首再按播放，删除指定项不会留下下一首指针', async () => {
+    const f = fixture();
+    f.store.getState().insertNext(track('A'));
+    await f.store.getState().togglePlayback();
+    expect(f.store.getState()).toMatchObject({ currentTrack: { id: 'A' }, nextQueuedKey: null });
+    expect(f.store.getState().insertNext(track('A'))).toBe(false);
+    f.store.getState().insertNext(track('B'));
+    f.store.getState().removeFromQueue(1);
+    expect(f.store.getState().nextQueuedKey).toBeNull();
+  });
+
+  it('首次加载失败保留恢复入口，重试原歌曲后清除失败事实', async () => {
+    const f = fixture(); f.engine.playTrack.mockRejectedValueOnce({ kind: 'unauthorized', message: '请登录' });
+    await f.store.getState().playTrack(track('A'));
+    expect(f.store.getState()).toMatchObject({ currentTrack: null, playbackFailure: { track: { id: 'A' }, message: '请登录' } });
+    await f.store.getState().retryPlayback();
+    expect(f.store.getState()).toMatchObject({ currentTrack: { id: 'A' }, playbackFailure: null, retryCount: 0 });
+    expect(f.engine.playTrack).toHaveBeenCalledTimes(2);
+    expect(f.store.getState().queue).toHaveLength(1);
+  });
+
+  it('同一首的新加载失败回滚后，明确重试仍会创建新尝试', async () => {
+    const f = fixture(); f.store.getState().addToQueue([track('A')]);
+    const previous = await f.play();
+    f.engine.playTrack.mockRejectedValueOnce({ kind: 'not_found', message: '暂不可用' });
+    await f.store.getState().playNext();
+    expect(f.store.getState()).toMatchObject({ playbackId: previous, playbackFailure: { track: { id: 'A' } } });
+    await f.store.getState().retryPlayback();
+    expect(f.engine.playTrack).toHaveBeenCalledTimes(3);
+    expect(f.store.getState().playbackId).not.toBe(previous);
+  });
+
+  it('失败回滚后仍指向失败歌曲，自动重试耗尽后可手动开始新一轮', async () => {
+    const f = fixture(); f.store.getState().addToQueue(['A', 'B'].map(track)); await f.play();
+    f.engine.playTrack.mockRejectedValueOnce({ kind: 'not_found', message: 'B 不可用' });
+    await f.store.getState().playTrack(track('B'));
+    expect(f.store.getState()).toMatchObject({ currentTrack: { id: 'A' }, playbackFailure: { track: { id: 'B' } } });
+    f.store.getState().setPlayMode('repeat-one');
+    await f.store.getState().retryPlayback();
+    f.state(f.store.getState().playbackId!, 'playing');
+    for (let attempt = 0; attempt < 3; attempt++) {
+      f.emit({ type: 'error', playbackId: f.store.getState().playbackId!, message: 'offline' });
+      if (attempt < 2) {
+        expect(f.store.getState().retryCount).toBe(attempt + 1);
+        f.state(f.store.getState().playbackId!, 'playing');
+      }
+    }
+    expect(f.store.getState()).toMatchObject({ state: 'stopped', playbackFailure: { track: { id: 'B' } } });
+    await f.store.getState().retryPlayback();
+    expect(f.store.getState()).toMatchObject({ state: 'loading', retryCount: 0, playbackFailure: null });
+    await f.store.getState().clearQueue();
+    expect(f.store.getState().playbackFailure).toBeNull();
+  });
+
   it('重复 Playing、暂停和缓冲正确计时，关闭只结算一次', async () => {
     const f = fixture(); f.store.getState().addToQueue([track('A')]); const id = await f.play();
     f.tick(2000); f.state(id, 'playing'); f.tick(3000); f.state(id, 'paused'); f.tick(7000); f.state(id, 'playing');

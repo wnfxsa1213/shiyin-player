@@ -1,160 +1,63 @@
-import { useState, useEffect } from 'react';
+import { useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { SkipBack, Play, Pause, SkipForward, Volume2, ListMusic, Sparkles } from 'lucide-react';
 import { usePlayerStore } from '@/store/playerStore';
 import { useUiStore } from '@/store/uiStore';
+import CoverImage from '@/components/common/CoverImage';
 import PlaybackProgress from '@/components/player/PlaybackProgress';
-import { Music, SkipBack, Play, Pause, SkipForward, Music2, Volume2, ListMusic, Sparkles } from 'lucide-react';
+import PlaybackStatus from '@/components/player/PlaybackStatus';
+import PlaybackFailure from '@/components/player/PlaybackFailure';
 
-export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }: { lyricsOpen: boolean, onToggleLyrics: () => void, onToggleQueue: () => void }) {
-  const immersiveOpen = useUiStore((s) => s.immersiveOpen);
-  const currentTrack = usePlayerStore((s) => s.currentTrack);
-  const state = usePlayerStore((s) => s.state);
-  const playWhenReady = usePlayerStore((s) => s.playWhenReady);
-  const volume = usePlayerStore((s) => s.volume);
-  const setVolume = usePlayerStore((s) => s.setVolume);
-  const hasQueue = usePlayerStore((s) => s.queue.length > 0);
-  const [coverFailed, setCoverFailed] = useState(false);
+interface Props {
+  lyricsOpen: boolean;
+  queueOpen: boolean;
+  onToggleLyrics(): void;
+  onToggleQueue(): void;
+}
 
-  // Reset cover error state when track changes
-  useEffect(() => {
-    setCoverFailed(false);
-  }, [currentTrack?.id, currentTrack?.source]);
-
-  const handleVolume = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value);
-    setVolume(val);
-  };
-
-  const isPlaying = state === 'playing';
-
+export default function PlayerBar({ lyricsOpen, queueOpen, onToggleLyrics, onToggleQueue }: Props) {
+  const immersiveOpen = useUiStore(s => s.immersiveOpen);
+  const track = usePlayerStore(s => s.currentTrack);
+  const ready = usePlayerStore(s => s.playWhenReady);
+  const volume = usePlayerStore(s => s.volume);
+  const count = usePlayerStore(s => s.queue.length);
+  const playRef = useRef<HTMLButtonElement>(null);
   return (
-    <footer
-      className="h-20 bg-bg-primary flex-shrink-0 fixed bottom-0 w-full z-50 border-t border-border-primary flex items-center justify-between px-6"
-      style={{ borderLeftWidth: 0, borderRightWidth: 0, borderBottomWidth: 0 }}
-      aria-label="播放控制"
-    >
-      {/* Left: Track Info & Cover */}
-      <div className="relative flex items-center w-1/4 min-w-[180px]">
-        {currentTrack ? (
-          <>
-            <button className="relative z-50 group w-12 h-12 flex-shrink-0 bg-transparent border-0 p-0 cursor-pointer" onClick={onToggleLyrics} aria-label="展开歌词">
-              {!lyricsOpen && (
-                currentTrack.coverUrl && !coverFailed ? (
-                  <img
-                    src={currentTrack.coverUrl}
-                    alt=""
-                    width={48}
-                    height={48}
-                    className={`w-full h-full shadow-sm object-cover ${isPlaying ? 'rounded-full' : 'rounded-lg'}`}
-                    onError={() => setCoverFailed(true)}
-                  />
-                ) : (
-                  <div
-                    className={`w-full h-full bg-bg-secondary flex items-center justify-center ${isPlaying ? 'rounded-full' : 'rounded-lg'}`}
-                  >
-                    <Music size={20} strokeWidth={1.5} className="text-text-tertiary" />
-                  </div>
-                )
-              )}
-              {lyricsOpen && (
-                <div className={`w-full h-full bg-bg-secondary/50 flex items-center justify-center ${isPlaying ? 'rounded-full' : 'rounded-lg'}`}>
-                  <Music2 size={16} className="text-text-tertiary" />
-                </div>
-              )}
-              {!lyricsOpen && (
-                <div className={`absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center ${isPlaying ? 'rounded-full' : 'rounded-lg'}`}>
-                  <Music2 size={16} className="text-white" />
-                </div>
-              )}
-            </button>
-
-            <div className="ml-3 min-w-0 overflow-hidden">
-              <div className="text-sm font-medium truncate" title={currentTrack.name}>{currentTrack.name}</div>
-              <div className="text-xs text-text-secondary truncate" title={currentTrack.artist}>{currentTrack.artist}</div>
-            </div>
-          </>
-        ) : (
-          <span className="text-sm text-text-tertiary">未在播放</span>
-        )}
-      </div>
-
-      {/* Center: Controls & Progress
-          进度条绝对定位到底部，避免双行内容把主控制按钮整体顶偏 */}
-      <div className="relative flex h-full w-1/2 max-w-2xl flex-col items-center justify-center">
-        <div className="relative z-10 flex items-center gap-6">
-          <button
-            onClick={() => hasQueue && usePlayerStore.getState().playPrev()}
-            disabled={!hasQueue}
-            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors duration-200 ${
-              !hasQueue
-                ? 'text-text-tertiary opacity-40 cursor-not-allowed'
-                : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover cursor-pointer'
-            }`}
-            aria-label="上一首"
-          >
-            <SkipBack size={20} strokeWidth={1.5} />
+    <footer className="player-bar" aria-label="播放控制">
+      {!immersiveOpen && <PlaybackFailure onAction={() => playRef.current?.focus()} />}
+      <div className="player-bar-main">
+        <div className="player-track">
+          <button className="player-cover" disabled={!track} onClick={onToggleLyrics} aria-label={lyricsOpen ? '收起播放详情' : '打开播放详情'} aria-expanded={lyricsOpen} title="打开播放详情">
+            <CoverImage src={track?.coverUrl} alt="" className="w-full h-full object-cover" fallbackClassName="w-full h-full bg-bg-secondary flex items-center justify-center" iconSize={22} />
           </button>
-
-          <button
-            onClick={() => currentTrack && usePlayerStore.getState().togglePlayback()}
-            disabled={!currentTrack}
-            className={`w-10 h-10 rounded-full bg-accent text-white flex items-center justify-center transition-[transform,box-shadow,opacity] duration-500 shadow-glow ${
-              !currentTrack
-                ? 'opacity-40 cursor-not-allowed'
-                : 'hover:shadow-glow-strong active:scale-95 cursor-pointer focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent focus-visible:outline-none'
-            }`}
-            style={{ backgroundColor: 'var(--accent)' }}
-            aria-label={playWhenReady ? '暂停' : '播放'}
-          >
-            {playWhenReady ? (
-              <Pause size={16} fill="currentColor" />
-            ) : (
-              <Play size={16} fill="currentColor" className="ml-0.5" />
-            )}
-          </button>
-
-          <button
-            onClick={() => hasQueue && usePlayerStore.getState().playNext()}
-            disabled={!hasQueue}
-            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors duration-200 ${
-              !hasQueue
-                ? 'text-text-tertiary opacity-40 cursor-not-allowed'
-                : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover cursor-pointer'
-            }`}
-            aria-label="下一首"
-          >
-            <SkipForward size={20} strokeWidth={1.5} />
-          </button>
-        </div>
-
-        {/* Progress bar — skip RAF-driven interpolation when immersive overlay covers the bar */}
-        {!immersiveOpen && (
-          <div className="absolute inset-x-0 bottom-1">
-            <PlaybackProgress />
+          <div className="min-w-0">
+            <div className="text-sm font-semibold truncate" title={track?.name}>{track?.name || (count ? '准备好下一段旋律' : '未在播放')}</div>
+            <div className="text-xs text-text-secondary truncate" title={track?.artist}>{track?.artist || (count ? `队列中有 ${count} 首歌曲` : '从搜索或推荐中选择歌曲')}</div>
+            {!immersiveOpen && <PlaybackStatus />}
           </div>
-        )}
-      </div>
-
-      {/* Right: Volume & Queue */}
-      <div className="relative flex items-center justify-end w-1/4 min-w-[180px] gap-3">
-        <Link to="/scenes" className="text-text-secondary hover:text-text-primary p-1 rounded focus-visible:ring-2 focus-visible:ring-accent" aria-label="打开视觉场景"><Sparkles size={18} strokeWidth={1.5} /></Link>
-        <button onClick={onToggleQueue} className="text-text-secondary hover:text-text-primary transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none rounded p-1" aria-label="播放队列">
-          <ListMusic size={20} strokeWidth={1.5} />
-        </button>
-        <Volume2 size={16} strokeWidth={1.5} className="text-text-tertiary flex-shrink-0" aria-hidden="true" />
-        <input
-          type="range"
-          name="volume"
-          min={0}
-          max={1}
-          step={0.01}
-          value={volume}
-          onChange={handleVolume}
-          className="w-24"
-          aria-label="音量"
-          title={`${Math.round(volume * 100)}%`}
-        />
-        <span className="text-xs text-text-tertiary w-8 tabular-nums">{Math.round(volume * 100)}%</span>
+        </div>
+        <div className="player-transport">
+          <div className="flex items-center justify-center gap-5">
+            <button className="player-icon-button" onClick={() => { void usePlayerStore.getState().playPrev(); }} disabled={!count} aria-label="上一首"><SkipBack size={20} /></button>
+            <button ref={playRef} className="player-play-button" onClick={() => { void usePlayerStore.getState().togglePlayback(); }} disabled={!track && !count} aria-label={ready ? '暂停' : '播放'}>
+              {ready ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" className="ml-0.5" />}
+            </button>
+            <button className="player-icon-button" onClick={() => { void usePlayerStore.getState().playNext(); }} disabled={!count} aria-label="下一首"><SkipForward size={20} /></button>
+          </div>
+          {!immersiveOpen && <PlaybackProgress />}
+        </div>
+        <div className="player-tools">
+          <Link to="/scenes" className="player-icon-button" aria-label="打开视觉场景" title="视觉场景"><Sparkles size={18} /></Link>
+          <button onClick={onToggleQueue} className={`player-queue-toggle ${queueOpen ? 'is-active' : ''}`} aria-label={`播放队列，${count} 首`} aria-expanded={queueOpen} aria-controls="playback-queue" title="播放队列">
+            <ListMusic size={19} /><span className="tabular-nums">{count}</span>
+          </button>
+          <div className="player-volume">
+            <Volume2 size={16} aria-hidden="true" />
+            <input type="range" name="volume" min={0} max={1} step={0.01} value={volume}
+              style={{ '--progress': `${volume * 100}%` } as React.CSSProperties}
+              onChange={e => usePlayerStore.getState().setVolume(Number(e.target.value))} aria-label="音量" aria-valuetext={`${Math.round(volume * 100)}%`} title={`音量 ${Math.round(volume * 100)}%`} />
+          </div>
+        </div>
       </div>
     </footer>
   );

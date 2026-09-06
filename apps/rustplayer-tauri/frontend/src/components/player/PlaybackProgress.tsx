@@ -21,7 +21,9 @@ export default function PlaybackProgress({ active = true }: { active?: boolean }
     let lastSecond = -1, lastDuration = -1;
     const paint = (position: number) => {
       const duration = player.durationMs;
-      if (lastDuration !== duration) {
+      const durationChanged = lastDuration !== duration;
+      if (inputRef.current) inputRef.current.disabled = player.playbackId === null || duration <= 0 || player.state === 'stopped';
+      if (durationChanged) {
         lastDuration = duration;
         if (durationSpanRef.current) durationSpanRef.current.textContent = formatTime(duration);
         if (inputRef.current) inputRef.current.max = String(duration || 100);
@@ -29,8 +31,10 @@ export default function PlaybackProgress({ active = true }: { active?: boolean }
       if (isDraggingRef.current) return;
       const clamped = Math.max(0, duration > 0 ? Math.min(position, duration) : position);
       const second = Math.floor(clamped / 1000);
-      if (second !== lastSecond && timeSpanRef.current) {
-        lastSecond = second; timeSpanRef.current.textContent = formatTime(clamped);
+      if (second !== lastSecond || durationChanged) {
+        lastSecond = second;
+        if (timeSpanRef.current) timeSpanRef.current.textContent = formatTime(clamped);
+        inputRef.current?.setAttribute('aria-valuetext', `${formatTime(clamped)} / ${formatTime(duration)}`);
       }
       if (inputRef.current) {
         inputRef.current.value = String(clamped);
@@ -74,6 +78,7 @@ export default function PlaybackProgress({ active = true }: { active?: boolean }
       if (inputRef.current) {
         inputRef.current.value = String(positionMs);
         inputRef.current.style.setProperty('--progress', `${positionMs / (durationMs || 100) * 100}%`);
+        inputRef.current.setAttribute('aria-valuetext', `${formatTime(positionMs)} / ${formatTime(durationMs)}`);
       }
       if (timeSpanRef.current) timeSpanRef.current.textContent = formatTime(positionMs);
     };
@@ -101,6 +106,7 @@ export default function PlaybackProgress({ active = true }: { active?: boolean }
     const max = parseInt(e.target.max) || 100;
     const pct = max > 0 ? (val / max) * 100 : 0;
     e.target.style.setProperty('--progress', `${pct}%`);
+    e.target.setAttribute('aria-valuetext', `${formatTime(val)} / ${formatTime(usePlayerStore.getState().durationMs)}`);
     if (!isDraggingRef.current) void usePlayerStore.getState().seek(val);
   };
 
@@ -126,6 +132,7 @@ export default function PlaybackProgress({ active = true }: { active?: boolean }
         onChange={handleChange}
         className="min-w-0 flex-1"
         aria-label="播放进度"
+        disabled={initialState.playbackId === null || initialState.durationMs <= 0 || initialState.state === 'stopped'}
       />
       <span ref={durationSpanRef} className="w-11 flex-shrink-0 text-center font-mono tabular-nums">
         {formatTime(initialState.durationMs)}

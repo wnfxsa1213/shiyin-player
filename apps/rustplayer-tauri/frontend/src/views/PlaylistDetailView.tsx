@@ -32,19 +32,12 @@ export default function PlaylistDetailView() {
 
   const handlePlayAll = () => {
     if (!playlist?.tracks.length) return;
-    const store = usePlayerStore.getState();
-    store.clearQueue();
-    store.addToQueue(playlist.tracks);
-    store.playFromQueue(0);
+    void usePlayerStore.getState().playAll(playlist.tracks);
   };
 
   const handleShuffleAll = () => {
     if (!playlist?.tracks.length) return;
-    const store = usePlayerStore.getState();
-    store.clearQueue();
-    store.addToQueue(playlist.tracks);
-    store.setPlayMode('shuffle');
-    store.playFromQueue(0);
+    void usePlayerStore.getState().playAll(playlist.tracks, 'shuffle');
   };
 
   return (
@@ -83,13 +76,13 @@ export default function PlaylistDetailView() {
                 {playlist.description && (
                   <p className="text-sm text-text-secondary line-clamp-2" title={playlist.description}>{playlist.description}</p>
                 )}
-                <p className="text-xs text-text-tertiary">{playlist.tracks.length} 首歌曲</p>
+                <p className="text-xs text-text-secondary">{playlist.tracks.length} 首歌曲 · 播放全部将替换当前队列</p>
                 <div className="flex gap-3 mt-2">
                   <button onClick={handlePlayAll} className="flex items-center gap-2 px-5 py-2 bg-gradient-accent text-white rounded-full text-sm font-medium hover:shadow-glow transition-shadow cursor-pointer focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent focus-visible:outline-none">
                     <Play size={16} fill="currentColor" /> 播放全部
                   </button>
                   <button onClick={handleShuffleAll} className="flex items-center gap-2 px-5 py-2 bg-bg-secondary text-text-primary rounded-full text-sm hover:bg-bg-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
-                    <Shuffle size={16} strokeWidth={1.5} /> 随机播放
+                    <Shuffle size={16} strokeWidth={1.5} /> 随机播放全部
                   </button>
                 </div>
               </div>

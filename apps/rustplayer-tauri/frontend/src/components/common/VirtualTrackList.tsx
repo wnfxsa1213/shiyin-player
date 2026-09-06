@@ -13,8 +13,9 @@ export default function VirtualTrackList({ tracks }: Props) {
   const virtualizer = useVirtualizer({
     count: tracks.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 52,
+    estimateSize: () => 56,
     overscan: 5,
+    getItemKey: index => `${tracks[index].source}:${tracks[index].id}:${index}`,
   });
 
   return (

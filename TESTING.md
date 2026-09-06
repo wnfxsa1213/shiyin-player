@@ -28,6 +28,12 @@ npm --prefix apps/rustplayer-tauri/frontend test
 - `crates/core/src/lib.rs` 验证播放命令与事件信封的 camelCase 字段序列化和反序列化。
 - `src-tauri/src/events.rs` 验证前后端事件字段与自然结束/普通停止的区别。
 
+## 播放主流程 UI 回归
+
+运行前端 `npm test`、`npm run build` 与 `cargo test --workspace --locked --offline`。`playbackUi.test.tsx` 使用真实组件、生命周期与虚拟列表，仅模拟 IPC 和 jsdom 缺少的尺寸、滚动事实；覆盖单曲保留队列、加载/缓冲暂停、失败回滚后的重试入口、歌曲菜单、虚拟队列跨屏焦点与清空确认。生命周期测试补充整单替换竞态、去重与指定下一首优先、同曲失败后明确重试；进度测试覆盖禁用与可读时间。
+
+2026-09-06 的界面验收和范围见 [播放主流程 UI 验证](docs/design/playback-ui-validation.md)。后续压力测试按当前安排暂停。
+
 ## 视觉场景回归
 
 运行前端 `npm test` 与 `npm run build`，以及 Rust `cargo test --workspace`。当前已缓存环境可附加 `--locked --offline`。场景测试通过工厂接口、真实页面和可控时钟覆盖草稿隔离、应用竞态、持久化顺序、素材引用、取消解码、轮换与窗口恢复；进度条测试验证隐藏/暂停停帧及取消拖动。后端覆盖导入格式、尺寸、去重、失败清理、受限资源读取和频谱字段。

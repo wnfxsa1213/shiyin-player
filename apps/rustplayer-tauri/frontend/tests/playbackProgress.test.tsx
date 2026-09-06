@@ -32,9 +32,21 @@ it('取消拖动立即恢复实际进度，松手提交仍绑定原播放尝试'
   const slider = screen.getByRole('slider', { name: '播放进度' }) as HTMLInputElement;
   fireEvent.pointerDown(slider); fireEvent.change(slider, { target: { value: '20000' } });
   fireEvent.pointerCancel(window); expect(seek).not.toHaveBeenCalled(); expect(slider.value).toBe('1000');
+  expect(slider.getAttribute('aria-valuetext')).toBe('0:01 / 1:40');
   expect(screen.getByText('0:01')).toBeTruthy();
   fireEvent.pointerDown(slider); fireEvent.change(slider, { target: { value: '30000' } });
   act(() => usePlayerStore.setState({ playbackId: 2 })); fireEvent.pointerUp(window);
   expect(seek).toHaveBeenCalledWith(30000, 1);
   expect(slider.value).toBe('1000');
+});
+
+it('没有播放尝试时禁用进度操作，恢复有效曲目后提供可读的时间值', () => {
+  render(<PlaybackProgress />);
+  const slider = screen.getByRole('slider', { name: '播放进度' }) as HTMLInputElement;
+  expect(slider.disabled).toBe(false);
+  act(() => usePlayerStore.setState({ playbackId: null, state: 'idle', positionMs: 0, durationMs: 0 }));
+  expect(slider.disabled).toBe(true);
+  act(() => usePlayerStore.setState({ playbackId: 2, state: 'paused', positionMs: 42_000, durationMs: 240_000 }));
+  expect(slider.disabled).toBe(false);
+  expect(slider.getAttribute('aria-valuetext')).toBe('0:42 / 4:00');
 });

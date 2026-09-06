@@ -39,19 +39,12 @@ export default function DailyRecommendView() {
 
   const handlePlayAll = () => {
     if (!personalized.length) return;
-    const store = usePlayerStore.getState();
-    store.clearQueue();
-    store.addToQueue(personalized);
-    store.playFromQueue(0);
+    void usePlayerStore.getState().playAll(personalized);
   };
 
   const handleShuffleAll = () => {
     if (!personalized.length) return;
-    const store = usePlayerStore.getState();
-    store.clearQueue();
-    store.addToQueue(personalized);
-    store.setPlayMode('shuffle');
-    store.playFromQueue(0);
+    void usePlayerStore.getState().playAll(personalized, 'shuffle');
   };
 
   const handleRefresh = async () => {
@@ -104,7 +97,7 @@ export default function DailyRecommendView() {
               <>
                 <p className="text-xs text-[var(--text-tertiary)]">
                   {personalized.length > 0
-                    ? `${personalized.length} 首精选歌曲 · 当前来自：${availableSourceNames}`
+                    ? `${personalized.length} 首精选歌曲 · 当前来自：${availableSourceNames} · 播放全部将替换当前队列`
                     : hasRediscover ? '今天暂无新精选，但可重温经典' : '今天暂无新精选'}
                 </p>
                 {discovery?.outcome === 'degraded' && (
@@ -132,7 +125,7 @@ export default function DailyRecommendView() {
                         text-sm hover:bg-[var(--bg-hover)] transition-colors cursor-pointer
                         focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
                     >
-                      <Shuffle size={16} strokeWidth={1.5} /> 随机播放
+                      <Shuffle size={16} strokeWidth={1.5} /> 随机播放全部
                     </button>
                   </>
                 )}
@@ -199,8 +192,8 @@ export default function DailyRecommendView() {
             {!expanded ? (
               <>
                 <HorizontalScroll>
-                  {previewTracks.map((track, i) => (
-                    <TrackCard key={`${track.id}-${track.source}`} track={track} tracks={personalized} index={i} />
+                  {previewTracks.map(track => (
+                    <TrackCard key={`${track.id}-${track.source}`} track={track} />
                   ))}
                 </HorizontalScroll>
                 {personalized.length > 8 && (
@@ -249,8 +242,8 @@ export default function DailyRecommendView() {
                 <h2 className="text-lg font-bold text-[var(--text-primary)]">重温经典</h2>
               </div>
               <HorizontalScroll>
-                {rediscover.map((track, i) => (
-                  <TrackCard key={`${track.id}-${track.source}`} track={track} tracks={rediscover} index={i} />
+                {rediscover.map(track => (
+                  <TrackCard key={`${track.id}-${track.source}`} track={track} />
                 ))}
               </HorizontalScroll>
             </section>

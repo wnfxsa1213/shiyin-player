@@ -20,6 +20,7 @@ import ErrorBoundary from '@/components/common/ErrorBoundary';
 import SceneBackground from '@/components/scenes/SceneBackground';
 import { startSceneRuntime } from '@/lib/scenes/runtime';
 import '@/styles/scenes.css';
+import '@/styles/playback.css';
 
 // Route-level code splitting — SettingsView and PlaylistDetailView are
 // infrequently accessed; lazy-loading them reduces the initial JS bundle.
@@ -27,25 +28,6 @@ const SettingsView = lazy(() => import('@/views/SettingsView'));
 const PlaylistDetailView = lazy(() => import('@/views/PlaylistDetailView'));
 const DailyRecommendView = lazy(() => import('@/views/DailyRecommendView'));
 const ScenesView = lazy(() => import('@/views/ScenesView'));
-
-/** Declarative ARIA live region that announces playback state and track changes to screen readers. */
-function PlayerAnnouncer() {
-  // Individual primitive selectors — avoids creating a new object on every selector call,
-  // which would cause infinite re-renders via useSyncExternalStore mismatch detection.
-  const playerState = usePlayerStore((s) => s.state);
-  const track = usePlayerStore((s) => s.currentTrack);
-  let text = '';
-  if (playerState === 'playing' && track) {
-    text = `正在播放：${track.name} - ${track.artist}`;
-  } else if (playerState === 'paused') {
-    text = '播放已暂停';
-  }
-  return (
-    <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
-      {text}
-    </div>
-  );
-}
 
 function RouteFallback() {
   return <div className="flex items-center justify-center h-full text-text-tertiary text-sm">加载中…</div>;
@@ -188,7 +170,7 @@ export default function App() {
       const st = usePlayerStore.getState();
       switch (e.code) {
         case 'Space':
-          if (!st.currentTrack) return;
+          if (!st.currentTrack && !st.queue.length) return;
           e.preventDefault();
           void st.togglePlayback();
           break;
@@ -233,29 +215,30 @@ export default function App() {
   return (
     <MemoryRouter>
       <a href="#main-content" className="sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:top-4 focus-visible:left-4 focus-visible:z-[9999] focus-visible:p-4 focus-visible:bg-accent focus-visible:text-white focus-visible:rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent">跳转到主内容</a>
-      <PlayerAnnouncer />
-      <div className="flex h-screen bg-bg-base text-text-primary overflow-hidden pb-20">
-        <Sidebar />
-        <div className="relative flex-1 min-w-0 overflow-hidden">
-          <SceneBackground />
-        <main id="main-content" className="relative h-full overflow-y-auto" tabIndex={-1}>
-          <ErrorBoundary>
-            <Suspense fallback={<RouteFallback />}>
-              <Routes>
-                <Route path="/" element={<HomeView />} />
-                <Route path="/search" element={<SearchView />} />
-                <Route path="/settings" element={<SettingsView />} />
-                <Route path="/playlist/:source/:id" element={<PlaylistDetailView />} />
-                <Route path="/daily" element={<DailyRecommendView />} />
-                <Route path="/scenes" element={<ScenesView />} />
-              </Routes>
-            </Suspense>
-          </ErrorBoundary>
-          <ImmersiveFMPanel isOpen={immersiveOpen} onClose={() => setImmersiveOpen(false)} />
-          <QueuePanel isOpen={queueOpen} onClose={() => setQueueOpen(false)} />
-        </main>
+      <div className="flex flex-col h-screen bg-bg-base text-text-primary overflow-hidden">
+        <div className="flex flex-1 min-h-0">
+          <Sidebar />
+          <div className="relative flex-1 min-w-0 overflow-hidden">
+            <SceneBackground />
+            <main id="main-content" className="relative h-full overflow-y-auto" tabIndex={-1}>
+              <ErrorBoundary>
+                <Suspense fallback={<RouteFallback />}>
+                  <Routes>
+                    <Route path="/" element={<HomeView />} />
+                    <Route path="/search" element={<SearchView />} />
+                    <Route path="/settings" element={<SettingsView />} />
+                    <Route path="/playlist/:source/:id" element={<PlaylistDetailView />} />
+                    <Route path="/daily" element={<DailyRecommendView />} />
+                    <Route path="/scenes" element={<ScenesView />} />
+                  </Routes>
+                </Suspense>
+              </ErrorBoundary>
+              <ImmersiveFMPanel isOpen={immersiveOpen} onClose={() => setImmersiveOpen(false)} />
+            </main>
+            <QueuePanel isOpen={queueOpen} onClose={() => setQueueOpen(false)} />
+          </div>
         </div>
-        <PlayerBar lyricsOpen={immersiveOpen} onToggleLyrics={() => setImmersiveOpen(!immersiveOpen)} onToggleQueue={() => { setImmersiveOpen(false); setQueueOpen(!queueOpen); }} />
+        <PlayerBar lyricsOpen={immersiveOpen} queueOpen={queueOpen} onToggleLyrics={() => setImmersiveOpen(!immersiveOpen)} onToggleQueue={() => { setImmersiveOpen(false); setQueueOpen(!queueOpen); }} />
       </div>
       <ToastContainer />
     </MemoryRouter>

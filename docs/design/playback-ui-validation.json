@@ -1,0 +1,364 @@
+{
+  "date": "2026-09-06",
+  "scope": "Production frontend with mocked Tauri IPC; WebKitGTK uses an ephemeral standalone WebView. No stress test or live audio output.",
+  "frontendTests": 75,
+  "rustTests": 52,
+  "frontendBuild": "passed",
+  "chromium": {
+    "checks": {
+      "checks": [
+        {
+          "name": "card preserves queue",
+          "pass": true
+        },
+        {
+          "name": "repeated play is idempotent",
+          "pass": true
+        },
+        {
+          "name": "keyboard reaches virtual last row",
+          "pass": true
+        },
+        {
+          "name": "remove restores adjacent focus",
+          "pass": true
+        },
+        {
+          "name": "queue closes and focus returns",
+          "pass": true
+        },
+        {
+          "name": "menu closes without playback",
+          "pass": true
+        },
+        {
+          "name": "failed song remains identifiable after rollback",
+          "pass": true
+        },
+        {
+          "name": "immersive failure stays visible after auto-hide timeout",
+          "pass": true
+        },
+        {
+          "name": "retry selects failed track",
+          "pass": true
+        },
+        {
+          "name": "buffering is visible",
+          "pass": true
+        },
+        {
+          "name": "pause during buffering is visible",
+          "pass": true
+        },
+        {
+          "name": "clear requires explicit choice",
+          "pass": true
+        },
+        {
+          "name": "clear stops and shows empty queue",
+          "pass": true
+        },
+        {
+          "name": "no frontend errors",
+          "pass": true
+        }
+      ],
+      "errors": []
+    },
+    "layouts": [
+      {
+        "theme": "dark",
+        "mode": "paused",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "dark",
+        "mode": "failure",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "dark",
+        "mode": "loading",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "dark",
+        "mode": "buffering",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "light",
+        "mode": "paused",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "light",
+        "mode": "failure",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "light",
+        "mode": "loading",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "light",
+        "mode": "buffering",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "dark",
+        "mode": "paused",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "dark",
+        "mode": "failure",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "dark",
+        "mode": "loading",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "dark",
+        "mode": "buffering",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "light",
+        "mode": "paused",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "light",
+        "mode": "failure",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "light",
+        "mode": "loading",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "light",
+        "mode": "buffering",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      }
+    ],
+    "keyboard": {
+      "toggled": true,
+      "controls": 1
+    },
+    "longTitle": {
+      "footerHeight": 146,
+      "ellipsized": true,
+      "fullTitle": true
+    },
+    "errors": []
+  },
+  "webkitgtk": {
+    "webkit": "2.52.6",
+    "layouts": [
+      {
+        "theme": "dark",
+        "mode": "paused",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "dark",
+        "mode": "failure",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "light",
+        "mode": "paused",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "light",
+        "mode": "failure",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "dark",
+        "mode": "paused",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "dark",
+        "mode": "failure",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "light",
+        "mode": "paused",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      },
+      {
+        "theme": "light",
+        "mode": "failure",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "queueAboveFooter": true,
+        "pageOverflow": false
+      }
+    ],
+    "checks": {
+      "checks": [
+        {
+          "name": "card preserves queue",
+          "pass": true
+        },
+        {
+          "name": "repeated play is idempotent",
+          "pass": true
+        },
+        {
+          "name": "keyboard reaches virtual last row",
+          "pass": true
+        },
+        {
+          "name": "remove restores adjacent focus",
+          "pass": true
+        },
+        {
+          "name": "queue closes and focus returns",
+          "pass": true
+        },
+        {
+          "name": "menu closes without playback",
+          "pass": true
+        },
+        {
+          "name": "failed song remains identifiable after rollback",
+          "pass": true
+        },
+        {
+          "name": "immersive failure stays visible after auto-hide timeout",
+          "pass": true
+        },
+        {
+          "name": "retry selects failed track",
+          "pass": true
+        },
+        {
+          "name": "buffering is visible",
+          "pass": true
+        },
+        {
+          "name": "pause during buffering is visible",
+          "pass": true
+        },
+        {
+          "name": "clear requires explicit choice",
+          "pass": true
+        },
+        {
+          "name": "clear stops and shows empty queue",
+          "pass": true
+        },
+        {
+          "name": "no frontend errors",
+          "pass": true
+        }
+      ],
+      "errors": []
+    }
+  }
+}
