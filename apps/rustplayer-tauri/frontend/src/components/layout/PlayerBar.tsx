@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { usePlayerStore } from '@/store/playerStore';
 import { useUiStore } from '@/store/uiStore';
-import { ipc } from '@/lib/ipc';
 import SpectrumVisualizer from '@/components/player/SpectrumVisualizer';
 import PlaybackProgress from '@/components/player/PlaybackProgress';
 import { Music, SkipBack, Play, Pause, SkipForward, Music2, Volume2, ListMusic } from 'lucide-react';
@@ -10,6 +9,7 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
   const immersiveOpen = useUiStore((s) => s.immersiveOpen);
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const state = usePlayerStore((s) => s.state);
+  const playWhenReady = usePlayerStore((s) => s.playWhenReady);
   const volume = usePlayerStore((s) => s.volume);
   const setVolume = usePlayerStore((s) => s.setVolume);
   const hasQueue = usePlayerStore((s) => s.queue.length > 0);
@@ -33,7 +33,6 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
   const handleVolume = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value);
     setVolume(val);
-    ipc.setVolume(val);
   };
 
   const isPlaying = state === 'playing';
@@ -116,7 +115,7 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
           </button>
 
           <button
-            onClick={() => currentTrack && ipc.togglePlayback()}
+            onClick={() => currentTrack && usePlayerStore.getState().togglePlayback()}
             disabled={!currentTrack}
             className={`w-10 h-10 rounded-full bg-accent text-white flex items-center justify-center transition-[transform,box-shadow,opacity] duration-500 shadow-glow ${
               !currentTrack
@@ -124,9 +123,9 @@ export default function PlayerBar({ lyricsOpen, onToggleLyrics, onToggleQueue }:
                 : 'hover:shadow-glow-strong active:scale-95 cursor-pointer focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-accent focus-visible:outline-none'
             }`}
             style={{ backgroundColor: 'var(--accent)' }}
-            aria-label={state === 'playing' ? '暂停' : '播放'}
+            aria-label={playWhenReady ? '暂停' : '播放'}
           >
-            {state === 'playing' ? (
+            {playWhenReady ? (
               <Pause size={16} fill="currentColor" />
             ) : (
               <Play size={16} fill="currentColor" className="ml-0.5" />

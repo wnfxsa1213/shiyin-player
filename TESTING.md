@@ -16,6 +16,17 @@ npm --prefix apps/rustplayer-tauri/frontend run build
 - 前端测试位于 `apps/rustplayer-tauri/frontend/tests/musicDiscovery.test.tsx`，使用 Vitest、React Testing Library 和 jsdom，模拟 Tauri IPC，执行真实页面和 Zustand store。
 - 前端回归覆盖空结果与仅有重温经典时的手动刷新、不可用结果的重试入口，以及 FM 播放和自动补曲共享降级通知去重、恢复后再次提示。
 
+## 播放生命周期回归测试
+
+```bash
+cargo test --workspace
+npm --prefix apps/rustplayer-tauri/frontend test
+```
+
+- `frontend/tests/playbackLifecycle.test.ts` 通过生命周期 interface 覆盖请求竞态、引擎接管前后的回滚、重试预算、自然结束、单曲循环、暂停/跳转、行为计时和队列失效。
+- `crates/player/src/lib.rs` 使用本地 WAV 和 GStreamer `fakesink` 验证请求代次、旧控制隔离、暂停加载、断点恢复与真实结束事件，不依赖音源账号或声卡。
+- `src-tauri/src/events.rs` 验证前后端事件字段与自然结束/普通停止的区别。
+
 ## 后端测试建议 (Rust)
 
 ### 1. QQ 音乐 API 错误处理 (`crates/qqmusic/src/api.rs`)

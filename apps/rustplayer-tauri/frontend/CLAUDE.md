@@ -32,9 +32,10 @@ Tauri 应用的前端 UI 层。基于 React 18 + TypeScript + Tailwind CSS 构�
 | IPC 方法 | 后端 Command | 说明 |
 |----------|-------------|------|
 | `ipc.searchMusic(query, source?)` | `search_music` | 搜索 |
-| `ipc.playTrack(track)` | `play_track` | 播放 |
-| `ipc.togglePlayback()` | `toggle_playback` | 播放/暂停 |
-| `ipc.seek(positionMs)` | `seek` | 跳转 |
+| `ipc.playTrack(track, playbackId, positionMs, paused)` | `play_track` | 加载一次带标识的播放尝试 |
+| `ipc.setPlaybackPaused(playbackId, paused)` | `set_playback_paused` | 显式播放/暂停 |
+| `ipc.stopPlayback(playbackId)` | `stop_playback` | 停止并使旧加载失效 |
+| `ipc.seek(playbackId, positionMs)` | `seek` | 跳转指定播放尝试 |
 | `ipc.setVolume(volume)` | `set_volume` | 音量 |
 | `ipc.getLyrics(trackId, source)` | `get_lyrics` | 歌词 |
 | `ipc.login(source, cookie)` | `login` | 登录 |
@@ -53,9 +54,7 @@ Tauri 应用的前端 UI 层。基于 React 18 + TypeScript + Tailwind CSS 构�
 
 ### 事件监听
 
-- `onPlayerState(cb)` - 监听 `player://state`
-- `onPlayerProgress(cb)` - 监听 `player://progress`（含 `emittedAtMs` 用于延迟补偿）
-- `onPlayerError(cb)` - 监听 `player://error`
+- `onPlaybackEvent(cb)` - 监听 `player://event`，以 `playbackId` 关联状态、进度、缓冲、错误与自然结束；App 转交生命周期 module
 - `onPlayerSpectrum(cb)` - 监听 `player://spectrum`
 - `onLoginSuccess(cb)` - 监听 `login://success`
 - `onLoginTimeout(cb)` - 监听 `login://timeout`
@@ -86,18 +85,13 @@ Tauri 应用的前端 UI 层。基于 React 18 + TypeScript + Tailwind CSS 构�
 | `useFmStore` | `store/fmStore.ts` | FM 电台队列、音源选择、自动预取（队列 < 2 首时拉取更多） |
 | `useRecommendStore` | `store/recommendStore.ts` | 智能推荐数据（personalized/topArtists/rediscover）、30s 冷却防重复请求 |
 
-### 行为追踪 (`playerStore.ts`)
+### 播放生命周期
 
-- 在 `playFromQueue` 时开始追踪新曲目，`flushPlayEvent()` 上报旧曲目的播放事件
-- 累计实际播放时长（排除暂停时间）
-- 完成判定：播放 >= 80% 或 >= 时长 - 10s
-- 通过 `ipc.recordPlayEvent()` 静默上报（失败不阻塞播放）
+`src/lib/playbackLifecycle.ts` 的 `createPlaybackLifecycle` 拥有播放器状态、播放尝试、实际收听计时、重试与队列推进。`playerStore.ts` 只装配 Tauri、推荐、设置和通知依赖。
 
-### 无限电台 (`playerStore.ts`)
+控件使用 store 的 `togglePlayback`、`seek`、`playFromQueue`、`playNext`、`playPrev`、`clearQueue` 等动作。`playWhenReady` 表示播放意图，`state` 表示实际状态；进度插值读取实际状态。播放类 IPC 的重试由生命周期 module 管理，其他请求继续使用 IPC 通用重试。
 
-- `autoReplenish()`：队列剩余 <= 2 首时自动调用 `ipc.getRadioBatch()`
-- 排除当前队列中已有曲目（key: `source:id`）
-- 静默失败，不中断当前播放
+修改请求竞态、失败回滚、重试、队列失效或行为计时前，阅读 [播放生命周期设计](../../../docs/design/playback-lifecycle.md)。测试通过 `createPlaybackLifecycle` 的 interface 使用独立实例；Tauri IPC 在测试中由内存 adapter 代替。
 
 ### 设置持久化 (`src/lib/settings.ts`)
 
@@ -211,7 +205,7 @@ src/
 
 ## 测试与质量
 
-当前无测试文件。建议测试方向：Zustand store 逻辑（尤其 playerStore 的行为追踪和 autoReplenish）、IPC mock 测试（自动重试逻辑）、组件渲染测试。
+通过 `npm test` 运行 `tests/playbackLifecycle.test.ts` 与 `tests/musicDiscovery.test.tsx`。运行方式和覆盖场景见根目录 `TESTING.md`。
 
 ## 相关文件清单
 

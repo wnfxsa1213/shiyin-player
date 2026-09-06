@@ -1,13 +1,12 @@
-import { useEffect, useRef, useState, lazy, Suspense } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { useUiStore } from '@/store/uiStore';
-import { usePlayerStore, flushPlayEvent } from '@/store/playerStore';
+import { usePlayerStore } from '@/store/playerStore';
 import { useVisualizerStore, spectrumDataRef } from '@/store/visualizerStore';
 import { useToastStore } from '@/store/toastStore';
 import { usePlaylistStore } from '@/store/playlistStore';
 import { loadSetting } from '@/lib/settings';
-import { ipc, onPlayerState, onPlayerProgress, onPlayerError, onPlayerSpectrum, onPlayerBuffering, onLoginSuccess, onLoginTimeout } from '@/lib/ipc';
-import { sanitizeError } from '@/lib/errorMessages';
+import { ipc, onPlaybackEvent, onPlayerSpectrum, onLoginSuccess, onLoginTimeout } from '@/lib/ipc';
 import { useDynamicTheme } from '@/hooks/useDynamicTheme';
 import { usePlaylistAutoRefresh } from '@/hooks/usePlaylistAutoRefresh';
 import Sidebar from '@/components/layout/Sidebar';
@@ -52,16 +51,8 @@ export default function App() {
   const theme = useUiStore((s) => s.theme);
   const immersiveOpen = useUiStore((s) => s.immersiveOpen);
   const setImmersiveOpen = useUiStore((s) => s.setImmersiveOpen);
-  const setVolume = usePlayerStore((s) => s.setVolume);
   const [queueOpen, setQueueOpen] = useState(false);
   // Tracks whether the most recent player stop was caused by an error.
-  // Used to prevent the stopped-event handler from retrying a failing track.
-  const playerErrorRef = useRef(false);
-  // Retry state for transient playback errors (network glitches).
-  const retryCountRef = useRef(0);
-  const lastPositionRef = useRef(0);
-  const MAX_PLAYBACK_RETRIES = 2;
-
   // 挂载全局动态主题萃取钩子
   useDynamicTheme();
   // 歌单自动刷新（启动 + 30 分钟定时 + 页面恢复可见）
@@ -103,8 +94,7 @@ export default function App() {
 
         const savedVolume = await loadSetting<number>('volume');
         if (savedVolume !== null) {
-          usePlayerStore.setState({ volume: savedVolume });
-          ipc.setVolume(savedVolume).catch(console.error);
+          usePlayerStore.getState().setVolume(savedVolume);
         }
 
         const vizEnabled = await loadSetting<boolean>('visualizer.enabled');
@@ -138,58 +128,8 @@ export default function App() {
     const addToast = useToastStore.getState().addToast;
 
     Promise.all([
-      onPlayerState((state) => {
-        if (!active) return;
-        if (state === 'playing') {
-          retryCountRef.current = 0;
-          usePlayerStore.getState().play();
-        }
-        else if (state === 'paused') usePlayerStore.getState().pause();
-        else if (state === 'buffering') {
-          // Buffering percent is handled by onPlayerBuffering; state label triggers UI update.
-        }
-        else if (state === 'stopped') {
-          // Always flush the current track's play event when playback stops
-          flushPlayEvent();
-          if (playerErrorRef.current) {
-            playerErrorRef.current = false;
-            const { queue, playMode } = usePlayerStore.getState();
-            const wouldReplaySame = playMode === 'repeat-one' || queue.length <= 1;
-            if (wouldReplaySame) return;
-          }
-          usePlayerStore.getState().playNext();
-        }
-      }),
-      onPlayerProgress(({ positionMs, durationMs, emittedAtMs }) => {
-        if (!active) return;
-        lastPositionRef.current = positionMs;
-        usePlayerStore.getState().updateProgress(positionMs, durationMs, emittedAtMs);
-      }),
-      onPlayerError((err) => {
-        if (!active) return;
-        const { currentTrack } = usePlayerStore.getState();
-
-        // Retry current track on transient errors (network glitches).
-        if (retryCountRef.current < MAX_PLAYBACK_RETRIES && currentTrack) {
-          retryCountRef.current += 1;
-          addToast('info', `网络波动，正在重试播放… (${retryCountRef.current}/${MAX_PLAYBACK_RETRIES})`);
-          const trackToRetry = currentTrack;
-          const resumePos = lastPositionRef.current;
-
-          ipc.playTrack(trackToRetry)
-            .then(() => { if (resumePos > 0) return ipc.seek(resumePos); })
-            .catch((retryErr) => {
-              addToast('error', `重试失败: ${sanitizeError(retryErr)}`);
-            });
-
-          // Prevent the upcoming stopped event from triggering playNext.
-          playerErrorRef.current = true;
-          return;
-        }
-
-        // Retries exhausted — show error, let stopped handler decide.
-        addToast('error', sanitizeError(err));
-        playerErrorRef.current = true;
+      onPlaybackEvent((event) => {
+        if (active) usePlayerStore.getState().handlePlaybackEvent(event);
       }),
       onPlayerSpectrum(({ magnitudes }) => {
         if (!active) return;
@@ -197,10 +137,6 @@ export default function App() {
         const len = Math.min(magnitudes.length, arr.length);
         for (let i = 0; i < len; i++) arr[i] = magnitudes[i];
         for (let i = len; i < arr.length; i++) arr[i] = 0;
-      }),
-      onPlayerBuffering((percent) => {
-        if (!active) return;
-        usePlayerStore.getState().setBuffering(percent);
       }),
       onLoginSuccess((source) => {
         if (!active) return;
@@ -225,7 +161,7 @@ export default function App() {
     });
 
     // Flush the last track's play event when the window is closing
-    const handleBeforeUnload = () => flushPlayEvent();
+    const handleBeforeUnload = () => usePlayerStore.getState().shutdown();
     window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => {
@@ -244,29 +180,27 @@ export default function App() {
         case 'Space':
           if (!st.currentTrack) return;
           e.preventDefault();
-          ipc.togglePlayback();
+          void st.togglePlayback();
           break;
         case 'ArrowUp': {
           e.preventDefault();
           const v = Math.min(1, st.volume + 0.05);
-          ipc.setVolume(v);
-          setVolume(v);
+          st.setVolume(v);
           break;
         }
         case 'ArrowDown': {
           e.preventDefault();
           const v = Math.max(0, st.volume - 0.05);
-          ipc.setVolume(v);
-          setVolume(v);
+          st.setVolume(v);
           break;
         }
         case 'ArrowRight':
           e.preventDefault();
-          ipc.seek(st.positionMs + 5000);
+          void st.seek(st.positionMs + 5000);
           break;
         case 'ArrowLeft':
           e.preventDefault();
-          ipc.seek(Math.max(0, st.positionMs - 5000));
+          void st.seek(Math.max(0, st.positionMs - 5000));
           break;
         case 'KeyB':
           if (e.ctrlKey || e.metaKey) {
@@ -284,7 +218,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [setVolume]);
+  }, []);
 
   return (
     <MemoryRouter>

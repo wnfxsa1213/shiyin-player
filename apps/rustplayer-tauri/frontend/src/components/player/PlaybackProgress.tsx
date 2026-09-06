@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
 import { usePlayerStore } from '@/store/playerStore';
-import { ipc } from '@/lib/ipc';
 import { formatTime } from '@/lib/utils';
 
 export default function PlaybackProgress() {
@@ -9,6 +8,7 @@ export default function PlaybackProgress() {
   const inputRef = useRef<HTMLInputElement>(null);
   const draggingValueRef = useRef<number>(0);
   const isDraggingRef = useRef(false);
+  const draggingPlaybackIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     let rafId: number | undefined;
@@ -136,8 +136,7 @@ export default function PlaybackProgress() {
     const handlePointerUp = () => {
       if (!isDraggingRef.current) return;
       isDraggingRef.current = false;
-      ipc.seek(draggingValueRef.current);
-      usePlayerStore.setState({ positionMs: draggingValueRef.current });
+      void usePlayerStore.getState().seek(draggingValueRef.current, draggingPlaybackIdRef.current);
     };
 
     window.addEventListener('pointerup', handlePointerUp);
@@ -149,6 +148,8 @@ export default function PlaybackProgress() {
   }, []);
 
   const handlePointerDown = () => {
+    draggingPlaybackIdRef.current = usePlayerStore.getState().playbackId;
+    draggingValueRef.current = Number(inputRef.current?.value ?? usePlayerStore.getState().positionMs);
     isDraggingRef.current = true;
   };
 
@@ -161,6 +162,7 @@ export default function PlaybackProgress() {
     const max = parseInt(e.target.max) || 100;
     const pct = max > 0 ? (val / max) * 100 : 0;
     e.target.style.setProperty('--progress', `${pct}%`);
+    if (!isDraggingRef.current) void usePlayerStore.getState().seek(val);
   };
 
   const initialState = usePlayerStore.getState();

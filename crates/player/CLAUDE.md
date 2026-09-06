@@ -22,7 +22,9 @@
 
 - `Player::new()` -> `Result<Self, PlayerError>` - 初始化 GStreamer 并启动引擎线程
 - `Player::subscribe()` -> `broadcast::Receiver<PlayerEvent>` - 订阅播放器事件
-- `Player::send(cmd)` -> `Result<(), PlayerError>` - 发送播放命令
+- `Player::reserve_request(id)` 在流地址解析前登记递增请求，`is_current_request(id)` 检查解析结果是否仍有效
+- `Player::send(cmd)` - 加载入队后返回，加载失败经事件报告；其他控制命令等待执行结果，失败经返回值报告
+- 订阅返回 `PlayerEventEnvelope`，包含 `playback_id` 与事件；`Ended` 独立表示自然结束
 
 ## 关键依赖与配置
 
@@ -45,7 +47,9 @@ uridecodebin(url) -> audioconvert -> audioresample -> spectrum -> volume -> auto
 
 - 33ms ticker 轮询 GStreamer bus（EOS / Error / StateChanged / Spectrum）
 - 进度事件约 2Hz 发送（每 15 个 tick）
-- 命令处理：Load / Play / Pause / Toggle / Stop / Seek / SetVolume
+- 命令处理：Load / SetPaused / Stop / Seek / SetVolume；加载、暂停、停止与跳转都携带播放标识
+- 加载先 preroll，再恢复起始位置并应用播放意图；新管线继承音量
+- 修改标识过滤、初始 seek 或结束行为时，先读 `docs/design/playback-lifecycle.md`，并运行本 crate 的真实管线测试
 
 ### 状态机
 
@@ -61,7 +65,7 @@ Idle -> Loading -> Playing <-> Paused -> Stopped
 
 ## 测试与质量
 
-当前无测试文件。建议测试方向：状态机转移逻辑、命令处理边界条件。
+`cargo test -p rustplayer-player` 使用本地 WAV 与 `fakesink`，验证迟到加载、旧控制、断点恢复和真实自然结束；测试不要求声卡。
 
 ## 相关文件清单
 

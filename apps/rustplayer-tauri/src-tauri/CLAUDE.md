@@ -35,9 +35,10 @@ Tauri v2 桌面应用的 Rust 后端入口。负责初始化播放引擎、注�
 | Command | 参数 | 返回 | 说明 |
 |---------|------|------|------|
 | `search_music` | query, source?, trace_id? | `Vec<Track>` | 三级缓存搜索（L1 内存 -> L2 SQLite -> L3 API），并发查询多音源 |
-| `play_track` | track, trace_id? | `()` | 获取流 URL 并加载到播放器（12s 超时） |
-| `toggle_playback` | trace_id? | `()` | 播放/暂停切换 |
-| `seek` | position_ms, trace_id? | `()` | 跳转播放进度 |
+| `play_track` | track, playback_id, position_ms, paused, trace_id? | `()` | 登记请求，获取流 URL，再校验代次并加载 |
+| `set_playback_paused` | playback_id, paused, trace_id? | `()` | 显式播放/暂停指定尝试 |
+| `stop_playback` | playback_id, trace_id? | `()` | 停止并使旧加载失效 |
+| `seek` | playback_id, position_ms, trace_id? | `()` | 跳转指定尝试 |
 | `set_volume` | volume (0.0-1.0), trace_id? | `()` | 设置音量 |
 | `get_lyrics` | track_id, source, trace_id? | `Vec<LyricsLine>` | 获取歌词（SQLite 缓存优先） |
 | `login` | source, credentials, trace_id? | `AuthToken` | 登录并持久化 Cookie |
@@ -58,10 +59,8 @@ Tauri v2 桌面应用的 Rust 后端入口。负责初始化播放引擎、注�
 
 | Event | Payload | 说明 |
 |-------|---------|------|
-| `player://state` | state label string | 播放状态变更 |
-| `player://progress` | { positionMs, durationMs, emittedAtMs } | 播放进度（~5Hz，前端 RAF 60fps 插值） |
+| `player://event` | 带 type、playbackId 的判别联合 | 状态 / 进度 / 缓冲 / 错误 / 自然结束；字段以 `events.rs` 序列化和前端 PlaybackEvent 为准 |
 | `player://spectrum` | { magnitudes: number[] } | 频谱数据（~15fps） |
-| `player://error` | error string | 播放错误 |
 | `login://success` | MusicSourceId | 登录成功 |
 | `login://timeout` | MusicSourceId | 登录超时 |
 

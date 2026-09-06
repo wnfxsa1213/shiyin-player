@@ -29,6 +29,8 @@ const LOGIN_INITIAL_DELAY: Duration = Duration::from_secs(3);
 const STREAM_URL_TIMEOUT: Duration = Duration::from_secs(12);
 /// Hard timeout for enqueueing a PlayerCommand (protects against engine stalls).
 const PLAYER_SEND_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_PLAYBACK_ID: u64 = 9_007_199_254_740_991;
+
 /// Cookie extraction timeout.
 const COOKIE_EXTRACT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Timeout for clearing cookies via webkit.
@@ -282,14 +284,29 @@ pub async fn search_music(
     }).await
 }
 
+fn validate_playback_id(playback_id: u64) -> Result<(), IpcError> {
+    if (1..=MAX_PLAYBACK_ID).contains(&playback_id) { Ok(()) }
+    else { Err(IpcError::InvalidInput("invalid playback id".into())) }
+}
+
+async fn send_player_command(player: &Player, command: PlayerCommand) -> Result<(), IpcError> {
+    tokio::time::timeout(PLAYER_SEND_TIMEOUT, player.send(command)).await
+        .map_err(|_| IpcError::Internal("player command timeout".into()))?
+        .map_err(IpcError::from)
+}
 #[tauri::command]
 pub async fn play_track(
     track: Track,
+    playback_id: u64,
+    position_ms: u64,
+    paused: bool,
     trace_id: Option<String>,
     registry: State<'_, Arc<SourceRegistry>>,
     player: State<'_, Arc<Player>>,
 ) -> Result<(), IpcError> {
     run_with_trace("play_track", trace_id, async {
+        validate_playback_id(playback_id)?;
+        if !player.reserve_request(playback_id) { return Ok(()); }
         let started = std::time::Instant::now();
         let src = registry.get(track.source).ok_or(IpcError::NotFound("source not found".into()))?;
         let stream_started = std::time::Instant::now();
@@ -306,11 +323,10 @@ pub async fn play_track(
         );
 
         let send_started = std::time::Instant::now();
-        match tokio::time::timeout(PLAYER_SEND_TIMEOUT, player.send(PlayerCommand::Load(track, stream))).await {
-            Ok(Ok(())) => {}
-            Ok(Err(e)) => return Err(IpcError::from(e)),
-            Err(_) => return Err(IpcError::Internal("player command timeout".into())),
-        }
+        if !player.is_current_request(playback_id) { return Ok(()); }
+        send_player_command(&player, PlayerCommand::Load {
+            playback_id, track, stream, position_ms, paused,
+        }).await?;
         tracing::info!(
             elapsed_ms = started.elapsed().as_millis() as u64,
             enqueue_ms = send_started.elapsed().as_millis() as u64,
@@ -321,16 +337,27 @@ pub async fn play_track(
 }
 
 #[tauri::command]
-pub async fn toggle_playback(trace_id: Option<String>, player: State<'_, Arc<Player>>) -> Result<(), IpcError> {
-    run_with_trace("toggle_playback", trace_id, async {
-        player.send(PlayerCommand::Toggle).await.map_err(IpcError::from)
+pub async fn set_playback_paused(playback_id: u64, paused: bool, trace_id: Option<String>, player: State<'_, Arc<Player>>) -> Result<(), IpcError> {
+    run_with_trace("set_playback_paused", trace_id, async {
+        validate_playback_id(playback_id)?;
+        send_player_command(&player, PlayerCommand::SetPaused { playback_id, paused }).await
     }).await
 }
 
 #[tauri::command]
-pub async fn seek(trace_id: Option<String>, position_ms: u64, player: State<'_, Arc<Player>>) -> Result<(), IpcError> {
+pub async fn stop_playback(playback_id: u64, trace_id: Option<String>, player: State<'_, Arc<Player>>) -> Result<(), IpcError> {
+    run_with_trace("stop_playback", trace_id, async {
+        validate_playback_id(playback_id)?;
+        player.reserve_request(playback_id);
+        send_player_command(&player, PlayerCommand::Stop { playback_id }).await
+    }).await
+}
+
+#[tauri::command]
+pub async fn seek(trace_id: Option<String>, playback_id: u64, position_ms: u64, player: State<'_, Arc<Player>>) -> Result<(), IpcError> {
     run_with_trace("seek", trace_id, async {
-        player.send(PlayerCommand::Seek(position_ms)).await.map_err(IpcError::from)
+        validate_playback_id(playback_id)?;
+        send_player_command(&player, PlayerCommand::Seek { playback_id, position_ms }).await
     }).await
 }
 
@@ -341,7 +368,7 @@ pub async fn set_volume(trace_id: Option<String>, volume: f32, player: State<'_,
             return Err(IpcError::InvalidInput("invalid volume value".into()));
         }
         let volume = volume.clamp(0.0, 1.0);
-        player.send(PlayerCommand::SetVolume(volume)).await.map_err(IpcError::from)
+        send_player_command(&player, PlayerCommand::SetVolume(volume)).await
     }).await
 }
 

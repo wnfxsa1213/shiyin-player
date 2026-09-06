@@ -27,7 +27,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::search_music,
             commands::play_track,
-            commands::toggle_playback,
+            commands::set_playback_paused,
+            commands::stop_playback,
             commands::seek,
             commands::set_volume,
             commands::get_lyrics,

@@ -1,18 +1,17 @@
 import { usePlayerStore } from '@/store/playerStore';
 import { useFmStore } from '@/store/fmStore';
-import { ipc } from '@/lib/ipc';
 import { ThumbsDown, SkipBack, Play, Pause, SkipForward, Heart } from 'lucide-react';
 
 const btnBase =
   'w-12 h-12 rounded-full flex items-center justify-center transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none';
 
 export default function FMControlBar() {
-  const state = usePlayerStore((s) => s.state);
+  const playWhenReady = usePlayerStore((s) => s.playWhenReady);
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const fmDislike = useFmStore((s) => s.dislike);
   const fmPlayNext = useFmStore((s) => s.playNext);
 
-  const isPlaying = state === 'playing';
+  const isPlaying = playWhenReady;
 
   return (
     <div className="flex items-center gap-4">
@@ -46,7 +45,7 @@ export default function FMControlBar() {
 
       {/* Play / Pause */}
       <button
-        onClick={() => currentTrack && ipc.togglePlayback()}
+        onClick={() => currentTrack && usePlayerStore.getState().togglePlayback()}
         disabled={!currentTrack}
         className={`w-14 h-14 rounded-full bg-white text-black flex items-center justify-center transition-[transform,opacity] duration-300 ${
           !currentTrack

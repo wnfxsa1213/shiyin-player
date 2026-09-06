@@ -15,6 +15,10 @@ vi.mock('@/lib/ipc', () => ({
     getSmartRecommend: vi.fn(),
     getRadioBatch: vi.fn(),
     playTrack: vi.fn(),
+    stopPlayback: vi.fn(),
+    setPlaybackPaused: vi.fn(),
+    seek: vi.fn(),
+    setVolume: vi.fn(),
     recordPlayEvent: vi.fn(),
   },
 }));
@@ -43,6 +47,10 @@ beforeEach(() => {
   useRecommendStore.setState(useRecommendStore.getInitialState(), true);
   vi.mocked(ipc.checkLoginStatus).mockResolvedValue({ netease: true, qqmusic: true });
   vi.mocked(ipc.playTrack).mockResolvedValue(undefined);
+  vi.mocked(ipc.stopPlayback).mockResolvedValue(undefined);
+  vi.mocked(ipc.setPlaybackPaused).mockResolvedValue(undefined);
+  vi.mocked(ipc.seek).mockResolvedValue(undefined);
+  vi.mocked(ipc.setVolume).mockResolvedValue(undefined);
   vi.mocked(ipc.recordPlayEvent).mockResolvedValue(undefined);
 });
 

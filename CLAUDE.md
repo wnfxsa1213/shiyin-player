@@ -123,14 +123,15 @@ npm run build    # 生产构建
 - 新增 Tauri command 时，需在 `src-tauri/src/commands/mod.rs` 实现并在 `main.rs` 的 `generate_handler!` 中注册
 - 新增音乐源时，实现 `MusicSource` trait（包括 `get_daily_recommend` 和 `get_personal_fm`）并在 `main.rs` 中 `registry.register()`
 - GStreamer 播放引擎运行在独立线程，通过 `mpsc::channel` 接收命令、`broadcast::channel` 发送事件
-- 前端事件监听在 `App.tsx` 的 `useEffect` 中统一注册
+- 前端事件监听在 `App.tsx` 的 `useEffect` 中统一注册；`player://event` 交给 `playbackLifecycle.ts` 的 `handlePlaybackEvent` 处理
 - 搜索采用三级缓存：L1 内存 LRU -> L2 SQLite -> L3 API 请求
 - 新增 IPC command 时，确保在 `run_with_trace()` 中包装，并接受 `trace_id: Option<String>` 参数
 - 前端错误消息通过 `sanitizeError()` 统一处理，开发环境显示详细信息，生产环境显示用户友好消息
 - WebView 登录窗口使用 webkit2gtk CookieManager API 提取 HttpOnly Cookie（Linux 平台）
-- 行为追踪：`playerStore.ts` 在播放/切歌/清队列时自动调用 `flushPlayEvent()` 上报播放事件，完成判定为播放 >= 80% 或 >= 时长 - 10s
+- 播放请求、重试、回滚、行为计时与队列推进由 `frontend/src/lib/playbackLifecycle.ts` 统一负责；`playerStore.ts` 装配生产依赖，控件和快捷键调用 store 动作
 - 推荐引擎：`get_smart_recommend` 聚合双音源每日推荐后通过 `recommend` crate 重排序，需要至少 10 条播放事件才启用个性化排序
-- 无限电台：`autoReplenish()` 在队列剩余 <= 2 首时自动拉取，使用 `getRadioBatch` 排除当前队列中的曲目
+- 修改播放请求、后端事件、重试或行为计时时，先读 `docs/design/playback-lifecycle.md`；修改后运行 `TESTING.md` 中的生命周期回归测试
+- 无限电台：生命周期 module 在队列剩余 <= 2 首时拉取 `getRadioBatch`；清队列会让旧补曲结果失效
 - 路由代码分割：`SettingsView`、`PlaylistDetailView`、`DailyRecommendView` 使用 `React.lazy()` 懒加载
 - QQ 音乐凭据刷新：`QqMusicClient` 在 401 错误时自动尝试 `try_refresh()`，成功后通过 `on_refresh` 回调持久化新凭据
 

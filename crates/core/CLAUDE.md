@@ -39,8 +39,10 @@
 ### 状态与命令
 
 - `PlayerState` - 播放器状态机（Idle / Loading / Playing / Paused / Stopped）
-- `PlayerCommand` - 播放器命令（Load / Play / Pause / Toggle / Stop / Seek / SetVolume）
-- `PlayerEvent` - 播放器事件（StateChanged / Progress / Spectrum / Error）
+- `PlaybackId` - 关联播放尝试与后端事件的标识
+- `PlayerCommand` - Load / SetPaused / Stop / Seek / SetVolume；播放相关命令携带标识
+- `PlayerEvent` - StateChanged / Progress / Spectrum / Error / Buffering / Ended
+- `PlayerEventEnvelope` - 将事件与播放标识绑定；自然结束和普通停止分开表达
 
 ### Traits
 

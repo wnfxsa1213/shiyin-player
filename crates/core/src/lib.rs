@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub type TrackId = String;
+pub type PlaybackId = u64;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -75,13 +76,17 @@ pub enum PlayerState {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PlayerCommand {
-    Load(Track, StreamInfo),
-    Play,
-    Pause,
-    Toggle,
-    Stop,
-    Seek(u64),
+    Load { playback_id: PlaybackId, track: Track, stream: StreamInfo, position_ms: u64, paused: bool },
+    SetPaused { playback_id: PlaybackId, paused: bool },
+    Stop { playback_id: PlaybackId },
+    Seek { playback_id: PlaybackId, position_ms: u64 },
     SetVolume(f32),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerEventEnvelope {
+    pub playback_id: PlaybackId,
+    pub event: PlayerEvent,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,6 +97,7 @@ pub enum PlayerEvent {
     Spectrum { magnitudes: Arc<[f32]> },
     Error { error: PlayerError },
     Buffering { percent: i32 },
+    Ended,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

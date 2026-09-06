@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { Track } from '@/store/playerStore';
+import type { PlaybackEvent } from '@/lib/playbackLifecycle';
 
 export type MusicSource = 'netease' | 'qqmusic';
 
@@ -33,7 +34,7 @@ const RETRYABLE_KINDS = new Set(['network', 'rate_limited']);
 const MAX_RETRIES = 2;
 const RETRY_BASE_MS = 200;
 
-async function invokeWithTrace<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+async function invokeWithTrace<T>(cmd: string, args?: Record<string, unknown>, retry = true): Promise<T> {
   const traceId = newTraceId();
   for (let attempt = 0; ; attempt++) {
     try {
@@ -41,7 +42,7 @@ async function invokeWithTrace<T>(cmd: string, args?: Record<string, unknown>): 
     } catch (e) {
       const wrapped = wrapInvokeError(e, traceId);
       const kind = (wrapped as { kind?: string }).kind;
-      if (attempt < MAX_RETRIES && kind && RETRYABLE_KINDS.has(kind)) {
+      if (retry && attempt < MAX_RETRIES && kind && RETRYABLE_KINDS.has(kind)) {
         await new Promise((r) => setTimeout(r, RETRY_BASE_MS * (1 << attempt)));
         continue;
       }
@@ -108,12 +109,15 @@ export const ipc = {
   searchMusic: (query: string, source?: MusicSource) =>
     invokeWithTrace<Track[]>('search_music', { query, source }),
 
-  playTrack: (track: Track) =>
-    invokeWithTrace<void>('play_track', { track }),
+  playTrack: (track: Track, playbackId: number, positionMs = 0, paused = false) =>
+    invokeWithTrace<void>('play_track', { track, playbackId, positionMs, paused }, false),
 
-  togglePlayback: () => invokeWithTrace<void>('toggle_playback'),
+  setPlaybackPaused: (playbackId: number, paused: boolean) =>
+    invokeWithTrace<void>('set_playback_paused', { playbackId, paused }, false),
 
-  seek: (positionMs: number) => invokeWithTrace<void>('seek', { positionMs }),
+  stopPlayback: (playbackId: number) => invokeWithTrace<void>('stop_playback', { playbackId }, false),
+
+  seek: (playbackId: number, positionMs: number) => invokeWithTrace<void>('seek', { playbackId, positionMs }, false),
 
   setVolume: (volume: number) => invokeWithTrace<void>('set_volume', { volume }),
 
@@ -166,24 +170,12 @@ export const ipc = {
   },
 };
 
-export function onPlayerState(cb: (state: string) => void): Promise<UnlistenFn> {
-  return listen<string>('player://state', (e) => cb(e.payload));
-}
-
-export function onPlayerProgress(cb: (p: { positionMs: number; durationMs: number; emittedAtMs?: number }) => void): Promise<UnlistenFn> {
-  return listen<{ positionMs: number; durationMs: number; emittedAtMs?: number }>('player://progress', (e) => cb(e.payload));
-}
-
-export function onPlayerError(cb: (error: string) => void): Promise<UnlistenFn> {
-  return listen<string>('player://error', (e) => cb(e.payload));
+export function onPlaybackEvent(cb: (event: PlaybackEvent) => void): Promise<UnlistenFn> {
+  return listen<PlaybackEvent>('player://event', (event) => cb(event.payload));
 }
 
 export function onPlayerSpectrum(cb: (data: { magnitudes: number[] }) => void): Promise<UnlistenFn> {
   return listen<{ magnitudes: number[] }>('player://spectrum', (e) => cb(e.payload));
-}
-
-export function onPlayerBuffering(cb: (percent: number) => void): Promise<UnlistenFn> {
-  return listen<number>('player://buffering', (e) => cb(e.payload));
 }
 
 export function onLoginSuccess(cb: (source: MusicSource) => void): Promise<UnlistenFn> {

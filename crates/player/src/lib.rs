@@ -1,27 +1,43 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use gstreamer as gst;
 use gst::prelude::*;
-use rustplayer_core::{PlayerCommand, PlayerError, PlayerEvent, PlayerState, StreamInfo, Track};
-use tokio::sync::{broadcast, mpsc};
+use gstreamer as gst;
+use rustplayer_core::{
+    PlaybackId, PlayerCommand, PlayerError, PlayerEvent, PlayerEventEnvelope, PlayerState,
+    StreamInfo, Track,
+};
+use tokio::sync::{broadcast, mpsc, oneshot};
+
+struct EngineRequest {
+    command: PlayerCommand,
+    response: Option<oneshot::Sender<Result<(), PlayerError>>>,
+}
 
 pub struct Player {
-    cmd_tx: Option<mpsc::Sender<PlayerCommand>>,
-    event_tx: broadcast::Sender<PlayerEvent>,
+    cmd_tx: Option<mpsc::Sender<EngineRequest>>,
+    event_tx: broadcast::Sender<PlayerEventEnvelope>,
+    latest_request: Arc<AtomicU64>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Player {
     pub fn new() -> Result<Self, PlayerError> {
-        let (cmd_tx, cmd_rx) = mpsc::channel::<PlayerCommand>(64);
-        let (event_tx, _) = broadcast::channel::<PlayerEvent>(256);
+        Self::with_audio_sink("autoaudiosink")
+    }
+
+    fn with_audio_sink(audio_sink: &'static str) -> Result<Self, PlayerError> {
+        let (cmd_tx, cmd_rx) = mpsc::channel::<EngineRequest>(64);
+        let (event_tx, _) = broadcast::channel::<PlayerEventEnvelope>(256);
         let tx = event_tx.clone();
+        let latest_request = Arc::new(AtomicU64::new(0));
+        let engine_request = Arc::clone(&latest_request);
 
         let handle = std::thread::Builder::new()
             .name("gstreamer-engine".into())
             .spawn(move || {
-                if let Err(e) = engine_loop(cmd_rx, tx) {
+                if let Err(e) = engine_loop(cmd_rx, tx, engine_request, audio_sink) {
                     log::error!("player engine error: {e}");
                 }
             })
@@ -30,17 +46,50 @@ impl Player {
         Ok(Self {
             cmd_tx: Some(cmd_tx),
             event_tx,
+            latest_request,
             thread: Some(handle),
         })
     }
 
-    pub fn subscribe(&self) -> broadcast::Receiver<PlayerEvent> {
+    pub fn subscribe(&self) -> broadcast::Receiver<PlayerEventEnvelope> {
         self.event_tx.subscribe()
     }
 
     pub async fn send(&self, cmd: PlayerCommand) -> Result<(), PlayerError> {
-        self.cmd_tx.as_ref().ok_or(PlayerError::ChannelClosed)?
-            .send(cmd).await.map_err(|_| PlayerError::ChannelClosed)
+        // A load is accepted when enqueued; its eventual outcome arrives as tagged events.
+        // Keeping this await limited to enqueueing makes timeout cancellation safe.
+        if matches!(&cmd, PlayerCommand::Load { .. }) {
+            return self
+                .cmd_tx
+                .as_ref()
+                .ok_or(PlayerError::ChannelClosed)?
+                .send(EngineRequest {
+                    command: cmd,
+                    response: None,
+                })
+                .await
+                .map_err(|_| PlayerError::ChannelClosed);
+        }
+        let (response, result) = oneshot::channel();
+        self.cmd_tx
+            .as_ref()
+            .ok_or(PlayerError::ChannelClosed)?
+            .send(EngineRequest {
+                command: cmd,
+                response: Some(response),
+            })
+            .await
+            .map_err(|_| PlayerError::ChannelClosed)?;
+        result.await.map_err(|_| PlayerError::ChannelClosed)?
+    }
+
+    /// Reserve before resolving a stream URL so a late older request cannot load audio.
+    pub fn reserve_request(&self, playback_id: PlaybackId) -> bool {
+        playback_id > self.latest_request.fetch_max(playback_id, Ordering::SeqCst)
+    }
+
+    pub fn is_current_request(&self, playback_id: PlaybackId) -> bool {
+        playback_id == self.latest_request.load(Ordering::SeqCst)
     }
 }
 
@@ -66,6 +115,15 @@ impl Drop for Player {
 // --- Engine internals ---
 
 struct Engine {
+    playback_id: PlaybackId,
+    latest_request: Arc<AtomicU64>,
+    volume: f32,
+    desired_playing: bool,
+    initializing: bool,
+    initial_seek: Option<u64>,
+    seeking: bool,
+    buffering_percent: i32,
+    audio_sink: &'static str,
     pipeline: Option<gst::Pipeline>,
     volume_elem: Option<gst::Element>,
     state: PlayerState,
@@ -83,8 +141,10 @@ struct Engine {
 }
 
 fn engine_loop(
-    mut cmd_rx: mpsc::Receiver<PlayerCommand>,
-    event_tx: broadcast::Sender<PlayerEvent>,
+    mut cmd_rx: mpsc::Receiver<EngineRequest>,
+    event_tx: broadcast::Sender<PlayerEventEnvelope>,
+    latest_request: Arc<AtomicU64>,
+    audio_sink: &'static str,
 ) -> Result<(), PlayerError> {
     gst::init().map_err(|e| PlayerError::Pipeline(e.to_string()))?;
 
@@ -95,6 +155,15 @@ fn engine_loop(
 
     rt.block_on(async {
         let mut engine = Engine {
+            playback_id: 0,
+            latest_request,
+            volume: 1.0,
+            desired_playing: false,
+            initializing: false,
+            initial_seek: None,
+            seeking: false,
+            buffering_percent: 100,
+            audio_sink,
             pipeline: None,
             volume_elem: None,
             state: PlayerState::Idle,
@@ -112,10 +181,16 @@ fn engine_loop(
             tokio::select! {
                 cmd = cmd_rx.recv() => {
                     match cmd {
-                        Some(c) => {
-                            if let Err(e) = handle_cmd(&mut engine, c, &event_tx) {
-                                emit(&event_tx, PlayerEvent::Error { error: e });
-                            }
+                        Some(request) => {
+                            let loading = matches!(&request.command, PlayerCommand::Load { .. });
+                            let result = handle_cmd(&mut engine, request.command, &event_tx);
+                            // Loading failures are lifecycle events; control failures are RPC errors.
+                            // Each failure has one owner and is never reported through both paths.
+                            let result = if loading {
+                                if let Err(error) = result { fail_playback(&mut engine, &event_tx, error); }
+                                Ok(())
+                            } else { result };
+                            if let Some(response) = request.response { let _ = response.send(result); }
                             // Adapt tick rate: fast when playing (33ms), slow when idle/paused (200ms)
                             let new_period = if matches!(engine.state, PlayerState::Playing { .. }) {
                                 Duration::from_millis(33)
@@ -157,83 +232,192 @@ fn engine_loop(
 fn handle_cmd(
     eng: &mut Engine,
     cmd: PlayerCommand,
-    tx: &broadcast::Sender<PlayerEvent>,
+    tx: &broadcast::Sender<PlayerEventEnvelope>,
 ) -> Result<(), PlayerError> {
     match cmd {
-        PlayerCommand::Load(track, stream) => {
+        PlayerCommand::Load {
+            playback_id,
+            track,
+            stream,
+            position_ms,
+            paused,
+        } => {
+            if playback_id != eng.latest_request.load(Ordering::SeqCst) {
+                return Ok(());
+            }
             teardown(eng);
-            let build_started = std::time::Instant::now();
-            let (pipeline, vol) = build_pipeline(&stream)?;
-            let build_ms = build_started.elapsed().as_millis() as u64;
-            log::info!("build_pipeline took {build_ms}ms (track id={}, source={:?})", track.id, track.source);
-            eng.pipeline = Some(pipeline);
-            eng.volume_elem = Some(vol);
+            eng.playback_id = playback_id;
+            eng.desired_playing = !paused;
+            eng.initializing = true;
+            eng.initial_seek = Some(position_ms);
+            eng.buffering_percent = 100;
             let track = Arc::new(track);
             eng.current_track = Some(Arc::clone(&track));
             set_state(eng, PlayerState::Loading { track }, tx);
-            if let Some(p) = &eng.pipeline {
+            let (pipeline, volume) = build_pipeline(&stream, eng.audio_sink)?;
+            volume.set_property("volume", eng.volume as f64);
+            eng.volume_elem = Some(volume);
+            eng.pipeline = Some(pipeline.clone());
+            // Preroll before restoring a retry position. The seek belongs to this pipeline.
+            let result = pipeline
+                .set_state(gst::State::Paused)
+                .map_err(|e| PlayerError::Pipeline(format!("failed to preroll: {e}")))?;
+            if result == gst::StateChangeSuccess::NoPreroll {
+                eng.initial_seek = None;
+                finish_initial_load(eng, tx)?;
+            }
+            Ok(())
+        }
+        PlayerCommand::SetPaused {
+            playback_id,
+            paused,
+        } => {
+            if playback_id != eng.playback_id {
+                return Ok(());
+            }
+            eng.desired_playing = !paused;
+            if eng.initializing {
+                return Ok(());
+            }
+            let p = eng
+                .pipeline
+                .as_ref()
+                .ok_or(PlayerError::InvalidState("no pipeline".into()))?;
+            let track = eng
+                .current_track
+                .clone()
+                .ok_or(PlayerError::InvalidState("no track".into()))?;
+            if paused {
+                set_gst_state(p, gst::State::Paused)?;
+                let position_ms = pos_ms(p);
+                eng.buffering_since = None;
+                set_state(eng, PlayerState::Paused { track, position_ms }, tx);
+            } else if eng.buffering_percent < 100 {
+                eng.buffering_since
+                    .get_or_insert_with(std::time::Instant::now);
+                set_state(
+                    eng,
+                    PlayerState::Buffering {
+                        track,
+                        percent: eng.buffering_percent,
+                    },
+                    tx,
+                );
+            } else {
                 set_gst_state(p, gst::State::Playing)?;
             }
             Ok(())
         }
-        PlayerCommand::Play => {
-            let p = eng.pipeline.as_ref().ok_or(PlayerError::InvalidState("no pipeline".into()))?;
-            let track = eng.current_track.clone().ok_or(PlayerError::InvalidState("no track".into()))?;
-            set_gst_state(p, gst::State::Playing)?;
-            set_state(eng, PlayerState::Playing { track, position_ms: pos_ms(p) }, tx);
-            Ok(())
-        }
-        PlayerCommand::Pause => {
-            let p = eng.pipeline.as_ref().ok_or(PlayerError::InvalidState("no pipeline".into()))?;
-            let track = eng.current_track.clone().ok_or(PlayerError::InvalidState("no track".into()))?;
-            set_gst_state(p, gst::State::Paused)?;
-            set_state(eng, PlayerState::Paused { track, position_ms: pos_ms(p) }, tx);
-            Ok(())
-        }
-        PlayerCommand::Toggle => {
-            let p = eng.pipeline.as_ref().ok_or(PlayerError::InvalidState("no pipeline".into()))?;
-            let track = eng.current_track.clone().ok_or(PlayerError::InvalidState("no track".into()))?;
-            match eng.state {
-                PlayerState::Playing { .. } => {
-                    set_gst_state(p, gst::State::Paused)?;
-                    set_state(eng, PlayerState::Paused { track, position_ms: pos_ms(p) }, tx);
-                }
-                _ => {
-                    set_gst_state(p, gst::State::Playing)?;
-                    set_state(eng, PlayerState::Playing { track, position_ms: pos_ms(p) }, tx);
-                }
+        PlayerCommand::Stop { playback_id } => {
+            // A stop may precede a newer URL request, but must never stop a newer pipeline.
+            if playback_id < eng.playback_id {
+                return Ok(());
             }
-            Ok(())
-        }
-        PlayerCommand::Stop => {
             teardown(eng);
+            eng.playback_id = playback_id;
             set_state(eng, PlayerState::Stopped, tx);
             Ok(())
         }
-        PlayerCommand::Seek(ms) => {
-            let p = eng.pipeline.as_ref().ok_or(PlayerError::InvalidState("no pipeline".into()))?;
-            p.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT, gst::ClockTime::from_mseconds(ms))
-                .map_err(|_| PlayerError::Pipeline("seek failed".into()))?;
-            Ok(())
+        PlayerCommand::Seek {
+            playback_id,
+            position_ms,
+        } => {
+            if playback_id != eng.playback_id {
+                return Ok(());
+            }
+            if eng.initializing {
+                eng.initial_seek = Some(position_ms);
+                return Ok(());
+            }
+            seek_pipeline(eng, position_ms)
         }
         PlayerCommand::SetVolume(v) => {
+            eng.volume = v.clamp(0.0, 1.0);
             if let Some(el) = &eng.volume_elem {
-                el.set_property("volume", v.clamp(0.0, 1.0) as f64);
+                el.set_property("volume", eng.volume as f64);
             }
             Ok(())
         }
     }
 }
 
-fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
-    let Some(p) = &eng.pipeline else { return };
+fn seek_pipeline(eng: &mut Engine, position_ms: u64) -> Result<(), PlayerError> {
+    let p = eng
+        .pipeline
+        .as_ref()
+        .ok_or(PlayerError::InvalidState("no pipeline".into()))?;
+    p.seek_simple(
+        gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT,
+        gst::ClockTime::from_mseconds(position_ms),
+    )
+    .map_err(|_| PlayerError::Pipeline("seek failed".into()))?;
+    eng.seeking = true;
+    Ok(())
+}
+
+fn finish_initial_load(
+    eng: &mut Engine,
+    tx: &broadcast::Sender<PlayerEventEnvelope>,
+) -> Result<(), PlayerError> {
+    if let Some(position) = eng.initial_seek.take().filter(|position| *position > 0) {
+        seek_pipeline(eng, position)?;
+        return Ok(());
+    }
+    eng.initializing = false;
+    eng.seeking = false;
+    let pipeline = eng
+        .pipeline
+        .as_ref()
+        .ok_or(PlayerError::InvalidState("no pipeline".into()))?;
+    let track = eng
+        .current_track
+        .clone()
+        .ok_or(PlayerError::InvalidState("no track".into()))?;
+    if !eng.desired_playing {
+        let position_ms = pos_ms(pipeline);
+        set_state(eng, PlayerState::Paused { track, position_ms }, tx);
+    } else if eng.buffering_percent < 100 {
+        eng.buffering_since
+            .get_or_insert_with(std::time::Instant::now);
+        set_state(
+            eng,
+            PlayerState::Buffering {
+                track,
+                percent: eng.buffering_percent,
+            },
+            tx,
+        );
+    } else {
+        set_gst_state(pipeline, gst::State::Playing)?;
+    }
+    Ok(())
+}
+
+fn fail_playback(
+    eng: &mut Engine,
+    tx: &broadcast::Sender<PlayerEventEnvelope>,
+    error: PlayerError,
+) {
+    emit(tx, eng.playback_id, PlayerEvent::Error { error });
+    teardown(eng);
+    set_state(eng, PlayerState::Stopped, tx);
+}
+
+fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEventEnvelope>) {
+    let Some(p) = eng.pipeline.clone() else {
+        return;
+    };
 
     // poll bus for EOS / errors / spectrum
     if let Some(bus) = p.bus() {
         while let Some(msg) = bus.timed_pop(gst::ClockTime::ZERO) {
             match msg.view() {
                 gst::MessageView::Error(e) => {
-                    let detail = format!("{}{}", e.error(), e.debug().map(|d| format!(" ({d})")).unwrap_or_default());
+                    let detail = format!(
+                        "{}{}",
+                        e.error(),
+                        e.debug().map(|d| format!(" ({d})")).unwrap_or_default()
+                    );
                     if let Some(track) = &eng.current_track {
                         log::error!(
                             "gstreamer pipeline error (track id={}, source={:?}): {detail}",
@@ -243,7 +427,13 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
                     } else {
                         log::error!("gstreamer pipeline error: {detail}");
                     }
-                    emit(tx, PlayerEvent::Error { error: PlayerError::Pipeline(detail) });
+                    emit(
+                        tx,
+                        eng.playback_id,
+                        PlayerEvent::Error {
+                            error: PlayerError::Pipeline(detail),
+                        },
+                    );
                     teardown(eng);
                     set_state(eng, PlayerState::Stopped, tx);
                     return;
@@ -251,30 +441,31 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
                 gst::MessageView::Eos(_) => {
                     teardown(eng);
                     set_state(eng, PlayerState::Stopped, tx);
+                    emit(tx, eng.playback_id, PlayerEvent::Ended);
                     return;
                 }
+                gst::MessageView::AsyncDone(_) => {
+                    eng.seeking = false;
+                    if eng.initializing {
+                        if let Err(error) = finish_initial_load(eng, tx) {
+                            fail_playback(eng, tx, error);
+                            return;
+                        }
+                    }
+                }
                 gst::MessageView::StateChanged(sc) => {
-                    if sc.src().map(|s| s == p.upcast_ref::<gst::Object>()).unwrap_or(false) {
-                        if sc.current() == gst::State::Playing {
-                            if matches!(eng.state, PlayerState::Loading { .. }) {
-                                if let Some(since) = eng.loading_since.take() {
-                                    let ms = since.elapsed().as_millis() as u64;
-                                    if let Some(track) = &eng.current_track {
-                                        log::info!(
-                                            "pipeline reached Playing after {ms}ms (track id={}, source={:?})",
-                                            track.id, track.source
-                                        );
-                                    } else {
-                                        log::info!("pipeline reached Playing after {ms}ms");
-                                    }
-                                }
-                                if let Some(track) = eng.current_track.clone() {
-                                    // Inline set_state to avoid borrow conflict with `p`
-                                    eng.loading_since = None;
-                                    eng.state = PlayerState::Playing { track, position_ms: 0 };
-                                    emit(tx, PlayerEvent::StateChanged { state: eng.state.clone() });
-                                }
-                            }
+                    if sc
+                        .src()
+                        .map(|s| s == p.upcast_ref::<gst::Object>())
+                        .unwrap_or(false)
+                        && sc.current() == gst::State::Playing
+                        && !eng.initializing
+                        && eng.desired_playing
+                    {
+                        if let Some(track) = eng.current_track.clone() {
+                            eng.buffering_since = None;
+                            let position_ms = pos_ms(&p);
+                            set_state(eng, PlayerState::Playing { track, position_ms }, tx);
                         }
                     }
                 }
@@ -284,56 +475,61 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
                             extract_spectrum_into(s, &mut eng.spectrum_buf);
                             if !eng.spectrum_buf.is_empty() {
                                 // One allocation per frame (Arc header + slice), copy 64 floats.
-                                emit(tx, PlayerEvent::Spectrum { magnitudes: Arc::from(eng.spectrum_buf.as_slice()) });
+                                emit(
+                                    tx,
+                                    eng.playback_id,
+                                    PlayerEvent::Spectrum {
+                                        magnitudes: Arc::from(eng.spectrum_buf.as_slice()),
+                                    },
+                                );
                             }
                         }
                     }
                 }
                 gst::MessageView::Warning(w) => {
-                    let detail = format!("{}{}", w.error(), w.debug().map(|d| format!(" ({d})")).unwrap_or_default());
+                    let detail = format!(
+                        "{}{}",
+                        w.error(),
+                        w.debug().map(|d| format!(" ({d})")).unwrap_or_default()
+                    );
                     log::warn!("gstreamer pipeline warning: {detail}");
                 }
                 gst::MessageView::Buffering(b) => {
-                    let percent = b.percent();
-                    if percent < 100 {
-                        if let Err(e) = p.set_state(gst::State::Paused) {
-                            log::warn!("failed to pause pipeline during buffering: {e}");
-                        }
-                        // Only enter Buffering state from Playing or Loading (don't override user Pause).
-                        if matches!(eng.state, PlayerState::Playing { .. } | PlayerState::Loading { .. }) {
+                    let percent = b.percent().clamp(0, 100);
+                    eng.buffering_percent = percent;
+                    if !eng.initializing && eng.desired_playing {
+                        if percent < 100 {
+                            if let Err(error) = set_gst_state(&p, gst::State::Paused) {
+                                fail_playback(eng, tx, error);
+                                return;
+                            }
                             if let Some(track) = eng.current_track.clone() {
-                                eng.state = PlayerState::Buffering { track, percent };
-                                emit(tx, PlayerEvent::Buffering { percent });
-                                emit(tx, PlayerEvent::StateChanged { state: eng.state.clone() });
+                                eng.buffering_since
+                                    .get_or_insert_with(std::time::Instant::now);
+                                emit(tx, eng.playback_id, PlayerEvent::Buffering { percent });
+                                set_state(eng, PlayerState::Buffering { track, percent }, tx);
                             }
-                            if eng.buffering_since.is_none() {
-                                eng.buffering_since = Some(std::time::Instant::now());
-                            }
-                        }
-                        log::debug!("buffering: {percent}%");
-                    } else {
-                        eng.buffering_since = None;
-                        // Resume playback when buffer is full — covers both Loading
-                        // (first play), Playing, and Buffering (mid-stream rebuffer) states.
-                        if matches!(eng.state, PlayerState::Loading { .. } | PlayerState::Playing { .. } | PlayerState::Buffering { .. }) {
-                            if let Err(e) = p.set_state(gst::State::Playing) {
-                                log::warn!("failed to resume pipeline after buffering: {e}");
-                            }
-                            // Restore Playing state after buffering completes.
-                            if matches!(eng.state, PlayerState::Buffering { .. }) {
-                                if let Some(track) = eng.current_track.clone() {
-                                    let position_ms = pos_ms(p);
-                                    eng.state = PlayerState::Playing { track, position_ms };
-                                    emit(tx, PlayerEvent::StateChanged { state: eng.state.clone() });
-                                }
+                        } else {
+                            eng.buffering_since = None;
+                            if let Err(error) = set_gst_state(&p, gst::State::Playing) {
+                                fail_playback(eng, tx, error);
+                                return;
                             }
                         }
-                        log::debug!("buffering complete");
                     }
                 }
                 _ => {}
             }
         }
+    }
+
+    if eng.initializing
+        && eng
+            .loading_since
+            .is_some_and(|start| start.elapsed() >= Duration::from_secs(30))
+    {
+        fail_playback(eng, tx, PlayerError::Stream("loading timeout".into()));
+        return;
     }
 
     // Buffering timeout protection: if buffering exceeds 30s, treat as unrecoverable.
@@ -342,9 +538,13 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
         if let Some(start) = eng.buffering_since {
             if start.elapsed() >= BUFFERING_TIMEOUT {
                 log::error!("buffering timeout >30s, tearing down pipeline");
-                emit(tx, PlayerEvent::Error {
-                    error: PlayerError::Stream("buffering timeout".into()),
-                });
+                emit(
+                    tx,
+                    eng.playback_id,
+                    PlayerEvent::Error {
+                        error: PlayerError::Stream("buffering timeout".into()),
+                    },
+                );
                 teardown(eng);
                 set_state(eng, PlayerState::Stopped, tx);
                 return;
@@ -360,9 +560,13 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
         // Immediately handle critical state change failures
         if state_change_result.is_err() {
             log::error!("pipeline state query failed: {:?}", state_change_result);
-            emit(tx, PlayerEvent::Error {
-                error: PlayerError::Pipeline("state query failure".into())
-            });
+            emit(
+                tx,
+                eng.playback_id,
+                PlayerEvent::Error {
+                    error: PlayerError::Pipeline("state query failure".into()),
+                },
+            );
             teardown(eng);
             set_state(eng, PlayerState::Stopped, tx);
             return;
@@ -371,12 +575,24 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
         // Time-based state mismatch detection (replaces tick-count approach).
         // Fires after mismatch persists for >100ms, independent of tick interval.
         if current_state != gst::State::Playing && current_state != gst::State::Paused {
-            let mismatch_start = eng.state_mismatch_since.get_or_insert_with(std::time::Instant::now);
+            let mismatch_start = eng
+                .state_mismatch_since
+                .get_or_insert_with(std::time::Instant::now);
             if mismatch_start.elapsed() >= Duration::from_millis(100) {
-                log::error!("pipeline state mismatch persisted >100ms: expected Playing, got {:?}", current_state);
-                emit(tx, PlayerEvent::Error {
-                    error: PlayerError::Pipeline(format!("unexpected state: {:?}", current_state))
-                });
+                log::error!(
+                    "pipeline state mismatch persisted >100ms: expected Playing, got {:?}",
+                    current_state
+                );
+                emit(
+                    tx,
+                    eng.playback_id,
+                    PlayerEvent::Error {
+                        error: PlayerError::Pipeline(format!(
+                            "unexpected state: {:?}",
+                            current_state
+                        )),
+                    },
+                );
                 teardown(eng);
                 set_state(eng, PlayerState::Stopped, tx);
                 return;
@@ -388,15 +604,23 @@ fn tick_progress(eng: &mut Engine, tx: &broadcast::Sender<PlayerEvent>) {
         // Time-based progress emission at ~5Hz (every 200ms).
         // Decoupled from tick interval so changing tick rate won't affect progress frequency.
         let now = std::time::Instant::now();
-        let should_emit_progress = eng.last_progress_emit
+        let should_emit_progress = eng
+            .last_progress_emit
             .map(|last| now.duration_since(last) >= Duration::from_millis(200))
             .unwrap_or(true);
-        if should_emit_progress {
+        if should_emit_progress && !eng.seeking {
             eng.last_progress_emit = Some(now);
             if let Some(pipeline) = &eng.pipeline {
                 let position = pos_ms(pipeline);
                 let duration = dur_ms(pipeline);
-                emit(tx, PlayerEvent::Progress { position_ms: position, duration_ms: duration });
+                emit(
+                    tx,
+                    eng.playback_id,
+                    PlayerEvent::Progress {
+                        position_ms: position,
+                        duration_ms: duration,
+                    },
+                );
             }
         }
     }
@@ -415,7 +639,10 @@ fn extract_spectrum_into(structure: &gst::StructureRef, buf: &mut Vec<f32>) {
 
 // --- Pipeline construction ---
 
-fn build_pipeline(stream: &StreamInfo) -> Result<(gst::Pipeline, gst::Element), PlayerError> {
+fn build_pipeline(
+    stream: &StreamInfo,
+    audio_sink: &str,
+) -> Result<(gst::Pipeline, gst::Element), PlayerError> {
     let pipeline = gst::Pipeline::with_name("rustplayer");
 
     let make = |factory: &str, name: &str| -> Result<gst::Element, PlayerError> {
@@ -443,7 +670,7 @@ fn build_pipeline(stream: &StreamInfo) -> Result<(gst::Pipeline, gst::Element), 
     spectrum.set_property("message-magnitude", true);
     spectrum.set_property("post-messages", true);
     let volume = make("volume", "volume")?;
-    let sink = make("autoaudiosink", "sink")?;
+    let sink = make(audio_sink, "sink")?;
 
     pipeline
         .add_many([&src, &convert, &resample, &spectrum, &volume, &sink])
@@ -455,8 +682,12 @@ fn build_pipeline(stream: &StreamInfo) -> Result<(gst::Pipeline, gst::Element), 
     // uridecodebin uses dynamic pads
     let convert_weak = convert.downgrade();
     src.connect_pad_added(move |_, pad| {
-        let Some(convert) = convert_weak.upgrade() else { return };
-        let Some(sink_pad) = convert.static_pad("sink") else { return };
+        let Some(convert) = convert_weak.upgrade() else {
+            return;
+        };
+        let Some(sink_pad) = convert.static_pad("sink") else {
+            return;
+        };
         if !sink_pad.is_linked() {
             let _ = pad.link(&sink_pad);
         }
@@ -469,23 +700,36 @@ fn build_pipeline(stream: &StreamInfo) -> Result<(gst::Pipeline, gst::Element), 
 
 fn set_gst_state(pipeline: &gst::Pipeline, state: gst::State) -> Result<(), PlayerError> {
     let started = std::time::Instant::now();
-    let result = pipeline.set_state(state)
+    let result = pipeline
+        .set_state(state)
         .map_err(|e| PlayerError::Pipeline(format!("failed to set state {state:?}: {e}")))?;
     let elapsed = started.elapsed();
     if elapsed >= Duration::from_millis(50) {
-        log::warn!("set_state({state:?}) took {}ms (result={result:?})", elapsed.as_millis());
+        log::warn!(
+            "set_state({state:?}) took {}ms (result={result:?})",
+            elapsed.as_millis()
+        );
     } else {
-        log::debug!("set_state({state:?}) took {}ms (result={result:?})", elapsed.as_millis());
+        log::debug!(
+            "set_state({state:?}) took {}ms (result={result:?})",
+            elapsed.as_millis()
+        );
     }
     Ok(())
 }
 
 fn pos_ms(pipeline: &gst::Pipeline) -> u64 {
-    pipeline.query_position::<gst::ClockTime>().map(|t| t.mseconds()).unwrap_or(0)
+    pipeline
+        .query_position::<gst::ClockTime>()
+        .map(|t| t.mseconds())
+        .unwrap_or(0)
 }
 
 fn dur_ms(pipeline: &gst::Pipeline) -> u64 {
-    pipeline.query_duration::<gst::ClockTime>().map(|t| t.mseconds()).unwrap_or(0)
+    pipeline
+        .query_duration::<gst::ClockTime>()
+        .map(|t| t.mseconds())
+        .unwrap_or(0)
 }
 
 fn teardown(eng: &mut Engine) {
@@ -499,18 +743,280 @@ fn teardown(eng: &mut Engine) {
     eng.last_progress_emit = None;
     eng.state_mismatch_since = None;
     eng.buffering_since = None;
+    eng.initializing = false;
+    eng.initial_seek = None;
+    eng.seeking = false;
+    eng.desired_playing = false;
 }
 
-fn set_state(eng: &mut Engine, state: PlayerState, tx: &broadcast::Sender<PlayerEvent>) {
+fn set_state(eng: &mut Engine, state: PlayerState, tx: &broadcast::Sender<PlayerEventEnvelope>) {
     if matches!(state, PlayerState::Loading { .. }) {
         eng.loading_since = Some(std::time::Instant::now());
     } else {
         eng.loading_since = None;
     }
     eng.state = state.clone();
-    emit(tx, PlayerEvent::StateChanged { state });
+    emit(tx, eng.playback_id, PlayerEvent::StateChanged { state });
 }
 
-fn emit(tx: &broadcast::Sender<PlayerEvent>, event: PlayerEvent) {
-    let _ = tx.send(event);
+fn emit(tx: &broadcast::Sender<PlayerEventEnvelope>, playback_id: PlaybackId, event: PlayerEvent) {
+    let _ = tx.send(PlayerEventEnvelope { playback_id, event });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct AudioFixture(std::path::PathBuf);
+    impl AudioFixture {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "shiyin-playback-{}-{}.wav",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            let data_size = 8000_u32 * 2 * 3;
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(b"RIFF");
+            bytes.extend_from_slice(&(36 + data_size).to_le_bytes());
+            bytes.extend_from_slice(b"WAVEfmt ");
+            bytes.extend_from_slice(&16_u32.to_le_bytes());
+            bytes.extend_from_slice(&1_u16.to_le_bytes());
+            bytes.extend_from_slice(&1_u16.to_le_bytes());
+            bytes.extend_from_slice(&8000_u32.to_le_bytes());
+            bytes.extend_from_slice(&16000_u32.to_le_bytes());
+            bytes.extend_from_slice(&2_u16.to_le_bytes());
+            bytes.extend_from_slice(&16_u16.to_le_bytes());
+            bytes.extend_from_slice(b"data");
+            bytes.extend_from_slice(&data_size.to_le_bytes());
+            bytes.resize(bytes.len() + data_size as usize, 0);
+            std::fs::write(&path, bytes).unwrap();
+            Self(path)
+        }
+        fn stream(&self) -> StreamInfo {
+            StreamInfo {
+                url: format!("file://{}", self.0.display()),
+                format: "wav".into(),
+                bitrate: None,
+            }
+        }
+    }
+    impl Drop for AudioFixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+    fn track() -> Track {
+        Track {
+            id: "fixture".into(),
+            name: "fixture".into(),
+            artist: "fixture".into(),
+            album: "fixture".into(),
+            duration_ms: 3000,
+            source: rustplayer_core::MusicSourceId::Netease,
+            cover_url: None,
+            media_mid: None,
+        }
+    }
+    async fn until(
+        rx: &mut broadcast::Receiver<PlayerEventEnvelope>,
+        predicate: impl Fn(&PlayerEventEnvelope) -> bool,
+    ) -> PlayerEventEnvelope {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let event = rx.recv().await.expect("engine event channel stays open");
+                if predicate(&event) {
+                    return event;
+                }
+                if let PlayerEvent::Error { error } = event.event {
+                    panic!("unexpected engine failure: {error}");
+                }
+            }
+        })
+        .await
+        .expect("expected playback event within timeout")
+    }
+    fn paused(event: &PlayerEventEnvelope, id: u64) -> bool {
+        event.playback_id == id
+            && matches!(
+                event.event,
+                PlayerEvent::StateChanged {
+                    state: PlayerState::Paused { .. }
+                }
+            )
+    }
+
+    #[tokio::test]
+    async fn only_latest_reserved_load_reaches_the_engine() {
+        let player = Player::with_audio_sink("fakesink").unwrap();
+        let mut events = player.subscribe();
+        assert!(player.reserve_request(1));
+        assert!(player.reserve_request(2));
+        assert!(!player.reserve_request(1));
+        assert!(!player.reserve_request(2));
+        let missing = StreamInfo {
+            url: format!(
+                "file:///tmp/shiyin-missing-{}-{}.wav",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ),
+            format: "wav".into(),
+            bitrate: None,
+        };
+        player
+            .send(PlayerCommand::Load {
+                playback_id: 1,
+                track: track(),
+                stream: missing.clone(),
+                position_ms: 0,
+                paused: false,
+            })
+            .await
+            .unwrap();
+        player
+            .send(PlayerCommand::Load {
+                playback_id: 2,
+                track: track(),
+                stream: missing,
+                position_ms: 0,
+                paused: false,
+            })
+            .await
+            .unwrap();
+        let event = until(&mut events, |_| true).await;
+        assert_eq!(event.playback_id, 2);
+        assert!(matches!(
+            event.event,
+            PlayerEvent::StateChanged {
+                state: PlayerState::Loading { .. }
+            }
+        ));
+        let failure = until(&mut events, |event| {
+            matches!(event.event, PlayerEvent::Error { .. })
+        })
+        .await;
+        assert_eq!(failure.playback_id, 2);
+        let stop = until(&mut events, |event| {
+            matches!(
+                event.event,
+                PlayerEvent::StateChanged {
+                    state: PlayerState::Stopped
+                }
+            )
+        })
+        .await;
+        assert_eq!(stop.playback_id, 2);
+    }
+
+    #[tokio::test]
+    async fn real_pipeline_restores_position_while_paused_then_emits_ended() {
+        let audio = AudioFixture::new();
+        let player = Player::with_audio_sink("fakesink").unwrap();
+        let mut events = player.subscribe();
+        player.reserve_request(10);
+        player
+            .send(PlayerCommand::Load {
+                playback_id: 10,
+                track: track(),
+                stream: audio.stream(),
+                position_ms: 1000,
+                paused: true,
+            })
+            .await
+            .unwrap();
+        let event = until(&mut events, |event| paused(event, 10)).await;
+        let PlayerEvent::StateChanged {
+            state: PlayerState::Paused { position_ms, .. },
+        } = event.event
+        else {
+            unreachable!()
+        };
+        assert!(
+            (950..=1050).contains(&position_ms),
+            "restored position was {position_ms}"
+        );
+        player
+            .send(PlayerCommand::SetPaused {
+                playback_id: 10,
+                paused: false,
+            })
+            .await
+            .unwrap();
+        let ended = until(&mut events, |event| {
+            matches!(event.event, PlayerEvent::Ended)
+        })
+        .await;
+        assert_eq!(ended.playback_id, 10);
+    }
+
+    #[tokio::test]
+    async fn old_controls_and_stop_do_not_change_the_new_pipeline() {
+        let audio = AudioFixture::new();
+        let player = Player::with_audio_sink("fakesink").unwrap();
+        let mut events = player.subscribe();
+        player.reserve_request(2);
+        player
+            .send(PlayerCommand::Load {
+                playback_id: 2,
+                track: track(),
+                stream: audio.stream(),
+                position_ms: 0,
+                paused: true,
+            })
+            .await
+            .unwrap();
+        until(&mut events, |event| paused(event, 2)).await;
+        player
+            .send(PlayerCommand::Seek {
+                playback_id: 1,
+                position_ms: 2500,
+            })
+            .await
+            .unwrap();
+        player
+            .send(PlayerCommand::SetPaused {
+                playback_id: 1,
+                paused: false,
+            })
+            .await
+            .unwrap();
+        player
+            .send(PlayerCommand::Stop { playback_id: 1 })
+            .await
+            .unwrap();
+        assert!(
+            events.try_recv().is_err(),
+            "old controls must not emit new state changes"
+        );
+        player.reserve_request(3);
+        player
+            .send(PlayerCommand::Stop { playback_id: 3 })
+            .await
+            .unwrap();
+        let stopped = until(&mut events, |_| true).await;
+        assert_eq!(stopped.playback_id, 3);
+        assert!(matches!(
+            stopped.event,
+            PlayerEvent::StateChanged {
+                state: PlayerState::Stopped
+            }
+        ));
+        assert!(player
+            .send(PlayerCommand::Seek {
+                playback_id: 3,
+                position_ms: 10
+            })
+            .await
+            .is_err());
+        assert!(
+            events.try_recv().is_err(),
+            "control errors must be returned through RPC only"
+        );
+    }
 }
