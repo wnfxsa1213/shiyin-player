@@ -18,7 +18,7 @@ function ScenePreviewDialog({ scene, onClose }: { scene: VisualScene; onClose: (
   const ref = useRef<HTMLDivElement>(null);
   useFocusTrap(ref, true, onClose);
   return <div ref={ref} className="scene-preview-dialog" role="dialog" aria-modal="true" aria-label="沉浸预览" tabIndex={-1} data-scene-block>
-    <SceneSurface scene={scene} />
+    <SceneSurface scene={scene} motion="preview" />
     <div className="scene-preview-top"><span>沉浸预览 · {scene.name}</span><button className="scene-button" onClick={onClose}><X size={16} />返回搭配</button></div>
     <ImmersiveContent preview><p className="scene-preview-note">当前仅预览，返回后可应用这套搭配</p></ImmersiveContent>
   </div>;
@@ -91,7 +91,7 @@ export default function ScenesView() {
       </section>
       <section className="scene-editor" aria-label="场景搭配">
         <div className="scene-preview" style={{ background: sceneGradient(draft) }}>
-          <SceneSurface scene={draft} variant="preview" active={!preview && !immersive && !previewPaused} />
+          <SceneSurface scene={draft} variant="preview" motion="preview" active={!preview && !immersive && !previewPaused} />
           <div className="scene-preview-label"><span>候选预览</span><span>{dirty ? '待应用' : '已应用'}</span></div>
           <div className="scene-preview-title"><span>{EFFECT_NAMES[draft.effect]} / {draft.followMusic ? '音乐跟随' : '舒缓流动'}</span><h2>{draft.name}</h2></div>
           <div className="scene-preview-actions"><button onClick={() => setPreviewPaused(!previewPaused)} aria-pressed={previewPaused}>{previewPaused ? '继续预览' : '暂停预览'}</button><button onClick={() => setPreview(true)}><Expand size={13} />沉浸预览</button></div>

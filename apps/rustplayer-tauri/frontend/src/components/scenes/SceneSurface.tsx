@@ -9,10 +9,15 @@ import { useVisualizerStore, spectrumDataRef } from '@/store/visualizerStore';
 import { useToastStore } from '@/store/toastStore';
 import { hasVisualPlayback } from '@/lib/scenes/spectrum';
 
-interface Props { scene: VisualScene; variant?: 'main' | 'immersive' | 'preview'; active?: boolean; }
+interface Props {
+  scene: VisualScene;
+  variant?: 'main' | 'immersive' | 'preview';
+  motion?: 'playback' | 'preview';
+  active?: boolean;
+}
 interface Background { scene: VisualScene; url: string | null; }
 
-export default function SceneSurface({ scene, variant = 'immersive', active = true }: Props) {
+export default function SceneSurface({ scene, variant = 'immersive', motion = 'playback', active = true }: Props) {
   const assets = useSceneStore(state => state.assets);
   const cover = usePlayerStore(state => state.listening.track?.coverUrl);
   const playing = usePlayerStore(state => hasVisualPlayback(state));
@@ -27,7 +32,8 @@ export default function SceneSurface({ scene, variant = 'immersive', active = tr
   const [previous, setPrevious] = useState<Background | null>(null);
   const shown = useRef(background);
   const url = backgroundUrl(scene, assets, cover);
-  const running = active && inView && visible && !reduced && enabled && (playing || variant === 'preview');
+  // Preview scheduling is independent of the backdrop's presentation style.
+  const running = active && inView && visible && !reduced && enabled && (playing || motion === 'preview');
 
   useEffect(() => {
     let alive = true;

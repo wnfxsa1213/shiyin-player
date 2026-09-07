@@ -42,6 +42,8 @@ UI 分支评审后，前端回归为 79 项。新增沉浸指定下一首与队�
 
 真实 Tauri、WebKitGTK 与深浅主题检查方法、结果和设备范围见 [视觉场景验证记录](docs/design/visual-scenes-validation.md)。新增效果或改变画质预算时，同时检查背景帧时长与交互响应；场景单位测试不能替代该检查。
 
+`scenePreview.test.tsx` 运行真实场景页面、Surface 和渲染器，仅补齐 jsdom 缺少的 Canvas / 观察器 API 和可控帧时钟。覆盖未播放与暂停时展开预览仍连续绘制、被覆盖的小预览停绘、退出恢复、隐藏/减少动态效果/粒子开关，以及正式播放背景仍按播放状态停绘。
+
 ## 后端测试建议 (Rust)
 
 ### 1. QQ 音乐 API 错误处理 (`crates/qqmusic/src/api.rs`)
