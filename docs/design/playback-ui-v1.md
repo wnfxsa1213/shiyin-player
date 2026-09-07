@@ -1,6 +1,6 @@
 # 播放主流程 UI 与交互统一
 
-2026-09-06 已实现并通过分支评审，位于 `codex/ui-interaction`，待合并主线。范围为播放栏、歌曲入口和播放队列；沿用播放生命周期，Radio session、Lyrics read-model 与后续压力测试继续暂停。初次结果见 [验证记录](playback-ui-validation.md)，评审修复与最新验收见 [评审收尾](ui-branch-review.md)。
+2026-09-06 已实现并通过分支评审，经 `codex/ui-interaction` 合并至 `master`。范围为播放栏、歌曲入口和播放队列；沿用播放生命周期，Radio session、Lyrics read-model 与后续压力测试继续暂停。初次结果见 [验证记录](playback-ui-validation.md)，评审修复与最新验收见 [评审收尾](ui-branch-review.md)。
 
 ## 页面方案
 
