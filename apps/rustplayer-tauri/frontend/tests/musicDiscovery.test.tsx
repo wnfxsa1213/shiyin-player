@@ -63,6 +63,28 @@ afterEach(() => {
 });
 
 describe('每日推荐的空结果恢复', () => {
+  it('推荐请求失败后等待用户重试，不自动循环请求', async () => {
+    vi.mocked(ipc.getSmartRecommend).mockRejectedValueOnce({ kind: 'network' }).mockImplementation(() => new Promise(() => {}));
+    render(<MemoryRouter><DailyRecommendView /></MemoryRouter>);
+    await screen.findByText('推荐歌曲加载失败');
+    expect(ipc.getSmartRecommend).toHaveBeenCalledTimes(1);
+    vi.mocked(ipc.getSmartRecommend).mockResolvedValue({ ...emptyResult(), personalized: [track('recovered')],
+      discovery: { outcome: 'complete', availableSources: ['netease'], unavailableSources: [] } });
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    await screen.findByText('recovered');
+    expect(ipc.getSmartRecommend).toHaveBeenCalledTimes(2);
+  });
+
+  it('未登录时不展示上次账号的缓存推荐', async () => {
+    useRecommendStore.setState({ ...emptyResult(), personalized: [track('cached')],
+      discovery: { outcome: 'complete', availableSources: ['netease'], unavailableSources: [] } });
+    vi.mocked(ipc.checkLoginStatus).mockResolvedValue({ netease: false, qqmusic: false });
+    render(<MemoryRouter><DailyRecommendView /></MemoryRouter>);
+    await screen.findByText('登录后查看智能推荐');
+    expect(screen.queryByText('cached')).toBeNull();
+    expect(ipc.getSmartRecommend).not.toHaveBeenCalled();
+  });
+
   it.each([false, true])('空结果有重温经典=%s 时仍可刷新并获得新歌曲', async (hasRediscover) => {
     const empty = emptyResult(hasRediscover ? [track('old-song')] : []);
     const recovered: RecommendResult = {

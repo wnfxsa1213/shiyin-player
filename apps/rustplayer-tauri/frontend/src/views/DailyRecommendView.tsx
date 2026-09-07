@@ -31,11 +31,11 @@ export default function DailyRecommendView() {
 
   // Fetch recommendations once logged in
   useEffect(() => {
-    if (anyLoggedIn === true && discovery === null && !loading) {
+    if (anyLoggedIn === true && discovery === null && !loading && !error) {
       fetchRecommendations();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchRecommendations is stable (zustand)
-  }, [anyLoggedIn, discovery, loading]);
+  }, [anyLoggedIn, discovery, loading, error]);
 
   const handlePlayAll = () => {
     if (!personalized.length) return;
@@ -65,7 +65,7 @@ export default function DailyRecommendView() {
   const hasDiscoveryContent = personalized.length > 0 || hasRediscover;
   const showError = !showSkeleton && anyLoggedIn === true && !!error && !hasDiscoveryContent;
   const showUnavailable = !showSkeleton && anyLoggedIn === true && discovery?.outcome === 'unavailable';
-  const showData = !showSkeleton && discovery !== null && discovery.outcome !== 'unavailable' && hasDiscoveryContent;
+  const showData = !showSkeleton && anyLoggedIn === true && discovery !== null && discovery.outcome !== 'unavailable' && hasDiscoveryContent;
   const showEmpty = !showSkeleton && anyLoggedIn === true && discovery?.outcome === 'empty' && !hasDiscoveryContent;
   const availableSourceNames = discovery?.availableSources
     .map((source) => source === 'netease' ? '网易云音乐' : 'QQ音乐')
@@ -89,7 +89,7 @@ export default function DailyRecommendView() {
           </div>
           {/* Info */}
           <div className="flex flex-col justify-center gap-2">
-            <h1 className="text-2xl font-bold text-[var(--text-primary)]">每日推荐</h1>
+            <h1 className="text-2xl font-bold text-[var(--text-primary)]">智能推荐</h1>
             <p className="text-sm text-[var(--text-secondary)]">
               根据你的听歌口味智能推荐 · {month}月{day}日
             </p>
@@ -164,7 +164,7 @@ export default function DailyRecommendView() {
       {showNotLoggedIn && (
         <div className="text-center py-16 animate-fade-in-up">
           <CalendarDays size={64} strokeWidth={1} className="text-[var(--text-tertiary)] mx-auto mb-4 opacity-50" aria-hidden="true" />
-          <p className="text-[var(--text-primary)] font-medium text-lg mb-2">登录后查看每日推荐</p>
+          <p className="text-[var(--text-primary)] font-medium text-lg mb-2">登录后查看智能推荐</p>
           <p className="text-[var(--text-tertiary)] text-sm mb-6 max-w-xs mx-auto">
             登录任意音乐账号，获取智能推荐歌曲
           </p>

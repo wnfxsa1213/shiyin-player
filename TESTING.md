@@ -16,6 +16,16 @@ npm --prefix apps/rustplayer-tauri/frontend run build
 - 前端测试位于 `apps/rustplayer-tauri/frontend/tests/musicDiscovery.test.tsx`，使用 Vitest、React Testing Library 和 jsdom，模拟 Tauri IPC，执行真实页面和 Zustand store。
 - 前端回归覆盖空结果与仅有重温经典时的手动刷新、不可用结果的重试入口，以及 FM 播放和自动补曲共享降级通知去重、恢复后再次提示。
 
+## 首页、导航与搜索反馈回归
+
+运行 `npm --prefix apps/rustplayer-tauri/frontend test`、`npm --prefix apps/rustplayer-tauri/frontend run build` 和 `cargo test --workspace --locked --offline`。
+
+- `homeNavigation.test.tsx`：8 项，覆盖歌单集合与焦点、具体歌单去向、真实推荐、播放详情保留队列、未登录、登录检查失败、歌单/推荐空结果与重试、推荐降级与重温经典。
+- `searchFeedback.test.tsx`：12 项，覆盖防抖、Enter、中文组合输入、音源键盘操作、迟到成功/失败、旧结果的上下文与播放、清空和页面隔离；运行真实页面、Hook、虚拟列表和播放 store，仅模拟 IPC 与 jsdom 缺少的布局 API。
+- `musicDiscovery.test.tsx` 追加 2 项：失败后等待用户重试，未登录时不显示缓存推荐。
+
+本轮全部前端回归共 105 项，Rust 共 52 项。真实浏览器的窗口/主题矩阵、截图及边界见 [首页与搜索验证](docs/design/home-navigation-search-validation.md)。
+
 ## 播放生命周期回归测试
 
 ```bash

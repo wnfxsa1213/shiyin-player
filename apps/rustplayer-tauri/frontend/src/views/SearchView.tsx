@@ -1,46 +1,22 @@
-import { useState, useEffect, useRef } from 'react';
-import { ipc } from '@/lib/ipc';
-import { Track } from '@/store/playerStore';
-import { useToastStore } from '@/store/toastStore';
-import { sanitizeError } from '@/lib/errorMessages';
+import { useRef } from 'react';
 import VirtualTrackList from '@/components/common/VirtualTrackList';
-import { Search, SearchX, Music } from 'lucide-react';
+import { useMusicSearch, searchSourceNames, type SearchSource } from '@/hooks/useMusicSearch';
+import { Search, SearchX, Music, RefreshCw, X, CircleAlert } from 'lucide-react';
 
-let searchSeq = 0;
+const tabs = ['all', 'netease', 'qqmusic'] as const;
+
+function SearchContext({ query, source, count }: { query: string; source: SearchSource; count?: number }) {
+  return <span className="search-context"><span className="search-query" title={query}>「{query}」</span>
+    <span className="search-source"> · {searchSourceNames[source]}{count === undefined ? '' : ` · ${count} 首结果`}</span></span>;
+}
 
 export default function SearchView() {
-  const [query, setQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [source, setSource] = useState<'all' | 'netease' | 'qqmusic'>('all');
-  const [debouncedSource, setDebouncedSource] = useState(source);
-  const [results, setResults] = useState<Track[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 450);
-    return () => clearTimeout(t);
-  }, [query]);
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedSource(source), 200);
-    return () => clearTimeout(t);
-  }, [source]);
-
-  useEffect(() => {
-    const seq = ++searchSeq;
-    if (!debouncedQuery.trim()) { setResults([]); setLoading(false); return; }
-    setLoading(true);
-    ipc.searchMusic(debouncedQuery, debouncedSource === 'all' ? undefined : debouncedSource)
-      .then((r) => { if (seq === searchSeq) setResults(r); })
-      .catch((err) => {
-        if (seq === searchSeq) useToastStore.getState().addToast('error', `搜索失败: ${sanitizeError(err)}`);
-      })
-      .finally(() => { if (seq === searchSeq) setLoading(false); });
-  }, [debouncedQuery, debouncedSource]);
-
-  const tabs = ['all', 'netease', 'qqmusic'] as const;
-  const panelId = 'search-source-panel';
+  const { query, source, state, setQuery, setSource, submit, beginComposition, endComposition } = useMusicSearch();
+  const inputRef = useRef<HTMLInputElement>(null);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const pending = state.phase === 'waiting' || state.phase === 'loading';
+  const result = state.result;
+  const oldResult = result !== null && state.phase !== 'success';
 
   const focusTab = (index: number) => {
     const nextIndex = (index + tabs.length) % tabs.length;
@@ -48,113 +24,70 @@ export default function SearchView() {
     tabRefs.current[nextIndex]?.focus();
   };
 
-  const handleTablistKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    const currentIndex = tabs.indexOf(source);
-    if (currentIndex === -1) return;
-
-    switch (e.key) {
-      case 'ArrowLeft':
-        e.preventDefault();
-        focusTab(currentIndex - 1);
-        break;
-      case 'ArrowRight':
-        e.preventDefault();
-        focusTab(currentIndex + 1);
-        break;
-      case 'Home':
-        e.preventDefault();
-        focusTab(0);
-        break;
-      case 'End':
-        e.preventDefault();
-        focusTab(tabs.length - 1);
-        break;
-    }
+  const handleTablistKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const index = tabs.indexOf(source);
+    const next = { ArrowLeft: index - 1, ArrowRight: index + 1, Home: 0, End: tabs.length - 1 }[event.key];
+    if (next !== undefined) { event.preventDefault(); focusTab(next); }
   };
 
   return (
-    <div className="p-8 pb-28 flex flex-col h-full">
-      <h1 className="text-3xl font-bold mb-6 animate-fade-in-up">搜索</h1>
+    <div className="search-page discovery-page">
+      <header className="discovery-heading">
+        <h1>搜索</h1>
+        <p>找一首想听的歌，或探索喜欢的歌手。</p>
+      </header>
 
-      <div className="relative w-full max-w-xl mb-6 animate-fade-in-up [animation-delay:50ms]">
-        <Search size={20} strokeWidth={1.5} className="absolute left-4 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none" aria-hidden="true" />
-        <input
-          type="search"
-          name="search"
-          placeholder="输入关键词…"
-          aria-label="搜索音乐"
-          autoComplete="off"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="w-full bg-bg-secondary border border-border-primary pl-12 pr-5 py-3 rounded-xl text-text-primary placeholder:text-text-tertiary focus-visible:outline-none focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-subtle focus-visible:shadow-[0_0_12px_var(--accent-subtle)] transition-[border-color,box-shadow] duration-200"
-        />
-      </div>
+      <form role="search" className="search-form" onSubmit={event => { event.preventDefault(); submit(); }}>
+        <div className="search-input-wrap">
+          <Search size={20} aria-hidden="true" />
+          <input ref={inputRef} type="search" name="search" placeholder="歌曲、歌手或专辑"
+            aria-label="搜索音乐" autoComplete="off" value={query}
+            onChange={event => setQuery(event.target.value)} onCompositionStart={beginComposition}
+            onCompositionEnd={event => endComposition(event.currentTarget.value)}
+            onKeyDown={event => { if (event.key === 'Enter' && event.nativeEvent.isComposing) event.preventDefault(); }} />
+          {query && <button type="button" className="player-icon-button" aria-label="清空搜索"
+            onClick={() => { setQuery(''); inputRef.current?.focus(); }}><X size={17} /></button>}
+        </div>
+        <button className="discovery-button is-primary" type="submit" disabled={!query.trim()}>搜索</button>
+      </form>
 
-      <div
-        className="flex gap-2 mb-6 animate-fade-in-up [animation-delay:100ms]"
-        role="tablist"
-        aria-label="音乐源"
-        onKeyDown={handleTablistKeyDown}
-      >
-        {tabs.map((t, index) => (
-          <button
-            key={t}
-            ref={(node) => { tabRefs.current[index] = node; }}
-            type="button"
-            id={`search-source-tab-${t}`}
-            role="tab"
-            aria-selected={source === t}
-            aria-controls={panelId}
-            tabIndex={source === t ? 0 : -1}
-            onClick={() => setSource(t)}
-            className={`px-4 py-1.5 rounded-full text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
-              source === t
-                ? 'bg-gradient-accent text-white font-medium shadow-sm'
-                : 'bg-bg-secondary text-text-secondary hover:bg-bg-hover hover:text-text-primary'
-            }`}
-          >
-            {t === 'all' ? '全部' : t === 'netease' ? '网易云' : 'QQ音乐'}
+      <div className="search-tabs" role="tablist" aria-label="音乐源" onKeyDown={handleTablistKeyDown}>
+        {tabs.map((tab, index) => (
+          <button key={tab} ref={node => { tabRefs.current[index] = node; }} type="button"
+            id={`search-source-tab-${tab}`} role="tab" aria-selected={source === tab}
+            aria-controls="search-source-panel" tabIndex={source === tab ? 0 : -1}
+            onClick={() => { if (source !== tab) setSource(tab); }}>
+            {searchSourceNames[tab]}
           </button>
         ))}
       </div>
 
-      <div
-        id={panelId}
-        className="flex-1 overflow-y-auto min-h-0"
-        role="tabpanel"
-        aria-labelledby={`search-source-tab-${source}`}
-        aria-live="polite"
-      >
-        {loading && (
-          <div className="space-y-3 py-4" role="status" aria-busy="true" aria-label="搜索中">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="flex items-center px-4 py-2.5 gap-3 animate-pulse">
-                <div className="w-10 h-4 bg-bg-secondary rounded" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-4 bg-bg-secondary rounded w-2/3" />
-                  <div className="h-3 bg-bg-secondary rounded w-1/3" />
-                </div>
-                <div className="w-16 h-3 bg-bg-secondary rounded" />
-              </div>
-            ))}
-          </div>
-        )}
-        {!loading && debouncedQuery && results.length === 0 && (
-          <div className="text-center py-16">
-            <SearchX size={64} strokeWidth={1} className="text-text-tertiary mx-auto mb-4 opacity-50" aria-hidden="true" />
-            <p className="text-text-tertiary">没有找到相关结果</p>
-            <p className="text-text-tertiary text-sm mt-1">试试其他关键词或切换音乐源</p>
-          </div>
-        )}
-        {!loading && !debouncedQuery && results.length === 0 && (
-          <div className="text-center py-16">
-            <Music size={64} strokeWidth={1} className="text-text-tertiary mx-auto mb-4 opacity-50" aria-hidden="true" />
-            <p className="text-text-tertiary">搜索你喜欢的音乐</p>
-          </div>
-        )}
-        {!loading && results.length > 0 && (
-          <VirtualTrackList tracks={results} />
-        )}
+      <div className="search-announcement" role="status" aria-live="polite" aria-atomic="true">
+        {pending && <p><RefreshCw size={15} className={state.phase === 'loading' ? 'playback-spinner' : ''} aria-hidden="true" />
+          <span className="search-phase">{state.phase === 'waiting' ? '准备搜索' : '正在搜索'}</span><SearchContext {...state.target} /></p>}
+        {state.phase === 'error' && <div className="discovery-notice is-error">
+          <CircleAlert size={18} aria-hidden="true" />
+          <div><strong>搜索失败</strong><p><SearchContext {...state.target} /></p><p>{state.message}</p></div>
+          <button type="button" className="discovery-button" onClick={submit}>重试搜索</button>
+        </div>}
+        {state.phase === 'success' && result && <p><SearchContext {...result} count={result.tracks.length} /></p>}
+      </div>
+
+      <div id="search-source-panel" className="search-results" role="tabpanel"
+        aria-labelledby={`search-source-tab-${source}`}>
+        {state.phase === 'idle' && <div className="discovery-empty search-empty">
+          <Music size={42} strokeWidth={1.3} aria-hidden="true" /><h2>搜索你喜欢的音乐</h2><p>输入关键词开始搜索，也可以按 Enter 立即搜索。</p>
+        </div>}
+        {pending && !result && <div className="search-skeleton" aria-hidden="true">
+          {Array.from({ length: 6 }, (_, index) => <div key={index}><span /><span /></div>)}
+        </div>}
+        {result && <>
+          {oldResult && <p className="search-previous"><span className="search-phase">上次结果：</span><SearchContext {...result} count={result.tracks.length} /></p>}
+          {result.tracks.length > 0
+            ? <VirtualTrackList key={result.revision} tracks={result.tracks} />
+            : <div className="discovery-empty search-empty"><SearchX size={42} strokeWidth={1.3} aria-hidden="true" />
+              <h2>{oldResult ? '上次搜索没有找到相关结果' : '没有找到相关结果'}</h2><p>试试其他关键词或切换音乐源。</p></div>}
+        </>}
       </div>
     </div>
   );

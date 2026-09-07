@@ -29,10 +29,10 @@ export default function HorizontalScroll({ children, className = '' }: Horizonta
       el.removeEventListener('scroll', checkScroll);
       ro.disconnect();
     };
-  }, []);
+  }, [children]);
 
   const scroll = (dir: -1 | 1) => {
-    ref.current?.scrollBy({ left: dir * 300, behavior: 'smooth' });
+    ref.current?.scrollBy({ left: dir * 300, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   };
 
   return (
@@ -42,7 +42,7 @@ export default function HorizontalScroll({ children, className = '' }: Horizonta
           onClick={() => scroll(-1)}
           className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full
             bg-bg-elevated/90 shadow-md flex items-center justify-center
-            opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+            opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity cursor-pointer"
           aria-label="向左滚动"
         >
           <ChevronLeft size={16} />
@@ -60,7 +60,7 @@ export default function HorizontalScroll({ children, className = '' }: Horizonta
           onClick={() => scroll(1)}
           className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full
             bg-bg-elevated/90 shadow-md flex items-center justify-center
-            opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+            opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity cursor-pointer"
           aria-label="向右滚动"
         >
           <ChevronRight size={16} />

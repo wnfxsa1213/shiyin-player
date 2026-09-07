@@ -23,6 +23,7 @@ import { startSceneRuntime } from '@/lib/scenes/runtime';
 import { receiveSpectrum } from '@/lib/scenes/spectrum';
 import '@/styles/scenes.css';
 import '@/styles/playback.css';
+import '@/styles/discovery.css';
 
 // Route-level code splitting — SettingsView and PlaylistDetailView are
 // infrequently accessed; lazy-loading them reduces the initial JS bundle.

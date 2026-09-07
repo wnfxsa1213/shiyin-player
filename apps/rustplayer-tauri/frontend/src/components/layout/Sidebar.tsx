@@ -2,12 +2,12 @@ import { NavLink } from 'react-router-dom';
 import { useUiStore } from '@/store/uiStore';
 import { usePlaylistStore } from '@/store/playlistStore';
 import CoverImage from '@/components/common/CoverImage';
-import { Home, Search, Settings, PanelLeftClose, PanelLeftOpen, CalendarDays, Radio, Sparkles, type LucideIcon } from 'lucide-react';
+import { Home, Search, Settings, PanelLeftClose, PanelLeftOpen, Compass, Maximize2, Sparkles, type LucideIcon } from 'lucide-react';
 
 const navItems: { path: string; label: string; icon: LucideIcon }[] = [
   { path: '/', label: '首页', icon: Home },
   { path: '/search', label: '搜索', icon: Search },
-  { path: '/daily', label: '每日推荐', icon: CalendarDays },
+  { path: '/daily', label: '智能推荐', icon: Compass },
   { path: '/scenes', label: '视觉场景', icon: Sparkles },
   { path: '/settings', label: '设置', icon: Settings },
 ];
@@ -23,7 +23,7 @@ export default function Sidebar() {
       className={`${collapsed ? 'w-16' : 'w-56'} bg-bg-primary flex-shrink-0 flex flex-col border-r border-border-primary`}
       aria-label="主导航"
     >
-      <div className="flex items-center gap-3 px-4 py-5">
+      <div className={`flex items-center gap-3 py-5 ${collapsed ? 'flex-col px-2' : 'px-4'}`}>
         <div className="w-9 h-9 rounded-lg bg-gradient-accent flex items-center justify-center flex-shrink-0 shadow-glow">
           <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55C7.79 13 6 14.79 6 17s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
@@ -34,7 +34,7 @@ export default function Sidebar() {
         )}
         <button
           onClick={() => useUiStore.getState().toggleSidebar()}
-          className="ml-auto p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+          className={`${collapsed ? '' : 'ml-auto'} p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none`}
           aria-label={collapsed ? '展开侧边栏' : '收起侧边栏'}
         >
           {collapsed ? <PanelLeftOpen size={16} strokeWidth={1.5} /> : <PanelLeftClose size={16} strokeWidth={1.5} />}
@@ -70,7 +70,10 @@ export default function Sidebar() {
         <li>
           <button
             onClick={() => setImmersiveOpen(!immersiveOpen)}
-            aria-label={collapsed ? '沉浸 FM' : undefined}
+            aria-label="播放详情"
+            aria-haspopup="dialog"
+            aria-expanded={immersiveOpen}
+            title="查看当前播放的封面、歌词与视觉场景"
             className={`relative w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
               immersiveOpen
                 ? 'bg-accent-subtle text-accent font-medium'
@@ -80,15 +83,15 @@ export default function Sidebar() {
             {immersiveOpen && (
               <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-accent" aria-hidden="true" />
             )}
-            <Radio size={20} strokeWidth={1.5} className="flex-shrink-0" />
-            {!collapsed && <span className="text-sm">沉浸 FM</span>}
+            <Maximize2 size={20} strokeWidth={1.5} className="flex-shrink-0" />
+            {!collapsed && <span className="text-sm">播放详情</span>}
           </button>
         </li>
       </ul>
 
       {playlists.length > 0 && (
         <div className="px-2 mt-2 border-t border-border-secondary pt-2 flex-1 overflow-y-auto min-h-0">
-          {!collapsed && <div className="px-3 py-1 text-xs text-text-tertiary font-medium">歌单</div>}
+          {!collapsed && <div className="px-3 py-1 text-xs text-text-tertiary font-medium">我的歌单</div>}
           <ul className="space-y-0.5" style={{ contentVisibility: 'auto' }}>
             {playlists.map((pl) => (
               <li key={`${pl.source}-${pl.id}`}>

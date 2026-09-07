@@ -1,0 +1,1078 @@
+{
+  "date": "2026-09-06",
+  "baseCommit": "49dd940",
+  "branch": "codex/home-navigation-search",
+  "frontendTests": 105,
+  "rustTests": 52,
+  "productionBuild": "passed",
+  "chromiumVersion": "152.0.7977.82",
+  "browserAdapter": "Tauri official mock IPC with real App, components and stores",
+  "chromium": {
+    "layouts": [
+      {
+        "theme": "dark",
+        "mode": "home",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "home-logged-out",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "home-empty",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "home-error",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "search-success",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 402
+      },
+      {
+        "theme": "dark",
+        "mode": "search-error",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 292
+      },
+      {
+        "theme": "dark",
+        "mode": "search-empty",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "search-loading",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "search-long",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 402
+      },
+      {
+        "theme": "light",
+        "mode": "home",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "home-logged-out",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "home-empty",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "home-error",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "search-success",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 402
+      },
+      {
+        "theme": "light",
+        "mode": "search-error",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 292
+      },
+      {
+        "theme": "light",
+        "mode": "search-empty",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "search-loading",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "search-long",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 402
+      },
+      {
+        "theme": "dark",
+        "mode": "home",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "home-logged-out",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "home-empty",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "home-error",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "search-success",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 214
+      },
+      {
+        "theme": "dark",
+        "mode": "search-error",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 104
+      },
+      {
+        "theme": "dark",
+        "mode": "search-empty",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "search-loading",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "search-long",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 214
+      },
+      {
+        "theme": "light",
+        "mode": "home",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "home-logged-out",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "home-empty",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "home-error",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "search-success",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 214
+      },
+      {
+        "theme": "light",
+        "mode": "search-error",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 104
+      },
+      {
+        "theme": "light",
+        "mode": "search-empty",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "search-loading",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "search-long",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 214
+      }
+    ],
+    "errors": [],
+    "functional": {
+      "checks": [
+        {
+          "name": "collection entry focuses heading and keeps home",
+          "pass": true
+        },
+        {
+          "name": "collection expands all playlists",
+          "pass": true
+        },
+        {
+          "name": "specific playlist opens correct detail without playing",
+          "pass": true
+        },
+        {
+          "name": "recommendation and playlist content are distinct",
+          "pass": true
+        },
+        {
+          "name": "home details opens modal with focus and preserves queue",
+          "pass": true
+        },
+        {
+          "name": "details exit restores shortcut focus",
+          "pass": true
+        },
+        {
+          "name": "collapsed sidebar controls remain within sidebar",
+          "pass": true
+        },
+        {
+          "name": "collapsed details opens current playback",
+          "pass": true
+        },
+        {
+          "name": "collapsed details restores focus",
+          "pass": true
+        },
+        {
+          "name": "initial search prompts for input",
+          "pass": true
+        },
+        {
+          "name": "real virtual list scrolls to later results",
+          "pass": true
+        },
+        {
+          "name": "search error keeps identified previous results",
+          "pass": true
+        },
+        {
+          "name": "previous result scroll retained after failure",
+          "pass": true
+        },
+        {
+          "name": "retry replaces result context and resets scroll",
+          "pass": true
+        },
+        {
+          "name": "search song preserves existing queue",
+          "pass": true
+        },
+        {
+          "name": "source keyboard navigation moves focus",
+          "pass": true
+        },
+        {
+          "name": "late response cannot overwrite new query",
+          "pass": true
+        },
+        {
+          "name": "clear pending request restores empty input and focus",
+          "pass": true
+        },
+        {
+          "name": "successful empty search is distinct from failure",
+          "pass": true
+        },
+        {
+          "name": "logged-out home provides login and search actions",
+          "pass": true
+        },
+        {
+          "name": "empty library and recommendations have separate messages",
+          "pass": true
+        },
+        {
+          "name": "home failures have persistent retry actions",
+          "pass": true
+        },
+        {
+          "name": "home retries restore actual content",
+          "pass": true
+        },
+        {
+          "name": "no frontend runtime errors",
+          "pass": true
+        }
+      ],
+      "errors": []
+    },
+    "keyboard": {
+      "searches": 1,
+      "context": "「键盘提交」 · 全部音源 · 40 首结果"
+    }
+  },
+  "webkit1200": {
+    "webkit": "2.52.6",
+    "layouts": [
+      {
+        "theme": "dark",
+        "mode": "home",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "home-logged-out",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "home-empty",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "home-error",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "search-success",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 402
+      },
+      {
+        "theme": "dark",
+        "mode": "search-error",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 294
+      },
+      {
+        "theme": "dark",
+        "mode": "search-empty",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "search-loading",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "search-long",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 402
+      },
+      {
+        "theme": "light",
+        "mode": "home",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "home-logged-out",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "home-empty",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "home-error",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "search-success",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 402
+      },
+      {
+        "theme": "light",
+        "mode": "search-error",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 294
+      },
+      {
+        "theme": "light",
+        "mode": "search-empty",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "search-loading",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "search-long",
+        "width": 1200,
+        "height": 800,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 402
+      }
+    ],
+    "checks": {
+      "checks": [
+        {
+          "name": "collection entry focuses heading and keeps home",
+          "pass": true
+        },
+        {
+          "name": "collection expands all playlists",
+          "pass": true
+        },
+        {
+          "name": "specific playlist opens correct detail without playing",
+          "pass": true
+        },
+        {
+          "name": "recommendation and playlist content are distinct",
+          "pass": true
+        },
+        {
+          "name": "home details opens modal with focus and preserves queue",
+          "pass": true
+        },
+        {
+          "name": "details exit restores shortcut focus",
+          "pass": true
+        },
+        {
+          "name": "collapsed sidebar controls remain within sidebar",
+          "pass": true
+        },
+        {
+          "name": "collapsed details opens current playback",
+          "pass": true
+        },
+        {
+          "name": "collapsed details restores focus",
+          "pass": true
+        },
+        {
+          "name": "initial search prompts for input",
+          "pass": true
+        },
+        {
+          "name": "real virtual list scrolls to later results",
+          "pass": true
+        },
+        {
+          "name": "search error keeps identified previous results",
+          "pass": true
+        },
+        {
+          "name": "previous result scroll retained after failure",
+          "pass": true
+        },
+        {
+          "name": "retry replaces result context and resets scroll",
+          "pass": true
+        },
+        {
+          "name": "search song preserves existing queue",
+          "pass": true
+        },
+        {
+          "name": "source keyboard navigation moves focus",
+          "pass": true
+        },
+        {
+          "name": "late response cannot overwrite new query",
+          "pass": true
+        },
+        {
+          "name": "clear pending request restores empty input and focus",
+          "pass": true
+        },
+        {
+          "name": "successful empty search is distinct from failure",
+          "pass": true
+        },
+        {
+          "name": "logged-out home provides login and search actions",
+          "pass": true
+        },
+        {
+          "name": "empty library and recommendations have separate messages",
+          "pass": true
+        },
+        {
+          "name": "home failures have persistent retry actions",
+          "pass": true
+        },
+        {
+          "name": "home retries restore actual content",
+          "pass": true
+        },
+        {
+          "name": "no frontend runtime errors",
+          "pass": true
+        }
+      ],
+      "errors": []
+    },
+    "elapsedSeconds": 33.58
+  },
+  "webkit900": {
+    "webkit": "2.52.6",
+    "layouts": [
+      {
+        "theme": "dark",
+        "mode": "home",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "home-logged-out",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "home-empty",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "home-error",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "search-success",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 214
+      },
+      {
+        "theme": "dark",
+        "mode": "search-error",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 106
+      },
+      {
+        "theme": "dark",
+        "mode": "search-empty",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "search-loading",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "dark",
+        "mode": "search-long",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 214
+      },
+      {
+        "theme": "light",
+        "mode": "home",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "home-logged-out",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "home-empty",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "home-error",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "search-success",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 214
+      },
+      {
+        "theme": "light",
+        "mode": "search-error",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 106
+      },
+      {
+        "theme": "light",
+        "mode": "search-empty",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "search-loading",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": null
+      },
+      {
+        "theme": "light",
+        "mode": "search-long",
+        "width": 900,
+        "height": 600,
+        "overflow": [],
+        "pageOverflow": false,
+        "mainOverflow": false,
+        "listHeight": 214
+      }
+    ],
+    "checks": {
+      "checks": [
+        {
+          "name": "collection entry focuses heading and keeps home",
+          "pass": true
+        },
+        {
+          "name": "collection expands all playlists",
+          "pass": true
+        },
+        {
+          "name": "specific playlist opens correct detail without playing",
+          "pass": true
+        },
+        {
+          "name": "recommendation and playlist content are distinct",
+          "pass": true
+        },
+        {
+          "name": "home details opens modal with focus and preserves queue",
+          "pass": true
+        },
+        {
+          "name": "details exit restores shortcut focus",
+          "pass": true
+        },
+        {
+          "name": "collapsed sidebar controls remain within sidebar",
+          "pass": true
+        },
+        {
+          "name": "collapsed details opens current playback",
+          "pass": true
+        },
+        {
+          "name": "collapsed details restores focus",
+          "pass": true
+        },
+        {
+          "name": "initial search prompts for input",
+          "pass": true
+        },
+        {
+          "name": "real virtual list scrolls to later results",
+          "pass": true
+        },
+        {
+          "name": "search error keeps identified previous results",
+          "pass": true
+        },
+        {
+          "name": "previous result scroll retained after failure",
+          "pass": true
+        },
+        {
+          "name": "retry replaces result context and resets scroll",
+          "pass": true
+        },
+        {
+          "name": "search song preserves existing queue",
+          "pass": true
+        },
+        {
+          "name": "source keyboard navigation moves focus",
+          "pass": true
+        },
+        {
+          "name": "late response cannot overwrite new query",
+          "pass": true
+        },
+        {
+          "name": "clear pending request restores empty input and focus",
+          "pass": true
+        },
+        {
+          "name": "successful empty search is distinct from failure",
+          "pass": true
+        },
+        {
+          "name": "logged-out home provides login and search actions",
+          "pass": true
+        },
+        {
+          "name": "empty library and recommendations have separate messages",
+          "pass": true
+        },
+        {
+          "name": "home failures have persistent retry actions",
+          "pass": true
+        },
+        {
+          "name": "home retries restore actual content",
+          "pass": true
+        },
+        {
+          "name": "no frontend runtime errors",
+          "pass": true
+        }
+      ],
+      "errors": []
+    },
+    "elapsedSeconds": 31.69
+  },
+  "nativeKeyboard": {
+    "collection": {
+      "focused": "home-playlists-title",
+      "top": 52.171875
+    },
+    "nextFocus": "刷新歌单",
+    "playback": {
+      "requests": 1,
+      "queue": [
+        "existing",
+        "qa-0"
+      ]
+    },
+    "scrollButton": {
+      "opacity": "1",
+      "top": -0.328125
+    },
+    "scroll": 300,
+    "searchEnter": {
+      "immediate": 1,
+      "afterDebounce": 1
+    },
+    "errors": []
+  }
+}

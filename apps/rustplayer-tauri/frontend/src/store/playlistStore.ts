@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { ipc, type MusicSource, type PlaylistBrief } from '@/lib/ipc';
+import { sanitizeError } from '@/lib/errorMessages';
 
 // 两次自动刷新之间的最小冷却时间（避免 visibilitychange 重复触发）
 const MIN_FETCH_INTERVAL_MS = 5 * 60 * 1000; // 5 分钟
@@ -7,6 +8,7 @@ const MIN_FETCH_INTERVAL_MS = 5 * 60 * 1000; // 5 分钟
 interface PlaylistStore {
   playlists: PlaylistBrief[];
   loading: boolean;
+  error: string | null;
   lastFetchedAt: number;
   fetchPlaylists: (source?: MusicSource, force?: boolean) => Promise<void>;
 }
@@ -14,6 +16,7 @@ interface PlaylistStore {
 export const usePlaylistStore = create<PlaylistStore>((set, get) => ({
   playlists: [],
   loading: false,
+  error: null,
   lastFetchedAt: 0,
   fetchPlaylists: async (source?: MusicSource, force = false) => {
     const state = get();
@@ -27,7 +30,7 @@ export const usePlaylistStore = create<PlaylistStore>((set, get) => ({
       return;
     }
 
-    set({ loading: true });
+    set({ loading: true, error: null });
     try {
       const results = await ipc.getUserPlaylists(source);
       if (source) {
@@ -44,6 +47,7 @@ export const usePlaylistStore = create<PlaylistStore>((set, get) => ({
         set({ playlists: results, lastFetchedAt: Date.now() });
       }
     } catch (e) {
+      set({ error: sanitizeError(e) });
       console.error(`Failed to fetch playlists${source ? ` for ${source}` : ''}:`, e);
       // Re-throw so caller (e.g. login handler) can show a toast
       if (source) throw e;

@@ -1,150 +1,128 @@
-import { useRef } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { usePlayerStore } from '@/store/playerStore';
 import { usePlaylistStore } from '@/store/playlistStore';
-import { useToastStore } from '@/store/toastStore';
 import { useUiStore } from '@/store/uiStore';
+import { ipc } from '@/lib/ipc';
+import { sanitizeError } from '@/lib/errorMessages';
 import CoverImage from '@/components/common/CoverImage';
-import { Clock, Heart, Compass, Radio, Play } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import SourceBadge from '@/components/common/SourceBadge';
+import HorizontalScroll from '@/components/common/HorizontalScroll';
+import HomeRecommendations from '@/components/recommend/HomeRecommendations';
+import { Search, Library, Compass, Maximize2, ArrowUpRight } from 'lucide-react';
 
-const cards: { label: string; icon: LucideIcon; gradient: string }[] = [
-  { label: '最近播放', icon: Clock, gradient: 'bg-gradient-cool' },
-  { label: '我的收藏', icon: Heart, gradient: 'bg-gradient-warm' },
-  { label: '发现音乐', icon: Compass, gradient: 'bg-gradient-green' },
-  { label: '电台', icon: Radio, gradient: 'bg-gradient-purple' },
-];
-
-const getScrollBehavior = (): ScrollBehavior => (
-  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    ? 'auto'
-    : 'smooth'
-);
+type AccountState = { phase: 'loading' } | { phase: 'ready'; loggedIn: boolean } | { phase: 'error'; message: string };
 
 export default function HomeView() {
-  const navigate = useNavigate();
-  const recentTracks = usePlayerStore((s) => s.recentTracks);
-  const playlists = usePlaylistStore((s) => s.playlists);
-  const recentRef = useRef<HTMLElement>(null);
+  const recentTracks = usePlayerStore(state => state.recentTracks);
+  const { playlists, loading, error, lastFetchedAt, fetchPlaylists } = usePlaylistStore();
+  const immersiveOpen = useUiStore(state => state.immersiveOpen);
+  const playlistsRef = useRef<HTMLHeadingElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [account, setAccount] = useState<AccountState>({ phase: 'loading' });
+  const [accountAttempt, setAccountAttempt] = useState(0);
   const hour = new Date().getHours();
   const greeting = hour < 12 ? '早上好' : hour < 18 ? '下午好' : '晚上好';
 
-  const handleCardClick = (label: string) => {
-    const toast = useToastStore.getState().addToast;
-    switch (label) {
-      case '最近播放':
-        if (recentTracks.length === 0) {
-          toast('info', '还没有播放记录');
-        } else {
-          recentRef.current?.scrollIntoView({ behavior: getScrollBehavior() });
-        }
-        break;
-      case '我的收藏':
-        if (playlists.length > 0) {
-          navigate(`/playlist/${playlists[0].source}/${playlists[0].id}`);
-        } else {
-          toast('info', '登录后查看收藏歌单');
-        }
-        break;
-      case '发现音乐':
-        navigate('/search');
-        break;
-      case '电台':
-        useUiStore.getState().setImmersiveOpen(true);
-        break;
-    }
+  useEffect(() => {
+    let active = true;
+    setAccount({ phase: 'loading' });
+    ipc.checkLoginStatus()
+      .then(status => { if (active) setAccount({ phase: 'ready', loggedIn: !!status.netease || !!status.qqmusic }); })
+      .catch(reason => { if (active) setAccount({ phase: 'error', message: sanitizeError(reason) }); });
+    return () => { active = false; };
+  }, [accountAttempt, lastFetchedAt]);
+
+  const showPlaylists = () => {
+    const heading = playlistsRef.current;
+    heading?.focus({ preventScroll: true });
+    heading?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
   };
-  const handlePlayRecent = (track: typeof recentTracks[number]) => {
-    void usePlayerStore.getState().playTrack(track);
-  };
+  const loggedIn = account.phase === 'ready' && account.loggedIn;
+  const visiblePlaylists = expanded ? playlists : playlists.slice(0, 6);
 
   return (
-    <div className="p-8 pb-28">
-      <h1 className="text-3xl font-bold mb-1 text-gradient animate-fade-in-up">{greeting}</h1>
-      <p className="text-text-secondary mb-8 text-sm animate-fade-in-up [animation-delay:50ms]">发现你喜欢的音乐</p>
+    <div className="home-page discovery-page">
+      <header className="discovery-heading">
+        <p className="home-eyebrow">拾音 · 你的音乐空间</p>
+        <h1>{greeting}</h1>
+        <p>接着听喜欢的旋律，也发现一些新的声音。</p>
+      </header>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-10">
-        {cards.map((card, index) => (
-          <button
-            key={card.label}
-            onClick={() => handleCardClick(card.label)}
-            className="stagger-item aspect-square rounded-xl bg-bg-secondary flex flex-col items-center justify-center gap-3 text-text-secondary transition-colors duration-200 group animate-fade-in-up cursor-pointer hover:bg-bg-hover focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
-            style={{ animationDelay: `${(index + 1) * 100}ms` }}
-          >
-            <div className={`w-12 h-12 rounded-xl ${card.gradient} flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform duration-300`}>
-              <card.icon size={24} strokeWidth={1.5} className="text-white" />
-            </div>
-            <span className="text-sm font-medium">{card.label}</span>
-          </button>
-        ))}
+      <div className="home-shortcuts" aria-label="首页快捷入口">
+        <Link to="/search"><Search size={21} /><span>搜索音乐<small>找歌曲、歌手或专辑</small></span></Link>
+        <button onClick={showPlaylists}><Library size={21} /><span>我的歌单<small>浏览已同步的歌单</small></span></button>
+        <Link to="/daily"><Compass size={21} /><span>智能推荐<small>发现精选与重温经典</small></span></Link>
+        <button onClick={() => useUiStore.getState().setImmersiveOpen(true)} aria-haspopup="dialog" aria-expanded={immersiveOpen}>
+          <Maximize2 size={21} /><span>播放详情<small>查看封面、歌词与场景</small></span>
+        </button>
       </div>
 
-      {/* 继续收听 */}
-      <section ref={recentRef} className="mb-10 animate-fade-in-up [animation-delay:350ms]">
-        <h2 className="text-lg font-semibold mb-4">继续收听</h2>
-        {recentTracks.length === 0 ? (
-          <p className="text-sm text-text-tertiary">播放一些音乐来填充这里</p>
-        ) : (
-          <div className="flex gap-3 overflow-x-auto pb-2">
-            {recentTracks.map((track) => (
-              <button
-                key={`${track.source}-${track.id}`}
-                onClick={() => handlePlayRecent(track)}
-                className="flex-shrink-0 w-48 bg-bg-secondary rounded-xl p-3 flex items-center gap-3 group cursor-pointer hover:bg-bg-hover transition-colors text-left focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-              >
-                <CoverImage
-                  src={track.coverUrl}
-                  width={40}
-                  height={40}
-                  className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
-                  fallbackClassName="w-10 h-10 rounded-lg bg-bg-elevated flex items-center justify-center flex-shrink-0"
-                  iconSize={16}
-                  resetKey={track.id}
-                />
-                <div className="min-w-0">
-                  <div className="text-sm truncate" title={track.name}>{track.name}</div>
-                  <div className="text-xs text-text-secondary truncate" title={track.artist}>{track.artist}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
+      <section aria-labelledby="home-recent-title" className="home-section">
+        <div className="discovery-section-heading"><h2 id="home-recent-title">继续收听</h2><span>最近播放</span></div>
+        {recentTracks.length === 0 ? <div className="discovery-empty">
+          <h3>还没有播放记录</h3><p>从一首喜欢的歌开始，这里会留下最近听过的音乐。</p>
+          <Link className="discovery-link" to="/search">去搜索音乐 <ArrowUpRight size={15} /></Link>
+        </div> : <HorizontalScroll>
+          {recentTracks.map(track => <button key={`${track.source}:${track.id}`} className="home-recent-track"
+            aria-label={`播放：${track.name}，${track.artist}`} title="播放这首，保留队列"
+            onClick={() => void usePlayerStore.getState().playTrack(track)}>
+            <CoverImage src={track.coverUrl} alt="" width={44} height={44} className="w-11 h-11 rounded-lg object-cover flex-shrink-0"
+              fallbackClassName="w-11 h-11 rounded-lg bg-bg-elevated flex items-center justify-center flex-shrink-0" iconSize={18} resetKey={`${track.source}:${track.id}`} />
+            <span className="min-w-0 flex-1"><strong title={track.name}>{track.name}</strong><small title={track.artist}>{track.artist}</small></span>
+            <SourceBadge source={track.source} />
+          </button>)}
+        </HorizontalScroll>}
       </section>
-      {/* 为你推荐 */}
-      <section className="animate-fade-in-up [animation-delay:450ms]">
-        <h2 className="text-lg font-semibold mb-4">为你推荐</h2>
-        {playlists.length === 0 ? (
-          <p className="text-sm text-text-tertiary">登录后查看推荐歌单</p>
-        ) : (
-          <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {playlists.slice(0, 5).map((pl) => (
-              <Link
-                key={`${pl.source}-${pl.id}`}
-                to={`/playlist/${pl.source}/${pl.id}`}
-                className="group text-left cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none rounded-xl block"
-              >
-                <div className="aspect-square rounded-xl bg-bg-secondary mb-2 flex items-center justify-center relative overflow-hidden hover:shadow-md transition-shadow duration-300">
-                  <CoverImage
-                    src={pl.coverUrl}
-                    alt={`${pl.name} 封面`}
-                    width={200}
-                    height={200}
-                    className="w-full h-full object-cover"
-                    fallbackClassName="w-full h-full flex items-center justify-center"
-                    iconSize={32}
-                    resetKey={pl.id}
-                  />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200 flex items-center justify-center">
-                    <div className="w-10 h-10 rounded-full bg-accent flex items-center justify-center shadow-lg">
-                      <Play size={16} fill="currentColor" className="text-white ml-0.5" />
-                    </div>
-                  </div>
-                </div>
-                <p className="text-sm text-text-secondary truncate" title={pl.name}>{pl.name}</p>
-              </Link>
-            ))}
-          </div>
-        )}
+
+      {account.phase === 'error' && <div className="discovery-notice is-error" role="status">
+        <div><strong>暂时无法检查登录状态</strong><p>{account.message}</p></div>
+        <button className="discovery-button" onClick={() => setAccountAttempt(value => value + 1)}>重试登录检查</button>
+      </div>}
+
+      <section aria-labelledby="home-playlists-title" className="home-section">
+        <div className="discovery-section-heading">
+          <h2 id="home-playlists-title" ref={playlistsRef} tabIndex={-1}>我的歌单</h2>
+          {loggedIn && <button className="discovery-link" disabled={loading} onClick={() => void fetchPlaylists(undefined, true)}>刷新歌单</button>}
+        </div>
+        {account.phase === 'loading' && <p className="discovery-hint" role="status">正在检查音乐账号…</p>}
+        {account.phase === 'ready' && !account.loggedIn && <div className="discovery-empty">
+          <h3>登录后同步你的歌单</h3><p>连接网易云或 QQ音乐账号，在这里浏览自己的歌单。</p>
+          <Link className="discovery-link" to="/settings">前往登录 <ArrowUpRight size={15} /></Link>
+        </div>}
+        {loggedIn && <>
+          {loading && <p className="discovery-hint" role="status">正在同步歌单…</p>}
+          {error && <div className="discovery-notice is-error" role="status"><div>
+            <strong>{playlists.length ? '歌单刷新失败，保留已同步歌单' : '歌单获取失败'}</strong><p>{error}</p></div>
+            <button className="discovery-button" disabled={loading} onClick={() => void fetchPlaylists(undefined, true)}>重试歌单</button>
+          </div>}
+          {!loading && !error && !playlists.length && <div className="discovery-empty"><h3>暂时没有歌单</h3>
+            <p>在音乐平台创建或收藏歌单后，点击“刷新歌单”同步到这里。</p></div>}
+          {playlists.length > 0 && <>
+            <div className="home-playlists">
+              {visiblePlaylists.map(playlist => <Link key={`${playlist.source}:${playlist.id}`} to={`/playlist/${playlist.source}/${playlist.id}`}
+                className="home-playlist" aria-label={`打开歌单：${playlist.name}`}>
+                <CoverImage src={playlist.coverUrl} alt="" width={56} height={56} className="w-14 h-14 rounded-lg object-cover flex-shrink-0"
+                  fallbackClassName="w-14 h-14 rounded-lg bg-bg-elevated flex items-center justify-center flex-shrink-0" iconSize={22} resetKey={`${playlist.source}:${playlist.id}`} />
+                <span className="min-w-0 flex-1"><strong title={playlist.name}>{playlist.name}</strong><SourceBadge source={playlist.source} /></span>
+                <ArrowUpRight size={17} className="text-text-tertiary flex-shrink-0" aria-hidden="true" />
+              </Link>)}
+            </div>
+            {playlists.length > 6 && <button className="discovery-link mt-3" aria-expanded={expanded}
+              onClick={() => setExpanded(value => !value)}>{expanded ? '收起歌单' : `查看全部 ${playlists.length} 个歌单`}</button>}
+          </>}
+        </>}
+      </section>
+
+      <section aria-labelledby="home-recommend-title" className="home-section">
+        <div className="discovery-section-heading"><h2 id="home-recommend-title">智能推荐</h2>
+          <Link className="discovery-link" to="/daily">查看全部推荐 <ArrowUpRight size={15} /></Link></div>
+        {account.phase === 'loading' && <p className="discovery-hint">正在检查音乐账号…</p>}
+        {account.phase === 'ready' && !account.loggedIn && <div className="discovery-empty">
+          <h3>登录后发现更多音乐</h3><p>从已登录音源获取精选，随着收听积累发现更合口味的歌曲。</p>
+          <Link className="discovery-link" to="/settings">前往登录 <ArrowUpRight size={15} /></Link>
+        </div>}
+        {loggedIn && <HomeRecommendations />}
       </section>
     </div>
   );

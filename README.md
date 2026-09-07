@@ -28,6 +28,16 @@ A Linux desktop music player built with Rust and Tauri v2, with dual-source sear
 - **主题与键盘**：深浅主题、封面动态主题色、队列定位、歌曲菜单和键盘操作；尊重减少动态效果偏好。
 - **诊断与持久化**：结构化日志、traceId 链路追踪、设置持久化，以及搜索和歌词缓存。
 
+## 开发分支进展（尚未发布）
+
+首页、导航与搜索反馈迭代已实现：
+
+- 首页按“继续收听、我的歌单、智能推荐”组织内容；歌单入口浏览整个集合，推荐读取真实智能推荐结果。
+- 首页与侧栏统一使用“播放详情”，打开当前播放的封面、歌词与视觉场景。
+- 搜索区分输入前、加载、成功、无结果与失败，支持常驻错误、手动重试和带关键词/音源标记的上次结果；支持中文输入法与 Enter 提交。
+
+页面方案、适用范围与验证见 [首页、导航与搜索反馈](docs/design/home-navigation-search.md)。这些变更位于 `codex/home-navigation-search`，不属于上方 `v0.2.0` 安装包。
+
 ## 安装
 
 在 [Releases](https://github.com/wnfxsa1213/shiyin-player/releases) 下载 Linux x86_64 安装包。
@@ -57,11 +67,13 @@ chmod +x ShiYin_0.2.0_amd64.AppImage
 
 ![沉浸场景预览](docs/design/assets/ui-review-preview-1200-dark.png)
 
-搜索与每日推荐：
+开发分支首页（隔离验收中的示例数据）：
 
-![音乐搜索](images/音乐搜索.png)
+![首页](docs/design/assets/home-navigation-1200-dark.png)
 
-![每日推荐](images/每日推荐.png)
+搜索失败与上次结果（最小窗口、浅色主题）：
+
+![搜索反馈](docs/design/assets/search-feedback-900-light.png)
 
 ## 技术栈
 
@@ -159,12 +171,14 @@ cargo test --workspace --locked
 | 歌曲行 `Enter` / `Space` | 播放这首并保留队列 |
 | 歌曲行 `Shift+F10` | 打开歌曲菜单 |
 | 队列 `↑` / `↓` / `Home` / `End` | 移动焦点，支持跨虚拟列表定位 |
+| 搜索框 `Enter`（开发分支） | 立即搜索；输入法选词期间不提交 |
+| 搜索音源 `←` / `→` / `Home` / `End` | 切换音源并移动标签焦点 |
 
 输入框、滑块、菜单和按钮优先处理自身按键，避免一次操作触发多个播放动作。
 
 ## 后续方向
 
-下一阶段优先完善首页、导航与搜索反馈，再打磨沉浸界面的视觉一致性和场景库体验。电台会话、歌词读取模型重构及后续压力测试暂缓；新增音源与签到保留为后续候选。具体状态见[开发路线](docs/roadmap.md)。
+首页、导航与搜索反馈已在开发分支完成，下一步为本轮分支评审与合并，再打磨沉浸界面的视觉一致性和场景库体验。电台会话、歌词读取模型重构及后续压力测试暂缓；新增音源与签到保留为后续候选。具体状态见[开发路线](docs/roadmap.md)。
 
 ## License
 
