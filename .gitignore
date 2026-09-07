@@ -8,6 +8,8 @@ node_modules
 # Lock files
 Cargo.lock
 package-lock.json
+!/Cargo.lock
+!/apps/rustplayer-tauri/frontend/package-lock.json
 
 # Environment variables
 .env

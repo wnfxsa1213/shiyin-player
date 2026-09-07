@@ -1,137 +1,171 @@
-# ShiYin Player (拾音)
+# ShiYin Player（拾音）
 
-A modern desktop music player built with **Rust + Tauri v2**, featuring dual music source support (NetEase Cloud Music & QQ Music), real-time spectrum visualization, synchronized lyrics, and dynamic theme colors extracted from album artwork. Designed for Linux with a Spotify-inspired UI.
+基于 **Rust + Tauri v2** 的 Linux 桌面音乐播放器，支持网易云音乐与 QQ 音乐聚合搜索、在线播放、同步歌词、本地个性化推荐，以及可保存和轮换的视觉场景。
 
-> 基于 Rust + Tauri v2 的 Linux 桌面音乐播放器，支持网易云音乐和 QQ 音乐双音源聚合搜索与播放。
+A Linux desktop music player built with Rust and Tauri v2, with dual-source search, synchronized lyrics, personalized discovery, and customizable visual scenes.
+
+[下载最新版本](https://github.com/wnfxsa1213/shiyin-player/releases/latest) · [v0.2.0 更新说明](docs/releases/v0.2.0.md) · [开发路线](docs/roadmap.md) · [测试说明](TESTING.md)
+
+## v0.2.0 更新
+
+- 新增八套视觉场景、自定义背景、搭配保存和自适应随机轮换。
+- 统一主界面与沉浸播放的队列操作、播放状态和失败恢复。
+- 完善推荐聚合、空结果与音源失败反馈。
+- 修复沉浸预览在未播放或暂停时停止动画的问题；预览保留正式沉浸的歌词布局与遮罩。
 
 ## 功能特性
 
-- **聚合搜索** — 同时搜索网易云音乐和 QQ 音乐，三级缓存（内存 LRU → SQLite → API）
-- **在线播放** — GStreamer 音频引擎，独立线程运行，支持播放队列与多种播放模式
-- **歌词同步** — 逐行歌词滚动显示，支持翻译歌词
-- **频谱可视化** — 柱状 / 波形 / 环形三种模式，粒子效果，自定义配色
-- **动态主题色** — 从当前播放封面提取主色调，动态设置全局主题色
-- **一键登录** — WebView 扫码登录，自动提取 HttpOnly Cookie（Linux 通过 webkit2gtk 原生 API）
-- **Cookie 登录** — 手动粘贴 Cookie 登录，获取歌单等高级权限
-- **歌单管理** — 查看和播放用户歌单
-- **键盘快捷键** — 空格播放/暂停、方向键调节音量和进度、Ctrl+B 切换侧边栏
-- **明暗主题** — 深色 / 浅色主题切换
-- **结构化日志** — tracing 日志系统，按天滚动，支持 traceId 端到端链路追踪
-- **安全加固** — CSP 策略、域名白名单、Cookie 验证、输入校验
-- **智能推荐** — 本地混合重排序引擎（平台排名 + 艺术家偏好 + 新鲜度），基于隐式行为追踪构建用户画像
-- **沉浸模式** — 原生全屏沉浸式播放，隐藏系统标题栏，专注聆听体验
-- **私人 FM 电台** — 无限电台模式，队列剩余不足时自动补充，智能去重
-- **每日推荐** — 聚合双音源每日推荐，个性化重排序
+- **聚合搜索**：同时搜索网易云音乐和 QQ 音乐，使用内存、SQLite 和音源 API 三级缓存。
+- **播放与队列**：GStreamer 音频引擎；支持列表循环、单曲循环和随机播放。单曲播放保留队列，播放全部明确替换，指定下一首优先执行。
+- **播放恢复**：加载、缓冲、暂停和重试状态持续可见；失败后可重试对应歌曲，加载期间也可保持暂停意图。
+- **同步歌词**：逐行显示与滚动，支持翻译歌词。
+- **视觉场景**：星海、雨夜、初雪、萤火、流星、气泡、花信、共振八种特效，响应音乐强弱与低频变化。
+- **自定义背景**：导入 JPEG、PNG、WebP，或使用当前专辑封面；图片存入应用素材库，移动原文件后仍可使用。
+- **搭配与轮换**：先预览再应用，可另存搭配、独立选择轮换成员、锁定场景或手动换一个。
+- **沉浸播放**：在窗口内展开封面、歌词和播放控制，与主界面共享队列和视觉场景。
+- **音乐发现**：聚合每日推荐，结合实际收听行为进行本地排序，展示偏好艺术家与重温经典；队列接近末尾时可自动补充电台候选。
+- **登录与歌单**：支持 WebView 扫码登录、手动 Cookie 登录，以及读取和播放用户歌单。
+- **主题与键盘**：深浅主题、封面动态主题色、队列定位、歌曲菜单和键盘操作；尊重减少动态效果偏好。
+- **诊断与持久化**：结构化日志、traceId 链路追踪、设置持久化，以及搜索和歌词缓存。
+
+## 安装
+
+在 [Releases](https://github.com/wnfxsa1213/shiyin-player/releases) 下载 Linux x86_64 安装包。
+
+Ubuntu / Debian：
+
+```bash
+sudo apt install ./ShiYin_0.2.0_amd64.deb
+```
+
+AppImage：
+
+```bash
+chmod +x ShiYin_0.2.0_amd64.AppImage
+./ShiYin_0.2.0_amd64.AppImage
+```
+
+在线曲目可用性取决于音乐平台、登录状态和账号权限。
 
 ## 界面预览
 
-### 主界面
+播放栏与队列（示例曲目）：
 
-![主界面](images/主界面.png)
+![播放栏与队列](docs/design/assets/playback-ui-1200-dark.png)
 
-### 音乐搜索
+沉浸场景预览与歌词（示例曲目）：
+
+![沉浸场景预览](docs/design/assets/ui-review-preview-1200-dark.png)
+
+搜索与每日推荐：
 
 ![音乐搜索](images/音乐搜索.png)
 
-### 每日推荐
-
 ![每日推荐](images/每日推荐.png)
-
-### 沉浸模式
-
-![沉浸模式](images/沉浸模式.png)
 
 ## 技术栈
 
 | 层级 | 技术 |
-|------|------|
-| 框架 | Tauri v2 |
-| 前端 | React 18 + TypeScript + Tailwind CSS + Zustand |
-| 后端 | Rust (Cargo Workspace, 7 crates) |
-| 音频 | GStreamer (gstreamer-rs) |
-| 虚拟滚动 | @tanstack/react-virtual |
-| 持久化 | tauri-plugin-store + SQLite (rusqlite + r2d2) |
-| 加密 | AES-128-CBC + RSA (网易 weapi) / MD5 签名 (QQ) |
+| --- | --- |
+| 桌面框架 | Tauri v2 |
+| 前端 | React 18、TypeScript、Tailwind CSS、Zustand |
+| 后端 | Rust workspace：7 个业务 crate + 1 个 Tauri 应用 |
+| 音频 | GStreamer（gstreamer-rs） |
+| 视觉场景 | Canvas2D、共享调度、自动质量调整 |
+| 长列表 | @tanstack/react-virtual |
+| 持久化 | tauri-plugin-store、SQLite（rusqlite + r2d2） |
+| 验证 | Vitest、Testing Library、Rust 测试、Chromium / WebKitGTK 功能验收 |
 
 ## 项目结构
 
-```
-rust-music/
+```text
+shiyin-player/
 ├── apps/rustplayer-tauri/
-│   ├── frontend/            # React 前端
-│   │   └── src/
-│   │       ├── components/    # UI 组件 (layout / player / common)
-│   │       ├── views/         # 页面 (Home / Search / Settings / PlaylistDetail / DailyRecommend)
-│   │       ├── store/         # Zustand stores (player / ui / visualizer / toast / playlist / fm / recommend)
-│   │       ├── hooks/         # 自定义 hooks (useDynamicTheme / useFocusTrap)
-│   │       └── lib/           # IPC 封装 / 设置持久化 / 工具函数
-│   └── src-tauri/           # Rust 后端
-│       └── src/
-│           ├── main.rs        # 应用入口与初始化
-│           ├── commands/      # Tauri IPC 命令
-│           ├── events.rs      # 播放器事件转发
-│           ├── db.rs          # SQLite 持久缓存 + 行为追踪
-│           ├── logging.rs     # 日志系统初始化
-│           └── store.rs       # Cookie 持久化
+│   ├── frontend/src/
+│   │   ├── components/       # 播放、布局、推荐、视觉场景组件
+│   │   ├── views/            # 首页、搜索、歌单、推荐、场景库、设置
+│   │   ├── store/            # 生产依赖与状态装配
+│   │   └── lib/              # IPC、播放生命周期、场景状态/调度/渲染
+│   └── src-tauri/src/        # IPC 命令、事件、数据库、背景素材与日志
 ├── crates/
-│   ├── core/                # 核心类型 (Track, PlayerState, MusicSource trait, PlayEvent)
-│   ├── player/              # GStreamer 播放引擎 + 频谱分析
-│   ├── sources/             # 音源注册中心 (SourceRegistry)
-│   ├── netease/             # 网易云音乐 API (weapi 加密)
-│   ├── qqmusic/             # QQ 音乐 API (签名计算)
-│   ├── cache/               # 内存 LRU 搜索缓存 (5min TTL)
-│   └── recommend/           # 本地推荐引擎 (用户画像 + 混合重排序)
-└── Cargo.toml               # Workspace 配置
+│   ├── core/                # 共享类型与音源接口
+│   ├── player/              # GStreamer 播放引擎
+│   ├── sources/             # 音源注册中心
+│   ├── netease/             # 网易云音乐客户端
+│   ├── qqmusic/             # QQ 音乐客户端
+│   ├── cache/               # 内存搜索缓存
+│   └── recommend/           # 本地推荐引擎
+├── docs/                    # 设计、评审、验证与发布记录
+└── scripts/scene-stress/     # 独立压力测试工具
 ```
 
-## 环境要求
+## 开发环境
 
-- Rust 1.75+
-- Node.js 18+
-- GStreamer 1.20+ 开发库
-- Tauri v2 CLI
+- Rust stable（本轮本地验证使用 1.98.1）。
+- Node.js 20+、npm。
+- GStreamer 1.20+ 开发库，以及 GTK / WebKitGTK 开发库。
+- Tauri v2 CLI。
 
-### Linux (Ubuntu/Debian)
+Ubuntu / Debian 系统依赖：
 
 ```bash
-# 系统依赖
 sudo apt install -y \
   libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-  libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-  gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
-  libasound2-dev libssl-dev pkg-config
+  libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libunwind-dev \
+  gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
+  gstreamer1.0-plugins-ugly gstreamer1.0-libav \
+  libasound2-dev libssl-dev librsvg2-dev patchelf pkg-config
 
-# Tauri CLI
-cargo install tauri-cli --version "^2"
+cargo install tauri-cli --version "^2" --locked
 ```
 
-## 构建与运行
+安装前端依赖并启动：
 
 ```bash
-# 前端依赖
-cd apps/rustplayer-tauri/frontend && npm install && cd -
-
-# 开发模式
+npm --prefix apps/rustplayer-tauri/frontend ci
+cd apps/rustplayer-tauri
 cargo tauri dev
-
-# 生产构建
-cargo tauri build
 ```
+
+在 `apps/rustplayer-tauri` 目录构建安装包：
+
+```bash
+cargo tauri build --bundles deb,appimage -- --locked
+```
+
+## 验证
+
+在仓库根目录运行：
+
+```bash
+npm --prefix apps/rustplayer-tauri/frontend test
+npm --prefix apps/rustplayer-tauri/frontend run build
+cargo test --workspace --locked
+```
+
+测试覆盖播放竞态、重试、队列、推荐反馈、背景素材、场景轮换和预览动画。Rust 音频回归使用本地 WAV 与 `fakesink`，无需音源账号或声卡。界面验收范围见 [UI 分支评审](docs/design/ui-branch-review.md)与[视觉场景验证](docs/design/visual-scenes-validation.md)。
+
+当前高分辨率场景仍有长帧，普通集显、8GB、60Hz 设备的性能验收尚待完成；本机验证结果不代表所有设备稳定达到 60fps。
 
 ## 快捷键
 
-| 按键 | 功能 |
-|------|------|
+| 按键 | 操作 |
+| --- | --- |
 | `Space` | 播放 / 暂停 |
-| `↑` / `↓` | 音量 +/- 5% |
+| `↑` / `↓` | 音量调整 5% |
 | `←` / `→` | 快退 / 快进 5 秒 |
 | `Ctrl+B` | 切换侧边栏 |
+| `Escape` | 关闭当前菜单、取消队列确认或退出沉浸界面 |
+| 歌曲行 `Enter` / `Space` | 播放这首并保留队列 |
+| 歌曲行 `Shift+F10` | 打开歌曲菜单 |
+| 队列 `↑` / `↓` / `Home` / `End` | 移动焦点，支持跨虚拟列表定位 |
 
-## 后续计划
+输入框、滑块、菜单和按钮优先处理自身按键，避免一次操作触发多个播放动作。
 
-- [ ] **增加音源** — 接入更多音乐平台（如咪咕音乐、酷狗音乐等），丰富曲库覆盖
-- [ ] **签到功能** — 支持网易云音乐和 QQ 音乐每日签到，自动领取积分/成长值
+## 后续方向
+
+下一阶段优先完善首页、导航与搜索反馈，再打磨沉浸界面的视觉一致性和场景库体验。电台会话、歌词读取模型重构及后续压力测试暂缓；新增音源与签到保留为后续候选。具体状态见[开发路线](docs/roadmap.md)。
 
 ## License
 
-[MIT](./LICENSE)
+[MIT](LICENSE)

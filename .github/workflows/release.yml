@@ -45,7 +45,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: apps/rustplayer-tauri/frontend
-        run: npm install
+        run: npm ci
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -54,6 +54,11 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: '. -> target'
+
+      - name: Run regression tests
+        run: |
+          npm --prefix apps/rustplayer-tauri/frontend test
+          cargo test --workspace --locked
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -72,4 +77,4 @@ jobs:
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: false
-          args: --bundles deb,appimage
+          args: --bundles deb,appimage -- --locked
