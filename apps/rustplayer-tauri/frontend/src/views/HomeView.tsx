@@ -3,42 +3,32 @@ import { Link } from 'react-router-dom';
 import { usePlayerStore } from '@/store/playerStore';
 import { usePlaylistStore } from '@/store/playlistStore';
 import { useUiStore } from '@/store/uiStore';
-import { ipc } from '@/lib/ipc';
-import { sanitizeError } from '@/lib/errorMessages';
+import { useAccountStore } from '@/store/accountStore';
 import CoverImage from '@/components/common/CoverImage';
 import SourceBadge from '@/components/common/SourceBadge';
 import HorizontalScroll from '@/components/common/HorizontalScroll';
 import HomeRecommendations from '@/components/recommend/HomeRecommendations';
 import { Search, Library, Compass, Maximize2, ArrowUpRight } from 'lucide-react';
 
-type AccountState = { phase: 'loading' } | { phase: 'ready'; loggedIn: boolean } | { phase: 'error'; message: string };
-
 export default function HomeView() {
   const recentTracks = usePlayerStore(state => state.recentTracks);
-  const { playlists, loading, error, lastFetchedAt, fetchPlaylists } = usePlaylistStore();
+  const { playlists, loading, error, fetchPlaylists } = usePlaylistStore();
+  const { status: account, error: accountError, refreshing: checkingAccount, refresh: refreshAccount } = useAccountStore();
   const immersiveOpen = useUiStore(state => state.immersiveOpen);
   const playlistsRef = useRef<HTMLHeadingElement>(null);
   const [expanded, setExpanded] = useState(false);
-  const [account, setAccount] = useState<AccountState>({ phase: 'loading' });
-  const [accountAttempt, setAccountAttempt] = useState(0);
   const hour = new Date().getHours();
   const greeting = hour < 12 ? '早上好' : hour < 18 ? '下午好' : '晚上好';
 
-  useEffect(() => {
-    let active = true;
-    setAccount({ phase: 'loading' });
-    ipc.checkLoginStatus()
-      .then(status => { if (active) setAccount({ phase: 'ready', loggedIn: !!status.netease || !!status.qqmusic }); })
-      .catch(reason => { if (active) setAccount({ phase: 'error', message: sanitizeError(reason) }); });
-    return () => { active = false; };
-  }, [accountAttempt, lastFetchedAt]);
+  useEffect(() => { void refreshAccount(); }, [refreshAccount]);
 
   const showPlaylists = () => {
     const heading = playlistsRef.current;
     heading?.focus({ preventScroll: true });
     heading?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
   };
-  const loggedIn = account.phase === 'ready' && account.loggedIn;
+  const loggedIn = !!(account?.netease || account?.qqmusic);
+  const awaitingAccount = account === null && !accountError;
   const visiblePlaylists = expanded ? playlists : playlists.slice(0, 6);
 
   return (
@@ -75,9 +65,9 @@ export default function HomeView() {
         </HorizontalScroll>}
       </section>
 
-      {account.phase === 'error' && <div className="discovery-notice is-error" role="status">
-        <div><strong>暂时无法检查登录状态</strong><p>{account.message}</p></div>
-        <button className="discovery-button" onClick={() => setAccountAttempt(value => value + 1)}>重试登录检查</button>
+      {accountError && <div className="discovery-notice is-error" role="status">
+        <div><strong>暂时无法检查登录状态</strong><p>{accountError}</p></div>
+        <button className="discovery-button" disabled={checkingAccount} onClick={() => void refreshAccount()}>重试登录检查</button>
       </div>}
 
       <section aria-labelledby="home-playlists-title" className="home-section">
@@ -85,8 +75,8 @@ export default function HomeView() {
           <h2 id="home-playlists-title" ref={playlistsRef} tabIndex={-1}>我的歌单</h2>
           {loggedIn && <button className="discovery-link" disabled={loading} onClick={() => void fetchPlaylists(undefined, true)}>刷新歌单</button>}
         </div>
-        {account.phase === 'loading' && <p className="discovery-hint" role="status">正在检查音乐账号…</p>}
-        {account.phase === 'ready' && !account.loggedIn && <div className="discovery-empty">
+        {awaitingAccount && <p className="discovery-hint" role="status">正在检查音乐账号…</p>}
+        {account && !loggedIn && <div className="discovery-empty">
           <h3>登录后同步你的歌单</h3><p>连接网易云或 QQ音乐账号，在这里浏览自己的歌单。</p>
           <Link className="discovery-link" to="/settings">前往登录 <ArrowUpRight size={15} /></Link>
         </div>}
@@ -117,8 +107,8 @@ export default function HomeView() {
       <section aria-labelledby="home-recommend-title" className="home-section">
         <div className="discovery-section-heading"><h2 id="home-recommend-title">智能推荐</h2>
           <Link className="discovery-link" to="/daily">查看全部推荐 <ArrowUpRight size={15} /></Link></div>
-        {account.phase === 'loading' && <p className="discovery-hint">正在检查音乐账号…</p>}
-        {account.phase === 'ready' && !account.loggedIn && <div className="discovery-empty">
+        {awaitingAccount && <p className="discovery-hint">正在检查音乐账号…</p>}
+        {account && !loggedIn && <div className="discovery-empty">
           <h3>登录后发现更多音乐</h3><p>从已登录音源获取精选，随着收听积累发现更合口味的歌曲。</p>
           <Link className="discovery-link" to="/settings">前往登录 <ArrowUpRight size={15} /></Link>
         </div>}

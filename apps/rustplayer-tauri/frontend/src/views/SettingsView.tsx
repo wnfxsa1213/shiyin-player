@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { LogIn, Loader2, CheckCircle, Info, ChevronRight } from 'lucide-react';
 import { useUiStore } from '@/store/uiStore';
+import { useAccountStore } from '@/store/accountStore';
 import { useVisualizerStore } from '@/store/visualizerStore';
 import { useToastStore } from '@/store/toastStore';
 import { sanitizeError } from '@/lib/errorMessages';
@@ -98,6 +99,7 @@ export default function SettingsView() {
     const toast = useToastStore.getState().addToast;
     try {
       await ipc.logout(source);
+      useAccountStore.getState().setLoggedIn(source, false);
       setLoginStatusMap((prev) => ({ ...prev, [source]: 'idle' as LoginStatus }));
       toast('success', '已登出');
     } catch (e) {

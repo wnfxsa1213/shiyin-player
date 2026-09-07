@@ -7,6 +7,7 @@ import { usePlayerStore, type Track } from '@/store/playerStore';
 import { usePlaylistStore } from '@/store/playlistStore';
 import { useRecommendStore } from '@/store/recommendStore';
 import { useUiStore } from '@/store/uiStore';
+import { useAccountStore } from '@/store/accountStore';
 import HomeView from '@/views/HomeView';
 import Sidebar from '@/components/layout/Sidebar';
 
@@ -25,6 +26,7 @@ const originalScroll = HTMLElement.prototype.scrollIntoView;
 
 beforeEach(() => {
   vi.resetAllMocks();
+  useAccountStore.setState(useAccountStore.getInitialState(), true);
   usePlayerStore.setState(usePlayerStore.getInitialState(), true);
   usePlaylistStore.setState(usePlaylistStore.getInitialState(), true);
   useRecommendStore.setState(useRecommendStore.getInitialState(), true);

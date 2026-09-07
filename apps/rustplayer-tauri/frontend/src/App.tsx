@@ -6,6 +6,7 @@ import { useVisualizerStore } from '@/store/visualizerStore';
 import { useSceneEnvironment } from '@/store/sceneEnvironmentStore';
 import { useToastStore } from '@/store/toastStore';
 import { usePlaylistStore } from '@/store/playlistStore';
+import { useAccountStore } from '@/store/accountStore';
 import { loadSetting } from '@/lib/settings';
 import { ipc, onPlaybackEvent, onPlayerSpectrum, onLoginSuccess, onLoginTimeout } from '@/lib/ipc';
 import { useDynamicTheme } from '@/hooks/useDynamicTheme';
@@ -128,6 +129,7 @@ export default function App() {
       }),
       onLoginSuccess((source) => {
         if (!active) return;
+        useAccountStore.getState().setLoggedIn(source, true);
         const name = source === 'netease' ? '网易云' : 'QQ音乐';
         addToast('success', `${name}登录成功`);
         usePlaylistStore.getState().fetchPlaylists(source, true).catch(() => {
