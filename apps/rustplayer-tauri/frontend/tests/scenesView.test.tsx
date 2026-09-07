@@ -66,6 +66,8 @@ it('沉浸预览退出回到入口焦点，不改变当前搭配；卸载解除�
   fireEvent.click(screen.getByRole('button', { name: '预览萤火' }));
   const trigger = screen.getByRole('button', { name: '沉浸预览' }); trigger.focus(); fireEvent.click(trigger);
   expect(screen.getByRole('dialog', { name: '沉浸预览' })).toBeTruthy();
+  expect(screen.getByRole('region', { name: '歌词' })).toBeTruthy();
+  expect(screen.getByLabelText('歌词排版示例')).toBeTruthy();
   fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
   expect(screen.queryByRole('dialog')).toBeNull(); expect(document.activeElement).toBe(trigger);
   expect(useSceneStore.getState().current.id).toBe('star'); unmount(); expect(useSceneEnvironment.getState().editorOpen).toBe(false);

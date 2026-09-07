@@ -2,7 +2,8 @@ import { useEffect, useState, lazy, Suspense } from 'react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { useUiStore } from '@/store/uiStore';
 import { usePlayerStore } from '@/store/playerStore';
-import { useVisualizerStore, spectrumDataRef } from '@/store/visualizerStore';
+import { useVisualizerStore } from '@/store/visualizerStore';
+import { useSceneEnvironment } from '@/store/sceneEnvironmentStore';
 import { useToastStore } from '@/store/toastStore';
 import { usePlaylistStore } from '@/store/playlistStore';
 import { loadSetting } from '@/lib/settings';
@@ -19,6 +20,7 @@ import ToastContainer from '@/components/common/ToastContainer';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 import SceneBackground from '@/components/scenes/SceneBackground';
 import { startSceneRuntime } from '@/lib/scenes/runtime';
+import { receiveSpectrum } from '@/lib/scenes/spectrum';
 import '@/styles/scenes.css';
 import '@/styles/playback.css';
 
@@ -119,16 +121,9 @@ export default function App() {
       onPlaybackEvent((event) => {
         if (active) usePlayerStore.getState().handlePlaybackEvent(event);
       }),
-      onPlayerSpectrum(({ playbackId, emittedAtMs, magnitudes }) => {
+      onPlayerSpectrum(event => {
         if (!active) return;
-        const listening = usePlayerStore.getState().listening;
-        if (listening.state !== 'playing' || listening.playbackId !== playbackId || Date.now() - emittedAtMs > 1000) return;
-        const arr = spectrumDataRef.current;
-        const len = Math.min(magnitudes.length, arr.length);
-        for (let i = 0; i < len; i++) arr[i] = magnitudes[i];
-        for (let i = len; i < arr.length; i++) arr[i] = 0;
-        spectrumDataRef.receivedAt = performance.now();
-        spectrumDataRef.playbackId = playbackId;
+        receiveSpectrum(event, usePlayerStore.getState(), useSceneEnvironment.getState().visible);
       }),
       onLoginSuccess((source) => {
         if (!active) return;

@@ -11,6 +11,8 @@ import PlayerBar from '@/components/layout/PlayerBar';
 import QueuePanel from '@/components/player/QueuePanel';
 import TrackRow from '@/components/common/TrackRow';
 import TrackCard from '@/components/recommend/TrackCard';
+import ImmersiveControls from '@/components/player/ImmersiveControls';
+import { useFmStore } from '@/store/fmStore';
 
 vi.mock('@/lib/ipc', () => ({ ipc: {
   playTrack: vi.fn(), stopPlayback: vi.fn(), setPlaybackPaused: vi.fn(), seek: vi.fn(),
@@ -31,6 +33,7 @@ beforeEach(async () => {
   vi.mocked(ipc.getRadioBatch).mockResolvedValue({ tracks: [], discovery: { outcome: 'empty', availableSources: [], unavailableSources: [] } });
   await usePlayerStore.getState().clearQueue();
   usePlayerStore.setState(usePlayerStore.getInitialState(), true);
+  useFmStore.setState({ fmQueue: [], loading: false });
   useSceneEnvironment.setState({ visible: true, reducedMotion: true });
   // Only supply the layout/scroll facts jsdom lacks; the real virtualizer and store run unchanged.
   vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(256);
@@ -116,8 +119,15 @@ it('更多菜单可以键盘打开和关闭，返回原焦点，加入队列不�
 
 function QueueHarness() {
   const [open, setOpen] = useState(false);
-  return <><button onClick={() => setOpen(true)}>打开队列</button><QueuePanel isOpen={open} onClose={() => setOpen(false)} /></>;
+  return <><button onClick={() => setOpen(true)}>打开队列</button><button onClick={() => setOpen(false)}>进入其他界面</button><QueuePanel isOpen={open} onClose={() => setOpen(false)} /></>;
 }
+
+it('从非模态队列进入其他界面时，关闭队列不抢回已转移的焦点', () => {
+  render(<QueueHarness />);
+  const open = screen.getByRole('button', { name: '打开队列' }); open.focus(); fireEvent.click(open);
+  const next = screen.getByRole('button', { name: '进入其他界面' }); next.focus(); fireEvent.click(next);
+  expect(document.activeElement).toBe(next);
+});
 
 it('队列定位到屏幕外当前歌曲，键盘跨虚拟列表移动，移除后焦点留在相邻条目', async () => {
   usePlayerStore.getState().addToQueue(Array.from({ length: 40 }, (_, index) => track(`歌曲${index}`)));
@@ -148,4 +158,30 @@ it('清空需要明确确认，Escape 先取消，完成后停止播放并显示
   await screen.findByText('让喜欢的歌排好队');
   expect(usePlayerStore.getState()).toMatchObject({ queue: [], currentTrack: null, state: 'idle' });
   expect(document.activeElement).toBe(screen.getByRole('button', { name: '关闭播放队列' }));
+});
+
+it('沉浸下一首遵守指定顺序和现有队列，不改播私人 FM 候选', async () => {
+  await start(track('原曲'));
+  usePlayerStore.getState().addToQueue([track('其他歌曲')]);
+  usePlayerStore.getState().setPlayMode('repeat-one');
+  usePlayerStore.getState().insertNext(track('指定歌曲'));
+  useFmStore.setState({ fmQueue: [track('私人 FM 候选')] });
+  render(<ImmersiveControls visible onClose={() => {}} onFocusChange={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: '下一首' }));
+  await waitFor(() => expect(usePlayerStore.getState().currentTrack?.id).toBe('指定歌曲'));
+  expect(usePlayerStore.getState().queue.map(song => song.id)).toEqual(['原曲', '指定歌曲', '其他歌曲']);
+  expect(usePlayerStore.getState().playMode).toBe('repeat-one');
+  expect(usePlayerStore.getState().nextQueuedKey).toBeNull();
+});
+
+it('沉浸播放可以启动待播放队列，加载期间仍可暂停', async () => {
+  usePlayerStore.getState().addToQueue([track('待播放歌曲')]);
+  render(<ImmersiveControls visible onClose={() => {}} onFocusChange={() => {}} />);
+  const play = screen.getByRole('button', { name: '播放' }) as HTMLButtonElement;
+  expect(play.disabled).toBe(false);
+  fireEvent.click(play);
+  await waitFor(() => expect(usePlayerStore.getState().currentTrack?.id).toBe('待播放歌曲'));
+  fireEvent.click(screen.getByRole('button', { name: '暂停' }));
+  await waitFor(() => expect(usePlayerStore.getState().playWhenReady).toBe(false));
+  expect(ipc.playTrack).toHaveBeenCalledTimes(1);
 });

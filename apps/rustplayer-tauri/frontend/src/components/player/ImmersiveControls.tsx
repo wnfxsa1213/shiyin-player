@@ -1,5 +1,5 @@
 import PlaybackProgress from '@/components/player/PlaybackProgress';
-import FMControlBar from '@/components/player/FMControlBar';
+import ImmersiveTransport from '@/components/player/ImmersiveTransport';
 import PlaybackFailure from '@/components/player/PlaybackFailure';
 import { X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
@@ -31,7 +31,7 @@ export default function ImmersiveControls({ visible, onClose, onFocusChange }: P
           {/* Controls row
               先放主控制按钮，再放进度条，和底栏播放器保持一致的视觉节奏 */}
           <div className="relative flex items-center justify-center">
-            <FMControlBar />
+            <ImmersiveTransport />
 
             {/* Right: Close button */}
             <button

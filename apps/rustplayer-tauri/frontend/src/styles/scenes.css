@@ -81,15 +81,10 @@
 .scene-asset { display: flex; align-items: center; gap: 9px; border: 1px solid var(--border-secondary); border-radius: 8px; padding: 8px; min-width: 0; }
 .scene-asset img { width: 38px; height: 30px; border-radius: 4px; object-fit: cover; }
 .scene-asset > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.scene-preview-dialog { position: fixed; inset: 0; z-index: 100; background: #101827; color: white; overflow: auto; }
+.scene-preview-dialog { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; background: #101827; color: white; overflow: hidden; }
 .scene-preview-top { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 26px 32px; font-size: 11px; }
 .scene-preview-top .scene-button { color: white; background: #ffffff12; border-color: #ffffff30; }
-.scene-preview-composition { min-height: 65vh; display: flex; align-items: center; justify-content: center; gap: 8vw; padding: 30px; position: relative; }
-.scene-record { width: clamp(130px, 23vw, 290px); aspect-ratio: 1; border-radius: 50%; border: 1px solid #ffffff30; background: repeating-radial-gradient(circle, #ffffff05 0px, #ffffff05 2px, #0003 3px, #0003 5px); display: grid; place-items: center; box-shadow: 0 20px 70px #0005; flex-shrink: 0; }
-.scene-preview-composition h2 { font-size: clamp(22px, 3vw, 40px); font-weight: 400; margin: 20px 0 12px; }
-.scene-preview-composition p { color: #ffffffb3; font-size: 13px; }
-.scene-preview-composition .scene-eyebrow, .scene-preview-note { color: #ffffffb3; font-size: 11px; }
-.scene-preview-note { display: block; margin-top: 40px; }
+.scene-preview-note { color: #ffffffb3; font-size: 11px; text-align: center; margin-top: 24px; }
 @media (max-width: 1100px) {
   .scene-workspace { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .scene-editor { display: grid; grid-template-columns: 1fr 1fr; }
@@ -102,7 +97,6 @@
   .scene-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .scene-rotation { flex-wrap: wrap; }
   .scene-quality-tag { display: none; }
-  .scene-preview-composition { flex-direction: column; text-align: center; }
 }
 @media (prefers-reduced-motion: reduce) {
   .scene-outgoing { animation: none; display: none; }

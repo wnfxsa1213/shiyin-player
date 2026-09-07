@@ -1,0 +1,397 @@
+{
+  "date": "2026-09-06",
+  "branch": "codex/ui-interaction",
+  "base": "17b9e7d6eb46e48ff2713953e606d46a5cdbaccd",
+  "reviewedHeadBeforeFixes": "a63f7d1",
+  "frontendTests": {
+    "files": 8,
+    "passed": 79,
+    "failed": 0
+  },
+  "rustTests": {
+    "passed": 52,
+    "failed": 0
+  },
+  "productionBuild": "passed",
+  "focusTransfer": {
+    "beforeFix": false,
+    "afterFix": true
+  },
+  "browserChecks": [
+    {
+      "name": "card preserves queue",
+      "pass": true
+    },
+    {
+      "name": "repeated play is idempotent",
+      "pass": true
+    },
+    {
+      "name": "keyboard reaches virtual last row",
+      "pass": true
+    },
+    {
+      "name": "remove restores adjacent focus",
+      "pass": true
+    },
+    {
+      "name": "queue closes and focus returns",
+      "pass": true
+    },
+    {
+      "name": "menu closes without playback",
+      "pass": true
+    },
+    {
+      "name": "failed song remains identifiable after rollback",
+      "pass": true
+    },
+    {
+      "name": "immersive failure stays visible after auto-hide timeout",
+      "pass": true
+    },
+    {
+      "name": "retry selects failed track",
+      "pass": true
+    },
+    {
+      "name": "buffering is visible",
+      "pass": true
+    },
+    {
+      "name": "pause during buffering is visible",
+      "pass": true
+    },
+    {
+      "name": "clear requires explicit choice",
+      "pass": true
+    },
+    {
+      "name": "clear stops and shows empty queue",
+      "pass": true
+    },
+    {
+      "name": "no frontend errors",
+      "pass": true
+    },
+    {
+      "name": "queue to immersive preserves modal focus",
+      "pass": true
+    },
+    {
+      "name": "immersive exit returns to cover",
+      "pass": true
+    },
+    {
+      "name": "immersive next respects explicit next and preserves queue",
+      "pass": true
+    },
+    {
+      "name": "immersive next does not consume FM queue",
+      "pass": true
+    },
+    {
+      "name": "immersive pending queue play enabled",
+      "pass": true
+    },
+    {
+      "name": "immersive pending queue starts",
+      "pass": true
+    },
+    {
+      "name": "immersive pauses during loading",
+      "pass": true
+    },
+    {
+      "name": "current spectrum accepted",
+      "pass": true
+    },
+    {
+      "name": "late hidden spectrum stays cleared",
+      "pass": true
+    },
+    {
+      "name": "late loading spectrum stays cleared",
+      "pass": true
+    },
+    {
+      "name": "spectrum resumes for new playing attempt",
+      "pass": true
+    },
+    {
+      "name": "preview displays actual lyrics and immersive wash",
+      "pass": true
+    },
+    {
+      "name": "preview keeps candidate unapplied",
+      "pass": true
+    },
+    {
+      "name": "preview exit restores focus",
+      "pass": true
+    },
+    {
+      "name": "preview wash matches actual immersive",
+      "pass": true
+    },
+    {
+      "name": "review checks produced no frontend errors",
+      "pass": true
+    }
+  ],
+  "chromium": {
+    "passed": 30,
+    "layouts": 16,
+    "previewLayouts": [
+      {
+        "width": 1200,
+        "height": 800,
+        "theme": "dark",
+        "hasLyrics": true,
+        "lyricsInside": true,
+        "backInside": true,
+        "pageOverflow": false
+      },
+      {
+        "width": 1200,
+        "height": 800,
+        "theme": "light",
+        "hasLyrics": true,
+        "lyricsInside": true,
+        "backInside": true,
+        "pageOverflow": false
+      },
+      {
+        "width": 900,
+        "height": 600,
+        "theme": "dark",
+        "hasLyrics": true,
+        "lyricsInside": true,
+        "backInside": true,
+        "pageOverflow": false
+      },
+      {
+        "width": 900,
+        "height": 600,
+        "theme": "light",
+        "hasLyrics": true,
+        "lyricsInside": true,
+        "backInside": true,
+        "pageOverflow": false
+      }
+    ],
+    "keyboard": {
+      "toggled": true,
+      "controls": 1
+    },
+    "longTitle": {
+      "footerHeight": 146,
+      "ellipsized": true,
+      "fullTitle": true
+    },
+    "errors": []
+  },
+  "webkit": [
+    {
+      "version": "2.52.6",
+      "width": 1200,
+      "height": 800,
+      "passed": 30,
+      "layouts": [
+        {
+          "theme": "dark",
+          "mode": "paused",
+          "width": 1200,
+          "height": 800,
+          "overflow": [],
+          "queueAboveFooter": true,
+          "pageOverflow": false,
+          "footer": {
+            "x": 0,
+            "y": 703,
+            "width": 1200,
+            "height": 97,
+            "top": 703,
+            "right": 1200,
+            "bottom": 800,
+            "left": 0
+          }
+        },
+        {
+          "theme": "dark",
+          "mode": "failure",
+          "width": 1200,
+          "height": 800,
+          "overflow": [],
+          "queueAboveFooter": true,
+          "pageOverflow": false,
+          "footer": {
+            "x": 0,
+            "y": 654,
+            "width": 1200,
+            "height": 146,
+            "top": 654,
+            "right": 1200,
+            "bottom": 800,
+            "left": 0
+          }
+        },
+        {
+          "theme": "light",
+          "mode": "paused",
+          "width": 1200,
+          "height": 800,
+          "overflow": [],
+          "queueAboveFooter": true,
+          "pageOverflow": false,
+          "footer": {
+            "x": 0,
+            "y": 703,
+            "width": 1200,
+            "height": 97,
+            "top": 703,
+            "right": 1200,
+            "bottom": 800,
+            "left": 0
+          }
+        },
+        {
+          "theme": "light",
+          "mode": "failure",
+          "width": 1200,
+          "height": 800,
+          "overflow": [],
+          "queueAboveFooter": true,
+          "pageOverflow": false,
+          "footer": {
+            "x": 0,
+            "y": 654,
+            "width": 1200,
+            "height": 146,
+            "top": 654,
+            "right": 1200,
+            "bottom": 800,
+            "left": 0
+          }
+        }
+      ],
+      "previewLayout": {
+        "width": 1200,
+        "height": 800,
+        "pageOverflow": false,
+        "lyrics": {
+          "x": 600,
+          "y": 88,
+          "width": 600,
+          "height": 712,
+          "top": 88,
+          "right": 1200,
+          "bottom": 800,
+          "left": 600
+        }
+      },
+      "errors": []
+    },
+    {
+      "version": "2.52.6",
+      "width": 900,
+      "height": 600,
+      "passed": 30,
+      "layouts": [
+        {
+          "theme": "dark",
+          "mode": "paused",
+          "width": 900,
+          "height": 600,
+          "overflow": [],
+          "queueAboveFooter": true,
+          "pageOverflow": false,
+          "footer": {
+            "x": 0,
+            "y": 503,
+            "width": 900,
+            "height": 97,
+            "top": 503,
+            "right": 900,
+            "bottom": 600,
+            "left": 0
+          }
+        },
+        {
+          "theme": "dark",
+          "mode": "failure",
+          "width": 900,
+          "height": 600,
+          "overflow": [],
+          "queueAboveFooter": true,
+          "pageOverflow": false,
+          "footer": {
+            "x": 0,
+            "y": 454,
+            "width": 900,
+            "height": 146,
+            "top": 454,
+            "right": 900,
+            "bottom": 600,
+            "left": 0
+          }
+        },
+        {
+          "theme": "light",
+          "mode": "paused",
+          "width": 900,
+          "height": 600,
+          "overflow": [],
+          "queueAboveFooter": true,
+          "pageOverflow": false,
+          "footer": {
+            "x": 0,
+            "y": 503,
+            "width": 900,
+            "height": 97,
+            "top": 503,
+            "right": 900,
+            "bottom": 600,
+            "left": 0
+          }
+        },
+        {
+          "theme": "light",
+          "mode": "failure",
+          "width": 900,
+          "height": 600,
+          "overflow": [],
+          "queueAboveFooter": true,
+          "pageOverflow": false,
+          "footer": {
+            "x": 0,
+            "y": 454,
+            "width": 900,
+            "height": 146,
+            "top": 454,
+            "right": 900,
+            "bottom": 600,
+            "left": 0
+          }
+        }
+      ],
+      "previewLayout": {
+        "width": 900,
+        "height": 600,
+        "pageOverflow": false,
+        "lyrics": {
+          "x": 450,
+          "y": 88,
+          "width": 450,
+          "height": 512,
+          "top": 88,
+          "right": 900,
+          "bottom": 600,
+          "left": 450
+        }
+      },
+      "errors": []
+    }
+  ],
+  "scope": "Production React App, actual lifecycle and UI, isolated IPC fixtures for songs, lyrics and spectrum. No live accounts, sound output or stress testing. Preview theme matrix captured in Chromium; WebKit preview geometry checked during functional runs."
+}

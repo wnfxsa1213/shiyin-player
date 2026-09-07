@@ -12,6 +12,7 @@ const modes: { mode: PlayMode; icon: typeof Repeat; label: string }[] = [
 ];
 
 export default function QueuePanel({ isOpen, onClose }: Props) {
+  const panelRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const clearRef = useRef<HTMLButtonElement>(null);
@@ -43,6 +44,7 @@ export default function QueuePanel({ isOpen, onClose }: Props) {
   useEffect(() => {
     if (!isOpen) return;
     const previousFocus = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
     setConfirmClear(false); setNotice('');
     closeRef.current?.focus();
     const current = usePlayerStore.getState();
@@ -50,7 +52,10 @@ export default function QueuePanel({ isOpen, onClose }: Props) {
       virtualizer.scrollToIndex(current.queueIndex, { align: 'center' });
       setPendingFocus(keyOf(current.queue[current.queueIndex]));
     }
-    return () => { if (previousFocus?.isConnected) previousFocus.focus(); };
+    return () => {
+      // A non-modal queue must not take focus back from the view the user just opened.
+      if (previousFocus?.isConnected && (panel?.contains(document.activeElement) || document.activeElement === document.body)) previousFocus.focus();
+    };
   }, [isOpen, virtualizer]);
 
   // A requested row may not exist until the virtualizer has processed the scroll.
@@ -69,7 +74,7 @@ export default function QueuePanel({ isOpen, onClose }: Props) {
     : state === 'paused' ? (ready ? '正在恢复' : '已暂停') : '当前选择 · 已停止';
 
   return (
-    <aside id="playback-queue" role="dialog" aria-label="播放队列" className="queue-panel"
+    <aside ref={panelRef} id="playback-queue" role="dialog" aria-label="播放队列" className="queue-panel"
       onKeyDown={e => {
         if (e.key === 'Escape') {
           e.preventDefault(); e.stopPropagation();

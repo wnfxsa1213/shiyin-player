@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, type ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { usePlayerStore } from '@/store/playerStore';
 import { useToastStore } from '@/store/toastStore';
@@ -14,7 +14,7 @@ interface LyricsLine {
 const LYRICS_TOP_PADDING = 200;
 const LYRICS_BOTTOM_PADDING = 300;
 
-export default function ImmersiveLyrics() {
+export default function ImmersiveLyrics({ emptyContent }: { emptyContent?: ReactNode }) {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const [lyrics, setLyrics] = useState<LyricsLine[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -82,7 +82,7 @@ export default function ImmersiveLyrics() {
   if (lyrics.length === 0) {
     return (
       <div className="flex items-center justify-center h-full px-8">
-        <p className="text-white/30 text-lg">暂无歌词</p>
+        {emptyContent ?? <p className="text-white/30 text-lg">暂无歌词</p>}
       </div>
     );
   }

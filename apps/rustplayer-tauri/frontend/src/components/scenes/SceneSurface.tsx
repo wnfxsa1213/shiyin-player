@@ -7,6 +7,7 @@ import { useSceneEnvironment } from '@/store/sceneEnvironmentStore';
 import { usePlayerStore } from '@/store/playerStore';
 import { useVisualizerStore, spectrumDataRef } from '@/store/visualizerStore';
 import { useToastStore } from '@/store/toastStore';
+import { hasVisualPlayback } from '@/lib/scenes/spectrum';
 
 interface Props { scene: VisualScene; variant?: 'main' | 'immersive' | 'preview'; active?: boolean; }
 interface Background { scene: VisualScene; url: string | null; }
@@ -14,7 +15,7 @@ interface Background { scene: VisualScene; url: string | null; }
 export default function SceneSurface({ scene, variant = 'immersive', active = true }: Props) {
   const assets = useSceneStore(state => state.assets);
   const cover = usePlayerStore(state => state.listening.track?.coverUrl);
-  const playing = usePlayerStore(state => state.listening.state === 'playing' && state.state === 'playing');
+  const playing = usePlayerStore(state => hasVisualPlayback(state));
   const visible = useSceneEnvironment(state => state.visible);
   const reduced = useSceneEnvironment(state => state.reducedMotion);
   const enabled = useVisualizerStore(state => state.enabled && state.showParticles);
@@ -59,7 +60,7 @@ export default function SceneSurface({ scene, variant = 'immersive', active = tr
     if (!canvas.current || !enabled) return;
     const instance = createSceneRenderer(canvas.current, background.scene, variant === 'main', () => {
       const player = usePlayerStore.getState();
-      if (player.state !== 'playing' || player.listening.state !== 'playing'
+      if (!hasVisualPlayback(player, useSceneEnvironment.getState().visible)
         || spectrumDataRef.playbackId !== player.listening.playbackId || !spectrumDataRef.receivedAt
         || performance.now() - spectrumDataRef.receivedAt > 350) return 0;
       return spectrumEnergy(spectrumDataRef.current);

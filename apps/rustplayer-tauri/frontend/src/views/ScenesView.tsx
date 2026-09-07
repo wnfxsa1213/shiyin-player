@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Check, Expand, ImagePlus, Music2, Sparkles, Trash2, X } from 'lucide-react';
+import { Check, Expand, ImagePlus, Sparkles, Trash2, X } from 'lucide-react';
 import { useSceneStore } from '@/store/sceneStore';
 import { useSceneEnvironment } from '@/store/sceneEnvironmentStore';
 import { usePlayerStore } from '@/store/playerStore';
@@ -12,19 +12,15 @@ import { useFocusTrap } from '@/hooks/useFocusTrap';
 import SceneArtwork from '@/components/scenes/SceneArtwork';
 import SceneSurface from '@/components/scenes/SceneSurface';
 import SceneRotationControls from '@/components/scenes/SceneRotationControls';
+import ImmersiveContent from '@/components/player/ImmersiveContent';
 
 function ScenePreviewDialog({ scene, onClose }: { scene: VisualScene; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
-  const listening = usePlayerStore(state => state.listening);
   useFocusTrap(ref, true, onClose);
   return <div ref={ref} className="scene-preview-dialog" role="dialog" aria-modal="true" aria-label="沉浸预览" tabIndex={-1} data-scene-block>
-    <SceneSurface scene={scene} variant="preview" />
+    <SceneSurface scene={scene} />
     <div className="scene-preview-top"><span>沉浸预览 · {scene.name}</span><button className="scene-button" onClick={onClose}><X size={16} />返回搭配</button></div>
-    <div className="scene-preview-composition"><div className="scene-record"><Music2 size={44} strokeWidth={1} /></div><div>
-      <span className="scene-eyebrow">让音乐，成为此刻的风景</span>
-      <h2>{listening.track?.name || '留一点空间给音乐'}</h2><p>{listening.track?.artist || '选一首喜欢的歌，感受真实音乐律动'}</p>
-      <span className="scene-preview-note">当前仅预览，返回后可应用这套搭配</span>
-    </div></div>
+    <ImmersiveContent preview><p className="scene-preview-note">当前仅预览，返回后可应用这套搭配</p></ImmersiveContent>
   </div>;
 }
 

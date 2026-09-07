@@ -189,8 +189,10 @@ export function onPlaybackEvent(cb: (event: PlaybackEvent) => void): Promise<Unl
   return listen<PlaybackEvent>('player://event', (event) => cb(event.payload));
 }
 
-export function onPlayerSpectrum(cb: (data: { playbackId: number; emittedAtMs: number; magnitudes: number[] }) => void): Promise<UnlistenFn> {
-  return listen<{ playbackId: number; emittedAtMs: number; magnitudes: number[] }>('player://spectrum', (e) => cb(e.payload));
+export interface PlayerSpectrum { playbackId: number; emittedAtMs: number; magnitudes: number[] }
+
+export function onPlayerSpectrum(cb: (data: PlayerSpectrum) => void): Promise<UnlistenFn> {
+  return listen<PlayerSpectrum>('player://spectrum', (e) => cb(e.payload));
 }
 
 export function onLoginSuccess(cb: (source: MusicSource) => void): Promise<UnlistenFn> {

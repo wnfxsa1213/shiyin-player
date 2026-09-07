@@ -34,6 +34,8 @@ npm --prefix apps/rustplayer-tauri/frontend test
 
 2026-09-06 的界面验收和范围见 [播放主流程 UI 验证](docs/design/playback-ui-validation.md)。后续压力测试按当前安排暂停。
 
+UI 分支评审后，前端回归为 79 项。新增沉浸指定下一首与队列保留、待播放队列启动、非模态队列关闭不抢焦点，以及隐藏/加载后迟到频谱过滤；场景页面测试补充歌词预览断言。修复前复现、Chromium / WebKitGTK 操作与窗口覆盖见 [评审收尾](docs/design/ui-branch-review.md)。
+
 ## 视觉场景回归
 
 运行前端 `npm test` 与 `npm run build`，以及 Rust `cargo test --workspace`。当前已缓存环境可附加 `--locked --offline`。场景测试通过工厂接口、真实页面和可控时钟覆盖草稿隔离、应用竞态、持久化顺序、素材引用、取消解码、轮换与窗口恢复；进度条测试验证隐藏/暂停停帧及取消拖动。后端覆盖导入格式、尺寸、去重、失败清理、受限资源读取和频谱字段。

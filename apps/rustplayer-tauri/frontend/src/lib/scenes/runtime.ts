@@ -6,6 +6,7 @@ import { spectrumDataRef } from '@/store/visualizerStore';
 import { useToastStore } from '@/store/toastStore';
 import { SCENE_PRESETS } from './model';
 import { createSceneBag, createSceneRotation } from './rotation';
+import { hasVisualPlayback } from './spectrum';
 
 const bag = createSceneBag();
 export async function nextScene(manual = false, canCommit = () => true): Promise<boolean> {
@@ -33,7 +34,7 @@ export function startSceneRuntime() {
   }
   function update() {
     const player = usePlayerStore.getState(), scene = useSceneStore.getState(), environment = useSceneEnvironment.getState();
-    const playing = player.listening.state === 'playing' && player.state === 'playing';
+    const playing = hasVisualPlayback(player);
     const focused = document.activeElement;
     const editing = focused instanceof HTMLElement && !!focused.closest('input, select, textarea, [contenteditable="true"]');
     rotation.update({
