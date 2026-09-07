@@ -4,9 +4,15 @@
   "version": "0.2.0",
   "identifier": "com.shiyin.music",
   "build": {
-    "beforeDevCommand": "npm run dev --prefix frontend",
+    "beforeDevCommand": {
+      "script": "npm run dev",
+      "cwd": "../frontend"
+    },
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build --prefix frontend",
+    "beforeBuildCommand": {
+      "script": "npm run build",
+      "cwd": "../frontend"
+    },
     "frontendDist": "../frontend/dist"
   },
   "app": {
